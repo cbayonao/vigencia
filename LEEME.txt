@@ -1,0 +1,25 @@
+Vigencia
+
+1. Ejecuta Vigencia-Setup-2.0.0.exe e instala el programa.
+2. Ábrelo desde el menú Inicio. El nombre es Vigencia.
+3. Se abre una ventana de escritorio. No usa el navegador.
+
+La base de datos se queda en este computador:
+%APPDATA%\Vigencia\grokvig.sqlite
+
+Si ya había una base, la actualización no la reescribe. Solo agrega lo nuevo del esquema, como los clientes.
+En Linux el instalador es Vigencia-2.0.0.AppImage o Vigencia-2.0.0.deb.
+La base instalada queda en ~/.config/Vigencia/grokvig.sqlite.
+Desde el código de este equipo se abre con: cd electron && npm start
+Ahí usa la grokvig.sqlite de esta carpeta, no la de ~/.config.
+
+Los clientes (nombre, apellidos, teléfonos, dirección y correo) son de esta aplicación.
+No salen del computador y no se envían a la Rama Judicial.
+Puedes asignar un cliente a un expediente y filtrar la lista por ese cliente.
+
+Recargar lista solo relee la base. Agregar consulta el radicado nuevo. Actualizar todo solo revisa las actuaciones de cada expediente.
+Vigencia revisa sola las actuaciones dos veces al día (7:00 y 13:00). Las horas se cambian en el botón Revisión automática: una o dos horas, con al menos una hora entre ellas.
+Si hay cambios aparece una notificación con el radicado y el cliente.
+Cerrar la ventana deja Vigencia en la bandeja del sistema. Para cerrar el programa del todo usa Salir.
+
+El instalador anterior, Vigencia-Setup.exe (1.2), abría el navegador. Este ya no.

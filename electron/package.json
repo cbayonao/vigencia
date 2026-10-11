@@ -1,0 +1,81 @@
+{
+  "name": "vigencia",
+  "productName": "Vigencia",
+  "version": "3.1.0",
+  "private": true,
+  "description": "Consulta local de procesos. La base sqlite no sale del computador.",
+  "main": "src/main.js",
+  "type": "module",
+  "author": "Vigencia <vigencia@localhost>",
+  "homepage": "https://vigencia.local",
+  "desktopName": "vigencia",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test",
+    "dist:linux": "electron-builder --linux AppImage deb",
+    "dist:win": "node script/nsis-sin-wine.mjs && electron-builder --win nsis"
+  },
+  "build": {
+    "appId": "co.vigencia.app",
+    "productName": "Vigencia",
+    "executableName": "vigencia",
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/node-llama-cpp/bins/**/*",
+      "node_modules/@node-llama-cpp/*/bins/**/*"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "renderer/**/*",
+      "compartido/**/*",
+      "package.json",
+      "node_modules/node-llama-cpp/**/*",
+      "!node_modules/node-llama-cpp/llama/**",
+      "node_modules/@node-llama-cpp/linux-x64/**/*",
+      "node_modules/@node-llama-cpp/win-x64/**/*",
+      "!script/**"
+    ],
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Office",
+      "artifactName": "Vigencia-${version}.${ext}",
+      "synopsis": "Consulta local de procesos judiciales",
+      "maintainer": "Vigencia <vigencia@localhost>",
+      "syncDesktopName": true,
+      "icon": "build/icons"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "artifactName": "Vigencia-Setup-${version}.${ext}",
+      "signAndEditExecutable": false,
+      "signExecutable": false,
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "allowElevation": true,
+      "deleteAppDataOnUninstall": false,
+      "shortcutName": "Vigencia"
+    }
+  },
+  "devDependencies": {
+    "electron": "44.7.0",
+    "electron-builder": "26.15.3"
+  },
+  "dependencies": {
+    "node-llama-cpp": "^3.22.1"
+  },
+  "allowScripts": {
+    "node-llama-cpp@3.22.1": true
+  }
+}

@@ -1,0 +1,8 @@
+node_modules/
+datos/
+claves/*.pem
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.*
+terraform/terraform.tfvars
+terraform/licencia.zip

@@ -1,0 +1,5 @@
+wompi_env              = "sandbox"
+wompi_public_key       = ""
+wompi_private_key      = ""
+wompi_integrity_secret = ""
+wompi_events_secret    = ""

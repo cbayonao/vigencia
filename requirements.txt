@@ -1,0 +1,5 @@
+nicegui==3.18.0
+requests==2.34.2
+pywebview==6.2.1
+qtpy==2.4.3
+PySide6==6.12.0

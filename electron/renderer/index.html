@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Procesos · Vigencia</title>
+  <script src="./tema.js"></script>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <section id="licencia" class="licencia">
+    <div class="licencia-hoja">
+      <p class="marca">Vigencia</p>
+      <h1 class="serif" id="licencia-titulo">Inicia el plan</h1>
+      <p id="licencia-texto">Vigencia permanece cerrado hasta que se pague el plan. Cuesta $599.900 por un año. El año empieza cuando Wompi confirma el pago.</p>
+      <div class="licencia-acciones">
+        <button type="button" class="boton-cobre" id="iniciar-plan">Iniciar el plan</button>
+        <button type="button" class="boton-linea" id="ya-pague">Ya pagué</button>
+      </div>
+      <button type="button" class="boton-texto" id="pago-navegador" hidden>Abrir el pago en el navegador</button>
+      <label class="etiqueta" for="licencia-codigo">Código de activación</label>
+      <div class="fila-agregar">
+        <input id="licencia-codigo" type="password" autocomplete="off" spellcheck="false" placeholder="Pega el código de esta instalación">
+        <button type="button" class="boton-linea" id="activar-codigo">Activar</button>
+      </div>
+      <p class="ayuda" id="licencia-aviso"></p>
+      <div class="licencia-pie">
+        <button type="button" class="boton-texto" id="licencia-tema">Tema oscuro</button>
+        <button type="button" class="boton-texto" id="licencia-salir">Salir</button>
+      </div>
+    </div>
+  </section>
+  <div class="marco" id="aplicacion" hidden>
+    <header class="barra">
+      <div>
+        <p class="marca">Vigencia</p>
+        <h1 class="nombre serif">Procesos</h1>
+      </div>
+      <input id="busqueda" class="busqueda" placeholder="Radicado, parte, despacho, cliente o actuación" aria-label="Buscar en la lista" autocomplete="off">
+      <div class="acciones">
+        <p class="resumen" id="resumen">Cargando la base…</p>
+        <p class="resumen resumen-auto" id="ultima-auto" hidden></p>
+        <div class="botones">
+          <button type="button" class="boton-cobre" id="actualizar" title="Revisa solo las actuaciones de cada expediente">Actualizar todo</button>
+          <div class="menu-raiz" id="menu-raiz">
+            <button type="button" class="boton-linea" id="menu-boton" aria-haspopup="menu" aria-expanded="false" title="Más acciones">Menú ▾</button>
+            <div class="menu-lista" id="menu-lista" role="menu" hidden>
+              <p class="combo-titulo">Lista</p>
+              <button type="button" class="combo-opcion" id="recargar" role="menuitem" title="Vuelve a leer la base, sin consultar la Rama">Recargar lista</button>
+              <button type="button" class="combo-opcion" id="ver-informe" role="menuitem" hidden title="Totales y fallas de la última revisión">Ver informe</button>
+              <button type="button" class="combo-opcion" id="descargar" role="menuitem" title="Guarda un Excel con la lista filtrada y las actuaciones de hoy">Descargar Excel</button>
+              <div class="combo-separador"></div>
+              <p class="combo-titulo">Agregar</p>
+              <button type="button" class="combo-opcion" id="cargar-csv" role="menuitem">Cargar CSV</button>
+              <button type="button" class="combo-opcion" id="informe" role="menuitem" title="Un PDF por cliente con las actuaciones de hoy. Si un expediente no se movió hoy, incluye la última actuación.">Informe del día</button>
+              <div class="combo-separador"></div>
+              <p class="combo-titulo">Aplicación</p>
+              <button type="button" class="combo-opcion" id="abrir-clientes" role="menuitem" title="Personas de esta aplicación, solo en este computador">Clientes</button>
+              <button type="button" class="combo-opcion" id="abrir-modelos" role="menuitem" title="Modelos locales y claves de proveedores en la nube">Modelos de IA</button>
+              <button type="button" class="combo-opcion" id="abrir-ajustes" role="menuitem" title="Horas de la revisión automática">Revisión automática</button>
+              <button type="button" class="combo-opcion" id="tema" role="menuitem" aria-pressed="false">Tema oscuro</button>
+              <button type="button" class="combo-opcion" id="salir" role="menuitem" title="Cierra Vigencia del todo. Cerrar la ventana la deja en la bandeja">Salir</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </header>
+    <section class="registro-caja" id="caja-registro" hidden>
+      <div class="registro-cabeza">
+        <p class="registro-titulo" id="registro-titulo">Registro</p>
+        <button type="button" class="boton-texto" id="ocultar-registro">Ocultar</button>
+      </div>
+      <pre class="registro" id="registro"></pre>
+    </section>
+    <div class="cuerpo">
+      <aside class="izquierda">
+        <div class="filtros">
+          <p class="etiqueta primera">Agregar radicado</p>
+          <div class="fila-agregar">
+            <input id="nuevo" class="mono" inputmode="numeric" autocomplete="off" spellcheck="false" placeholder="23 dígitos" aria-label="Número de radicado">
+            <button type="button" class="boton-cobre" id="agregar">Agregar</button>
+          </div>
+          <p class="ayuda" id="ayuda">Número de radicación, 23 dígitos.</p>
+          <button type="button" class="boton-linea carga-csv" id="iniciar" title="Demanda, tutela o derecho de petición para radicar. Todavía sin radicado.">Iniciar proceso</button>
+          <p class="etiqueta">Tipo</p>
+          <div id="combo-tipo"></div>
+          <p class="etiqueta">Despacho</p>
+          <div id="combo-despacho"></div>
+          <p class="etiqueta">Cliente</p>
+          <div id="combo-cliente"></div>
+          <div class="filtro-activo" id="filtro-activo"></div>
+          <p class="cuenta" id="cuenta"></p>
+          <p class="nota-fuera" id="nota" hidden></p>
+        </div>
+        <div class="lista-scroll" id="lista-scroll">
+          <div class="lista" id="lista"></div>
+        </div>
+      </aside>
+      <main class="derecha" id="detalle"></main>
+    </div>
+  </div>
+
+  <div class="cortina" id="dialogo-busqueda" hidden>
+    <div class="dialogo" role="dialog" aria-modal="true" aria-labelledby="dialogo-titulo">
+      <h2 class="serif dialogo-titulo" id="dialogo-titulo">Buscando el radicado en la Rama</h2>
+      <p class="numero mono" id="dialogo-numero"></p>
+      <p class="causa-error" id="dialogo-causa" hidden></p>
+      <div class="barra-progreso" id="dialogo-barra"><span></span></div>
+      <pre class="registro" id="dialogo-log">Esperando la respuesta de la Rama…</pre>
+      <div class="fila-fin">
+        <button type="button" class="boton-cobre" id="dialogo-cerrar" hidden>Cerrar</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="cortina" id="dialogo-csv" hidden>
+    <div class="dialogo" role="dialog" aria-modal="true" aria-labelledby="csv-titulo">
+      <h2 class="serif dialogo-titulo" id="csv-titulo">Cargar radicados</h2>
+      <p class="nota" id="csv-archivo"></p>
+      <p class="nota">Se consulta cada radicado en la Rama: el expediente, los sujetos, los documentos y las actuaciones. Entre cada petición hay una pausa de 1 a 3 segundos.</p>
+      <label class="etiqueta" for="csv-columna">Columna del radicado</label>
+      <select id="csv-columna"></select>
+      <p class="ayuda" id="csv-cuenta"></p>
+      <p class="ayuda error" id="csv-error" hidden></p>
+      <div class="fila-fin">
+        <button type="button" class="boton-texto" id="csv-cancelar">Cancelar</button>
+        <button type="button" class="boton-cobre" id="csv-cargar">Cargar</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="cortina" id="dialogo-directorio" hidden>
+    <div class="dialogo dialogo-ancho" role="dialog" aria-modal="true" aria-labelledby="dir-titulo">
+      <h2 class="serif dialogo-titulo" id="dir-titulo">Clientes</h2>
+      <p class="nota">Los clientes solo se guardan en este computador. Puedes asignarlos a un expediente y filtrar la lista.</p>
+      <div class="directorio" id="directorio"></div>
+      <div class="fila-fin">
+        <button type="button" class="boton-texto" id="dir-cerrar">Cerrar</button>
+        <button type="button" class="boton-cobre" id="dir-nuevo">Nuevo cliente</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="cortina" id="dialogo-asignar" hidden>
+    <div class="dialogo" role="dialog" aria-modal="true" aria-labelledby="asig-titulo">
+      <h2 class="serif dialogo-titulo" id="asig-titulo">Asignar cliente</h2>
+      <input id="asig-busca" placeholder="Buscar por nombre" autocomplete="off" aria-label="Buscar cliente">
+      <div class="directorio" id="asig-lista"></div>
+      <div class="fila-fin">
+        <button type="button" class="boton-texto" id="asig-cancelar">Cancelar</button>
+        <button type="button" class="boton-linea" id="asig-nuevo">Nuevo cliente</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="cortina" id="dialogo-cliente" hidden>
+    <form class="dialogo" id="form-cliente" role="dialog" aria-modal="true" aria-labelledby="form-titulo">
+      <h2 class="serif dialogo-titulo" id="form-titulo">Nuevo cliente</h2>
+      <p class="nota">El cliente es de esta aplicación. No sale del computador ni se envía a la Rama.</p>
+      <label class="etiqueta" for="cli-nombre">Nombre</label>
+      <input id="cli-nombre" autocomplete="off" required>
+      <label class="etiqueta" for="cli-apellidos">Apellidos</label>
+      <input id="cli-apellidos" autocomplete="off">
+      <label class="etiqueta" for="cli-telefonos">Teléfonos</label>
+      <input id="cli-telefonos" autocomplete="off">
+      <label class="etiqueta" for="cli-direccion">Dirección</label>
+      <textarea id="cli-direccion"></textarea>
+      <label class="etiqueta" for="cli-email">Correo</label>
+      <input id="cli-email" autocomplete="off" inputmode="email">
+      <p class="ayuda error" id="cli-error" hidden></p>
+      <div class="fila-fin">
+        <button type="button" class="boton-texto" id="form-cancelar">Cancelar</button>
+        <button type="submit" class="boton-cobre">Guardar</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="cortina" id="dialogo-borrar" hidden>
+    <div class="dialogo" role="dialog" aria-modal="true" aria-labelledby="borrar-titulo">
+      <h2 class="serif dialogo-titulo" id="borrar-titulo">Borrar cliente</h2>
+      <p class="nota" id="borrar-texto"></p>
+      <div class="fila-fin">
+        <button type="button" class="boton-texto" id="borrar-cancelar">Cancelar</button>
+        <button type="button" class="boton-cobre" id="borrar-confirmar">Borrar</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="cortina" id="dialogo-escrito" hidden>
+    <form class="dialogo dialogo-ancho" id="form-escrito" role="dialog" aria-modal="true" aria-labelledby="escrito-titulo">
+      <h2 class="serif dialogo-titulo" id="escrito-titulo">Escrito para el juzgado</h2>
+      <p class="nota">La IA corre en este computador. Redacta el memorial con el juzgado, el radicado, las partes y las actuaciones de este expediente. Revise la vista previa antes de descargarlo.</p>
+      <div class="fila-modelo">
+        <div class="campo-modelo">
+          <label class="etiqueta" for="escrito-modelo">Modelo</label>
+          <select id="escrito-modelo"></select>
+        </div>
+        <div class="campo-fidelidad">
+          <label class="etiqueta" for="escrito-modo">Texto</label>
+          <select id="escrito-modo" title="Fiel: solo entra lo que conserva el sentido del expediente. Libre: entra el texto del modelo tal cual, aunque alucine.">
+            <option value="fiel">Fiel</option>
+            <option value="libre">Libre</option>
+          </select>
+        </div>
+        <button type="button" class="boton-linea" id="escrito-config" title="Modelos locales, claves en la nube y fidelidad del texto">Modelos</button>
+      </div>
+      <p class="ayuda" id="escrito-modelo-nota">Modelo Sencillo incluido: no descarga nada.</p>
+      <label class="etiqueta" for="escrito-prompt">Petición</label>
+      <textarea id="escrito-prompt" placeholder="Ejemplo: solicito impulso porque el proceso está quieto desde hace meses."></textarea>
+      <p class="ayuda error" id="escrito-error" hidden></p>
+      <p class="ayuda" id="escrito-estado" hidden></p>
+      <div id="escrito-vivo" hidden></div>
+      <div id="escrito-vista" hidden></div>
+      <div class="fila-fin fila-escrito">
+        <button type="button" class="boton-texto" id="escrito-cancelar">Cancelar</button>
+        <button type="button" class="boton-linea" id="escrito-word" disabled>Guardar Word</button>
+        <button type="button" class="boton-linea" id="escrito-pdf" disabled>Descargar PDF</button>
+        <button type="button" class="boton-cobre" id="escrito-generar">Generar documento</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="cortina" id="dialogo-modelos" hidden>
+    <div class="dialogo dialogo-ancho" role="dialog" aria-modal="true" aria-labelledby="modelos-titulo">
+      <h2 class="serif dialogo-titulo" id="modelos-titulo">Modelos de IA</h2>
+      <p class="nota">Aquí se configuran los modelos. Al generar el documento solo aparecen los configurados: el Sencillo, los GGUF instalados y los proveedores con clave guardada.</p>
+      <div class="fila-modelo">
+        <div class="campo-fidelidad">
+          <label class="etiqueta" for="config-modo">Texto del modelo</label>
+          <select id="config-modo" title="Fiel: solo entra lo que conserva el sentido del expediente. Libre: entra el texto del modelo tal cual, aunque alucine.">
+            <option value="fiel">Fiel</option>
+            <option value="libre">Libre</option>
+          </select>
+        </div>
+        <button type="button" class="boton-linea" id="config-importar" title="Traer un archivo .gguf de este computador">Importar .gguf</button>
+      </div>
+      <h3 class="modelos-sub">Modelos locales (en este computador)</h3>
+      <p class="nota">Se descargan una sola vez de Hugging Face y después trabajan sin internet.</p>
+      <p class="ayuda error" id="modelos-error" hidden></p>
+      <div class="directorio" id="modelos-lista"></div>
+      <h3 class="modelos-sub">Modelos en la nube (con su clave)</h3>
+      <p class="nota">Pruebe la conexión antes de guardar: el botón Probar usa los datos escritos sin guardarlos. La clave se guarda solo en este computador y únicamente se usa para pedirle el memorial al proveedor que elija. El texto del expediente sale a internet.</p>
+      <div class="directorio" id="nubes-lista"></div>
+      <div class="fila-fin">
+        <button type="button" class="boton-cobre" id="modelos-cerrar">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="cortina" id="dialogo-iniciar" hidden>
+    <form class="dialogo dialogo-ancho" id="form-iniciar" role="dialog" aria-modal="true" aria-labelledby="iniciar-titulo">
+      <h2 class="serif dialogo-titulo" id="iniciar-titulo">Iniciar proceso</h2>
+      <p class="nota">Todavía no hay radicado: la IA le ayuda a armar la demanda, la tutela o el derecho de petición para radicar. Cuando le den los 23 dígitos, agréguelo con Agregar radicado.</p>
+      <p class="etiqueta">¿Cómo lo inicia?</p>
+      <div class="tipos-iniciar" id="iniciar-tipos"></div>
+      <p class="nota" id="iniciar-intro" hidden></p>
+      <div id="iniciar-campos"></div>
+      <div class="fila-modelo">
+        <div class="campo-modelo">
+          <label class="etiqueta" for="iniciar-modelo">Modelo</label>
+          <select id="iniciar-modelo"></select>
+        </div>
+      </div>
+      <p class="ayuda error" id="iniciar-error" hidden></p>
+      <p class="ayuda" id="iniciar-estado" hidden></p>
+      <div id="iniciar-vivo" hidden></div>
+      <div id="iniciar-vista" hidden></div>
+      <div class="fila-fin fila-escrito">
+        <button type="button" class="boton-texto" id="iniciar-cancelar">Cancelar</button>
+        <button type="button" class="boton-linea" id="iniciar-word" disabled>Guardar Word</button>
+        <button type="button" class="boton-linea" id="iniciar-pdf" disabled>Descargar PDF</button>
+        <button type="button" class="boton-cobre" id="iniciar-generar">Generar documento</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="cortina" id="dialogo-eliminar" hidden>
+    <div class="dialogo" role="dialog" aria-modal="true" aria-labelledby="eliminar-titulo">
+      <h2 class="serif dialogo-titulo" id="eliminar-titulo">Eliminar expediente</h2>
+      <p class="nota" id="eliminar-texto"></p>
+      <div class="fila-fin">
+        <button type="button" class="boton-texto" id="eliminar-cancelar">Cancelar</button>
+        <button type="button" class="boton-cobre" id="eliminar-confirmar">Eliminar</button>
+      </div>
+    </div>
+  </div>
+  <div class="cortina" id="dialogo-informe" hidden>
+    <div class="dialogo dialogo-ancho" role="dialog" aria-modal="true" aria-labelledby="informe-titulo">
+      <h2 class="serif dialogo-titulo" id="informe-titulo">Informe de la revisión</h2>
+      <p class="nota" id="informe-cuando"></p>
+      <p id="informe-resumen"></p>
+      <div class="fallas" id="informe-fallas"></div>
+      <div class="fila-fin">
+        <button type="button" class="boton-cobre" id="informe-cerrar">Cerrar</button>
+      </div>
+    </div>
+  </div>
+  <div class="cortina" id="dialogo-ajustes" hidden>
+    <form class="dialogo" id="form-ajustes" role="dialog" aria-modal="true" aria-labelledby="ajustes-titulo">
+      <h2 class="serif dialogo-titulo" id="ajustes-titulo">Revisión automática</h2>
+      <p class="nota">Vigencia revisa sola las actuaciones de los expedientes guardados, una o dos veces al día. Si el computador estaba apagado o dormido a esa hora, revisa una vez al abrir o al despertar. Entre cada petición hay una pausa de 1 a 3 segundos.</p>
+      <label class="etiqueta" for="aj-hora1">Primera hora</label>
+      <input id="aj-hora1" type="time" step="60" required>
+      <label class="etiqueta" for="aj-hora2">Segunda hora (opcional)</label>
+      <div class="fila-agregar">
+        <input id="aj-hora2" type="time" step="60">
+        <button type="button" class="boton-texto" id="aj-quitar2">Quitar</button>
+      </div>
+      <p class="ayuda">Máximo dos horas al día. Si eliges dos, debe haber al menos una hora entre ellas.</p>
+      <label class="casilla" for="aj-inicio"><input type="checkbox" id="aj-inicio"> Abrir Vigencia en la bandeja al iniciar sesión</label>
+      <p class="nota" id="aj-ultima"></p>
+      <p class="ayuda error" id="aj-error" hidden></p>
+      <div class="fila-fin">
+        <button type="button" class="boton-texto" id="aj-cancelar">Cancelar</button>
+        <button type="submit" class="boton-cobre">Guardar</button>
+      </div>
+    </form>
+  </div>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

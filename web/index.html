@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Procesos · Vigencia</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <a class="saltar" href="#detalle">Saltar al expediente</a>
+  <header class="barra">
+    <div class="marca-bloque">
+      <p class="marca">Vigencia</p>
+      <h1>Procesos</h1>
+    </div>
+    <form id="form-buscar" class="buscar" role="search">
+      <label for="q">Buscar en todos los expedientes</label>
+      <input id="q" type="search" placeholder="Radicado, parte, despacho, tipo o actuación" autocomplete="off" spellcheck="false">
+    </form>
+    <div class="acciones">
+      <p id="resumen" class="resumen">Cargando la base…</p>
+      <div class="botones">
+        <button id="recargar" type="button">Recargar lista</button>
+        <button id="actualizar" type="button" title="Revisa solo las actuaciones de cada expediente en la Rama Judicial">Actualizar todo</button>
+      </div>
+    </div>
+  </header>
+  <details id="bitacora-caja" class="bitacora-caja" hidden>
+    <summary>Registro de la actualización</summary>
+    <pre id="bitacora" class="bitacora"></pre>
+  </details>
+
+  <div class="marco">
+    <aside class="indice" aria-label="Lista de expedientes">
+      <form id="form-agregar" class="agregar">
+        <label class="campo" for="nuevo">Agregar radicado
+          <input id="nuevo" inputmode="numeric" maxlength="29" placeholder="23 dígitos" autocomplete="off" spellcheck="false">
+        </label>
+        <button id="agregar" type="submit">Agregar</button>
+      </form>
+      <div class="controles">
+        <label class="campo">
+          <span>Tipo</span>
+          <select id="tipo">
+            <option value="">Todos los tipos</option>
+          </select>
+        </label>
+        <label class="campo">
+          <span>Despacho</span>
+          <select id="despacho">
+            <option value="">Todos los despachos</option>
+          </select>
+        </label>
+        <p id="cuenta-lista" class="cuenta-lista" aria-live="polite">Cargando…</p>
+      </div>
+      <div id="items" class="items" role="list" aria-describedby="ayuda-lista"></div>
+      <p id="ayuda-lista" class="sr">Usa las flechas arriba y abajo para recorrer los expedientes.</p>
+    </aside>
+    <main id="detalle" class="detalle" tabindex="-1">
+      <div class="vacio">
+        <p>Selecciona un expediente de la lista.</p>
+        <p>La búsqueda acepta radicado, parte, despacho o tipo. La tecla / enfoca el buscador.</p>
+      </div>
+    </main>
+  </div>
+  <div id="loader" class="loader" hidden>
+    <div class="loader-caja" role="status" aria-live="polite">
+      <div class="giro" aria-hidden="true"></div>
+      <p id="loader-titulo">Buscando el radicado en la Rama…</p>
+      <p id="loader-numero" class="mono"></p>
+      <pre id="loader-log"></pre>
+    </div>
+  </div>
+  <p id="aviso-vivo" class="sr" aria-live="polite"></p>
+  <script src="/app.js"></script>
+</body>
+</html>

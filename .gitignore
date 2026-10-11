@@ -1,0 +1,36 @@
+# Secretos: no van al repositorio
+licencia.json
+ia-modelos.json
+.env
+.env.*
+licencia/claves/*.pem
+licencia/terraform/terraform.tfvars
+licencia/terraform/*.tfstate
+licencia/terraform/*.tfstate.*
+licencia/terraform/.terraform/
+licencia/terraform/licencia.zip
+
+# Datos de este computador
+grokvig.sqlite
+grokvig.sqlite-*
+procesos.csv
+avisos.log
+ejecucion.log
+tree.txt
+
+# Dependencias y artefactos
+node_modules/
+.venv/
+__pycache__/
+*.pyc
+.nicegui/
+.engram/
+/build/
+/modelos/
+electron/dist/
+electron/semilla/
+
+# Instaladores
+*.AppImage
+*.deb
+*.exe

@@ -32,6 +32,8 @@ jobs:
           cache-dependency-path: landing/package-lock.json
       - run: terraform init -input=false && terraform apply -auto-approve -input=false
         working-directory: landing/terraform
+      - run: npm ci
+        working-directory: landing
       - run: ./landing/script/desplegar.sh
         env:
           # El build consulta el último release para activar la tarjeta de Mac.

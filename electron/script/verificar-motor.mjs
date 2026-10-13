@@ -15,15 +15,20 @@ if (!entrada || !plataforma) {
 }
 let dir = path.resolve(entrada);
 if (plataforma.startsWith("mac")) {
-  // En mac el empaquetado vive en Vigencia.app/Contents/Resources.
-  const apps = fs.existsSync(dir) ? fs.readdirSync(dir, { withFileTypes: true }) : [];
-  for (const app of apps) {
-    if (!app.isDirectory() || !app.name.endsWith(".app")) continue;
-    const contents = path.join(dir, app.name, "Contents");
-    if (fs.existsSync(path.join(contents, "Resources", "app.asar"))) {
-      dir = contents;
-      break;
+  // electron-builder usa dist/mac-<arch>/Vigencia.app (o dist/mac).
+  const bases = [dir, path.join(dir, "mac-arm64"), path.join(dir, "mac-x64"), path.join(dir, "mac")];
+  for (const base of bases) {
+    if (!fs.existsSync(base)) continue;
+    const apps = fs.readdirSync(base, { withFileTypes: true })
+      .filter((e) => e.isDirectory() && e.name.endsWith(".app"));
+    for (const app of apps) {
+      const contents = path.join(base, app.name, "Contents");
+      if (fs.existsSync(path.join(contents, "Resources", "app.asar"))) {
+        dir = contents;
+        break;
+      }
     }
+    if (dir !== path.resolve(entrada)) break;
   }
 } else if (!fs.existsSync(path.join(dir, "resources", "app.asar"))) {
   const candidato = plataforma.startsWith("win") ? "win-unpacked" : "linux-unpacked";

@@ -25,6 +25,9 @@ jobs:
 
   electron:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -34,6 +37,20 @@ jobs:
           cache-dependency-path: electron/package-lock.json
       - run: npm ci
         working-directory: electron
+      # Dos tests exigen la llave real (correspondencia con la pública
+      # empaquetada). Se recupera de la Lambda y vive solo en el runner.
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-east-1
+      - name: Recuperar llave de firma
+        run: |
+          mkdir -p licencia/claves
+          aws lambda get-function-configuration --function-name vigencia-licencia \
+            --query 'Environment.Variables.LICENCIA_PRIVADA_B64' --output text \
+            | base64 -d > licencia/claves/licencia-privada.pem
+          chmod 600 licencia/claves/licencia-privada.pem
+          test -s licencia/claves/licencia-privada.pem
       - run: npm test
         working-directory: electron
 

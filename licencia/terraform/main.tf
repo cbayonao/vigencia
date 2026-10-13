@@ -141,11 +141,18 @@ resource "aws_lambda_function" "licencia" {
   timeout          = 15
   memory_size      = 256
 
+  lifecycle {
+    precondition {
+      condition     = try(base64encode(file("${path.module}/../claves/licencia-privada.pem")), "") != ""
+      error_message = "Falta licencia/claves/licencia-privada.pem: sin la llave de firma no se despliega."
+    }
+  }
+
   environment {
     variables = {
       TABLA_LICENCIAS        = aws_dynamodb_table.licencias.name
       URL_PUBLICA            = aws_apigatewayv2_api.licencia.api_endpoint
-      LICENCIA_PRIVADA_B64   = base64encode(file("${path.module}/../claves/licencia-privada.pem"))
+      LICENCIA_PRIVADA_B64   = try(base64encode(file("${path.module}/../claves/licencia-privada.pem")), "")
       WOMPI_ENV              = var.wompi_env
       WOMPI_PUBLIC_KEY       = var.wompi_public_key
       WOMPI_PRIVATE_KEY      = var.wompi_private_key

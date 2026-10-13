@@ -26,6 +26,16 @@ jobs:
         with:
           terraform_version: "1.15"
           terraform_wrapper: false
+      # La llave de firma no va a git: se recupera de la Lambda desplegada
+      # y vive solo en el runner (el apply la exige con precondición).
+      - name: Recuperar llave de firma
+        run: |
+          mkdir -p licencia/claves
+          aws lambda get-function-configuration --function-name vigencia-licencia \
+            --query 'Environment.Variables.LICENCIA_PRIVADA_B64' --output text \
+            | base64 -d > licencia/claves/licencia-privada.pem
+          chmod 600 licencia/claves/licencia-privada.pem
+          test -s licencia/claves/licencia-privada.pem
       - run: |
           cat > terraform.tfvars <<EOF
           wompi_env              = "prod"

@@ -17,7 +17,7 @@
     "dist:win": "node script/traer-win.mjs && node script/nsis-sin-wine.mjs && electron-builder --win nsis",
     "postdist:win": "node script/verificar-motor.mjs dist/win-unpacked win-x64",
     "dist:mac": "electron-builder --mac dmg",
-    "postdist:mac": "node script/verificar-motor.mjs dist/mac mac-arm64"
+    "postdist:mac": "node script/verificar-motor.mjs dist mac-arm64"
   },
   "build": {
     "appId": "co.vigencia.app",

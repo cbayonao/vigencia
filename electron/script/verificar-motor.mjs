@@ -6,11 +6,11 @@ import { createRequire } from "node:module";
 // El JS va dentro del asar y los bins nativos en app.asar.unpacked.
 // Uso: node script/verificar-motor.mjs dist/linux-unpacked linux-x64
 //      node script/verificar-motor.mjs dist/win-unpacked win-x64
-//      node script/verificar-motor.mjs dist/mac mac-arm64
+//      node script/verificar-motor.mjs dist mac-arm64-metal
 const entrada = process.argv[2];
 const plataforma = process.argv[3];
 if (!entrada || !plataforma) {
-  console.error("Uso: verificar-motor.mjs <carpeta-unpacked|dist> <linux-x64|win-x64|mac-arm64|mac-x64>");
+  console.error("Uso: verificar-motor.mjs <carpeta-unpacked|dist> <linux-x64|win-x64|mac-arm64-metal|mac-x64>");
   process.exit(2);
 }
 let dir = path.resolve(entrada);
@@ -61,11 +61,33 @@ const exigirAsar = [
   `node_modules/@node-llama-cpp/${plataforma}/package.json`,
 ];
 const exigirFuera = [
-  `node_modules/@node-llama-cpp/${plataforma}/bins/${plataforma}/llama-addon.node`,
+  `node_modules/@node-llama-cpp/${plataforma}`,
 ];
+// El .node va en bins/<plataforma>/, pero el layout exacto cambia por SO:
+// basta con que el opcional desempaquetado traiga algún .node.
+function hayNodeEmpaquetado(base) {
+  const pila = [base];
+  while (pila.length) {
+    const actual = pila.pop();
+    let entradas = [];
+    try {
+      entradas = fs.readdirSync(actual, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const e of entradas) {
+      const ruta = path.join(actual, e.name);
+      if (!e.isDirectory() && e.name.endsWith(".node")) return true;
+      if (e.isDirectory()) pila.push(ruta);
+    }
+  }
+  return false;
+}
 const faltan = [
   ...exigirAsar.filter((rel) => !enAsar.has(`/${rel}`)).map((rel) => `asar: ${rel}`),
-  ...exigirFuera.filter((rel) => !fs.existsSync(path.join(recursos, "app.asar.unpacked", rel))).map((rel) => `unpacked: ${rel}`),
+  ...exigirFuera
+    .filter((rel) => !hayNodeEmpaquetado(path.join(recursos, "app.asar.unpacked", rel)))
+    .map((rel) => `unpacked: sin .node en ${rel}`),
 ];
 if (faltan.length) {
   console.error(`Falta el motor en ${dir}:`);

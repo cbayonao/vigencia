@@ -372,6 +372,7 @@ function recortarDetalle(error, largo = 300) {
 
 // Revisión paso a paso para el botón Diagnosticar de Modelos de IA: dice
 // exactamente qué falta o qué falló, en lugar del aviso genérico.
+// Nunca revienta: cualquier error queda como un paso más.
 export async function diagnosticoMotor(datosDir = carpetaDatos, opciones = {}) {
   const pasos = [];
   const marcar = (nombre, ok, detalle) => pasos.push({ nombre, ok: !!ok, detalle: String(detalle ?? "") });
@@ -380,40 +381,52 @@ export async function diagnosticoMotor(datosDir = carpetaDatos, opciones = {}) {
   const plat = plataformaDe(platform, arch);
   marcar("plataforma", !!plat, plat ? `${platform}-${arch} usa ${plat.carpeta}` : `${platform}-${arch} no tiene motor preparado`);
   if (!plat) return { plataforma: null, pasos };
-  let datosAddon = null;
   try {
-    datosAddon = buscarAddon(carpetaPaquete(datosDir, plat.carpeta));
-  } catch (error) {
-    marcar("binario descargado", false, recortarDetalle(error));
-  }
-  if (datosAddon === null && pasos.length === 1) {
-    marcar("binario descargado", false, "ausente en la carpeta de datos");
-  } else if (datosAddon) {
-    marcar("binario descargado", true, datosAddon);
-  }
-  const recursos = opciones.recursos ?? (typeof process !== "undefined" ? process.resourcesPath : "") ?? "";
-  const empacado = binarioEmpaquetado(plat, { ...opciones, recursos });
-  marcar("binario empaquetado", !!empacado, empacado || "ausente en app.asar.unpacked");
-  let instalado = "";
-  try {
-    instalado = opciones.paqueteInstalado ?? rutaPaqueteInstalado();
-  } catch (error) {
-    instalado = "";
-    marcar("paquete instalado", false, recortarDetalle(error));
-  }
-  if (instalado) marcar("paquete instalado", true, instalado);
-  else if (pasos.every((p) => p.nombre !== "paquete instalado")) marcar("paquete instalado", false, "node-llama-cpp no resuelve");
-  let entrada = null;
-  try {
-    entrada = asegurarCopiaMotor(datosDir, { ...opciones, recursos });
-    marcar("copia en datos", !!entrada, entrada || "no aplica fuera del instalador");
-  } catch (error) {
-    marcar("copia en datos", false, recortarDetalle(error));
-  }
+    let datosAddon = null;
+    try {
+      datosAddon = buscarAddon(carpetaPaquete(datosDir, plat.carpeta));
+    } catch (error) {
+      datosAddon = null;
+      marcar("binario descargado", false, recortarDetalle(error));
+    }
+    if (datosAddon) marcar("binario descargado", true, datosAddon);
+    else if (pasos.every((p) => p.nombre !== "binario descargado")) {
+      marcar("binario descargado", false, "ausente en la carpeta de datos");
+    }
+    const recursos = opciones.recursos ?? (typeof process !== "undefined" ? process.resourcesPath : "") ?? "";
+    let empacado = null;
+    try {
+      empacado = binarioEmpaquetado(plat, { ...opciones, recursos });
+    } catch (error) {
+      empacado = null;
+      marcar("binario empaquetado", false, recortarDetalle(error));
+    }
+    if (empacado) marcar("binario empaquetado", true, empacado);
+    else if (pasos.every((p) => p.nombre !== "binario empaquetado")) {
+      marcar("binario empaquetado", false, "ausente en app.asar.unpacked");
+    }
+    let instalado = "";
+    try {
+      instalado = opciones.paqueteInstalado ?? rutaPaqueteInstalado();
+    } catch (error) {
+      instalado = "";
+      marcar("paquete instalado", false, recortarDetalle(error));
+    }
+    if (instalado) marcar("paquete instalado", true, instalado);
+    else if (pasos.every((p) => p.nombre !== "paquete instalado")) marcar("paquete instalado", false, "node-llama-cpp no resuelve");
+    let entrada = null;
+    let origen = "ninguna";
+    try {
+      entrada = asegurarCopiaMotor(datosDir, { ...opciones, recursos });
+      origen = entrada ? "copia en datos" : "no aplica fuera del instalador";
+      marcar("entrada", !!entrada, entrada ? `${origen}: ${entrada}` : origen);
+    } catch (error) {
+      marcar("entrada", false, recortarDetalle(error));
+    }
   if (entrada) {
     try {
       await import(pathToFileURL(entrada).href);
-      marcar("importación", true, "la copia carga");
+      marcar("importación", true, "la entrada carga");
     } catch (error) {
       marcar("importación", false, recortarDetalle(error));
     }
@@ -433,6 +446,10 @@ export async function diagnosticoMotor(datosDir = carpetaDatos, opciones = {}) {
     }
   }
   return { plataforma: plat.carpeta, pasos };
+  } catch (error) {
+    pasos.push({ nombre: "diagnóstico", ok: false, detalle: recortarDetalle(error) });
+    return { plataforma: plat?.carpeta || null, pasos };
+  }
 }
 
 export async function instalarMotor(datosDir, opciones = {}) {

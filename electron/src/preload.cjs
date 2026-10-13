@@ -13,7 +13,7 @@ contextBridge.exposeInMainWorld("vigencia", {
   modelosRecomendados: () => ipcRenderer.invoke("modelos-recomendados"),
   motorEstado: () => ipcRenderer.invoke("motor-estado"),
   motorInstalar: () => ipcRenderer.invoke("motor-instalar"),
-  motorDiagnosticar: () => ipcRenderer.invoke("motor-diagnostico"),
+  motorDiagnostico: () => ipcRenderer.invoke("motor-diagnostico"),
   alMotor: (fn) => {
     const canal = (_evento, dato) => fn(dato);
     ipcRenderer.on("motor-progreso", canal);

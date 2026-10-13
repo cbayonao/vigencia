@@ -65,3 +65,19 @@ node licencia/emitir.mjs "$env:APPDATA\Vigencia\licencia.json"
 Ese comando activa esa instalación. No activa el programa instalado en otro computador.
 
 Para volver a ver la página de pago, vacía `token` y `visto` en el `licencia.json` de esa máquina, cierra con **Salir** y ábrela otra vez.
+
+## Actualizar la aplicación
+
+Vigencia avisa sola cuando hay versión nueva: revisa al arrancar y muestra el diálogo con la versión instalada y la disponible. También está en Menú ▸ **Buscar actualizaciones**. El botón **Descargar** baja el instalador y lo abre (en Linux muestra la carpeta para abrirlo a mano). **Omitir esta versión** silencia solo esa versión. Actualizar no toca los expedientes ni la licencia: siguen donde estaban.
+
+En Mac sin firma de Apple, la primera vez macOS puede decir que la app «está dañada»: es el bloqueo por falta de firma, no un daño real. Se abre con clic derecho ▸ Abrir, o una vez con `xattr -cr /Applications/Vigencia.app` en la terminal.
+
+## Si el motor nativo no arranca
+
+Los modelos GGUF necesitan el motor nativo; el modelo Sencillo no. En Menú ▸ **Modelos de IA**, el botón **Instalar motor** lo descarga en ese computador. Si aun así dice que el motor no está, pulse **Diagnosticar**: revisa paso a paso (plataforma, binario descargado, empaquetado, copia e importación) y el botón **Copiar detalle** deja el resultado listo para enviarlo al soporte. Al fallar, la aplicación repara sola su copia una vez antes de avisar.
+
+## Publicar una versión nueva (desde este repositorio)
+
+1. Suba `version` en `electron/package.json` (y `VERSION` en `landing/src/data.ts` si cambió lo visible).
+2. `git push origin main`: se validan tests y Terraform, y se arman los instaladores de Windows, Linux y Mac como artefactos.
+3. `git tag vX.Y.Z && git push origin vX.Y.Z`: arma de nuevo, crea el release de GitHub y espeja los instaladores al CDN con nombres estables (`Vigencia-Setup.exe`, `Vigencia.AppImage`, `Vigencia.deb`, `Vigencia.dmg`), más `version.json` para el aviso en la app. La tarjeta de Mac del landing se activa sola cuando el release trae el `.dmg`.

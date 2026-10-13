@@ -380,7 +380,7 @@ export async function diagnosticoMotor(datosDir = carpetaDatos, opciones = {}) {
   const arch = opciones.arch ?? process.arch;
   const plat = plataformaDe(platform, arch);
   marcar("plataforma", !!plat, plat ? `${platform}-${arch} usa ${plat.carpeta}` : `${platform}-${arch} no tiene motor preparado`);
-  if (!plat) return { plataforma: null, pasos };
+  if (!plat) return { plataforma: null, pasos, version: opciones.version || "" };
   try {
     let datosAddon = null;
     try {
@@ -413,7 +413,25 @@ export async function diagnosticoMotor(datosDir = carpetaDatos, opciones = {}) {
       marcar("paquete instalado", false, recortarDetalle(error));
     }
     if (instalado) marcar("paquete instalado", true, instalado);
-    else if (pasos.every((p) => p.nombre !== "paquete instalado")) marcar("paquete instalado", false, "node-llama-cpp no resuelve");
+    else {
+      // Se reintenta aquí para guardar el error exacto (la otra vía lo traga).
+      let causa = "";
+      try {
+        createRequire(import.meta.url).resolve("node-llama-cpp/package.json");
+      } catch (error) {
+        causa = recortarDetalle(error, 500);
+      }
+      marcar("paquete instalado", false, causa || "node-llama-cpp no resuelve");
+    }
+    try {
+      const nmAsar = path.join(recursos, "app.asar", "node_modules");
+      const entradas = fs.readdirSync(nmAsar)
+        .filter((e) => e === "node-llama-cpp" || e === "@node-llama-cpp")
+        .join(", ");
+      marcar("contenido empaquetado", true, entradas ? `en el asar: ${entradas}` : "node-llama-cpp no está en el asar");
+    } catch (error) {
+      marcar("contenido empaquetado", false, recortarDetalle(error));
+    }
     let entrada = null;
     let origen = "ninguna";
     try {
@@ -445,7 +463,7 @@ export async function diagnosticoMotor(datosDir = carpetaDatos, opciones = {}) {
       }
     }
   }
-  return { plataforma: plat.carpeta, pasos };
+  return { plataforma: plat.carpeta, version: opciones.version || "", pasos };
   } catch (error) {
     pasos.push({ nombre: "diagnóstico", ok: false, detalle: recortarDetalle(error) });
     return { plataforma: plat?.carpeta || null, pasos };

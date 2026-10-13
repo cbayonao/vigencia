@@ -2022,7 +2022,7 @@ $("motor-diagnosticar").addEventListener("click", async () => {
     caja.hidden = true;
     return;
   }
-  const lineas = [`Plataforma: ${respuesta.plataforma || "desconocida"}`];
+  const lineas = [`App: ${respuesta.version || "?" }`, `Plataforma: ${respuesta.plataforma || "desconocida"}`];
   for (const paso of respuesta.pasos || []) lineas.push(`${paso.ok ? "✓" : "✕"} ${paso.nombre}: ${paso.detalle}`);
   caja.textContent = lineas.join("\n");
   copiar.hidden = false;

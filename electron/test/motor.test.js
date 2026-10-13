@@ -205,6 +205,7 @@ test("el diagnóstico reporta cada paso sin tocar nada fuera del instalador", as
     "binario descargado",
     "binario empaquetado",
     "paquete instalado",
+    "contenido empaquetado",
     "entrada",
   ]);
   assert.equal(informe.pasos.every((p) => typeof p.ok === "boolean" && typeof p.detalle === "string"), true);

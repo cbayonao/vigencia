@@ -782,6 +782,7 @@ if (bloqueo) {
         return { ok: true, ...(await diagnosticoMotor(datosDir, {
           raiz: RAIZ,
           recursos: process.resourcesPath,
+          version: app.getVersion(),
           probar: true,
         })) };
       } catch (error) {

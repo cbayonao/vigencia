@@ -40,6 +40,7 @@ const estado = {
   puntual: false,
   expediente: null,
   informe: null,
+  ejemploDocx: null,
   relojPausa: 0,
   soloIds: null,
   automatica: null,
@@ -274,7 +275,7 @@ const comboDespacho = combo($("combo-despacho"), {
   },
 });
 const comboCliente = combo($("combo-cliente"), {
-  busca: "Buscar cliente",
+  busca: "Buscar abogado",
   onCambio(valor) {
     estado.cliente = valor;
     pintarLista();
@@ -294,6 +295,8 @@ const CAPAS = [
   "dialogo-informe",
   "dialogo-iniciar",
   "dialogo-ajustes",
+  "dialogo-biblioteca",
+  "dialogo-pieza",
 ];
 
 function cerrarMenuOpciones() {
@@ -377,8 +380,8 @@ function llenarFiltros() {
   }
   estado.despacho = comboDespacho.set(opcionesDespacho, estado.despacho);
   const opcionesCliente = [
-    { value: "todos", label: "Todos los clientes" },
-    { value: "sin", label: `Sin cliente (${sinCliente})` },
+    { value: "todos", label: "Todos los abogados" },
+    { value: "sin", label: `Sin abogado (${sinCliente})` },
   ];
   for (const cliente of estado.clientes) {
     opcionesCliente.push({
@@ -432,7 +435,7 @@ function pintarLista() {
   if (valorFiltro(estado.despacho)) activo.append(nodo("p", "", estado.despacho));
   if (valorFiltro(estado.cliente)) {
     const cliente = estado.clientes.find((item) => String(item.id) === estado.cliente);
-    const rotulo = estado.cliente === "sin" ? "Sin cliente" : (cliente ? etiquetaCliente(cliente, estado.clientes) : "");
+    const rotulo = estado.cliente === "sin" ? "Sin abogado" : (cliente ? etiquetaCliente(cliente, estado.clientes) : "");
     if (rotulo) activo.append(nodo("p", "", rotulo));
   }
   $("nota").hidden = true;
@@ -459,7 +462,10 @@ function pintarLista() {
     tarjeta.append(nodo("p", "titulo-lista", titulo));
     tarjeta.append(nodo("p", "radicado-lista mono", proceso.radicado || ""));
     if (contexto) tarjeta.append(nodo("p", "meta", contexto));
-    if (proceso.cliente_id) tarjeta.append(nodo("p", "meta cliente-lista", `Cliente · ${nombreCliente(proceso)}`));
+    if (proceso.cliente_id) {
+      const aQuien = texto(proceso.representado) ? ` · representa a ${texto(proceso.representado)}` : "";
+      tarjeta.append(nodo("p", "meta cliente-lista", `Abogado · ${nombreCliente(proceso)}${aQuien}`));
+    }
     const abrir = () => {
       if (tarjeta.dataset.vacio === "1") abrirVacio(proceso.radicado);
       else abrirId(proceso.id_proceso);
@@ -490,7 +496,7 @@ function vacioInicial() {
   detalle.replaceChildren();
   const caja = nodo("div", "vacio-detalle");
   caja.append(nodo("h2", "serif", "Elige un expediente"));
-  caja.append(nodo("p", "", "La lista va por la última actuación. Puedes buscar por radicado, parte, despacho, cliente o tipo. La tecla / enfoca el buscador."));
+  caja.append(nodo("p", "", "La lista va por la última actuación. Puedes buscar por radicado, parte, despacho, abogado o tipo. La tecla / enfoca el buscador."));
   detalle.append(caja);
 }
 
@@ -515,7 +521,7 @@ function abrirVacio(radicado) {
   cabecera.append(nodo("p", "radicado-grande mono", proceso.radicado || ""));
   cabecera.append(nodo("h2", "expediente-titulo serif", "No está en esta consulta"));
   cabecera.append(nodo("p", "despacho", "Este radicado no aparece en la Rama Judicial. La búsqueda en otro sistema queda para después."));
-  cabecera.append(nodo("p", "despacho", "Cuando la Rama devuelva el expediente podrás asignarle un cliente."));
+  cabecera.append(nodo("p", "despacho", "Cuando la Rama devuelva el expediente podrás asignarle un abogado."));
   detalle.append(cabecera);
   marcar();
 }
@@ -749,14 +755,14 @@ function seccionPartes(proceso) {
 function tarjetaCliente(proceso) {
   const caja = nodo("div", "cliente-caja");
   const arriba = nodo("div", "cliente-arriba");
-  arriba.append(nodo("p", "kicker", "Cliente"));
+  arriba.append(nodo("p", "kicker", "Abogado"));
   const cliente = proceso.cliente;
   if (!cliente) {
-    const asignar = nodo("button", "boton-cobre", "Asignar cliente");
+    const asignar = nodo("button", "boton-cobre", "Asignar abogado");
     asignar.type = "button";
     asignar.addEventListener("click", abrirAsignar);
     arriba.append(asignar);
-    caja.append(arriba, nodo("p", "despacho", "Este expediente no tiene cliente."));
+    caja.append(arriba, nodo("p", "despacho", "Este expediente no tiene abogado."));
     return caja;
   }
   const acciones = nodo("div", "cliente-acciones");
@@ -765,20 +771,149 @@ function tarjetaCliente(proceso) {
   cambiar.addEventListener("click", abrirAsignar);
   const menu = menuDesplegable({
     etiqueta: "⋯",
-    titulo: "Cliente",
+    titulo: "Abogado",
     items: [
-      { etiqueta: "Editar cliente", alHacer: () => abrirFormulario(cliente, false) },
-      { etiqueta: "Quitar cliente", alHacer: () => asignarA(null) },
+      { etiqueta: "Editar abogado", alHacer: () => abrirFormulario(cliente, false) },
+      { etiqueta: "Quitar abogado", alHacer: () => asignarA(null) },
     ],
   });
   acciones.append(cambiar, menu.raiz);
   arriba.append(acciones);
   const datos = nodo("div", "cliente-datos");
   datos.append(nodo("p", "cliente-nombre", nombreCliente(cliente)));
+  const identidad = [
+    texto(cliente.cedula) ? `C.C. ${texto(cliente.cedula)}` : "",
+    texto(cliente.tarjeta) ? `T.P. ${texto(cliente.tarjeta)}` : "",
+  ].filter(Boolean).join(" · ");
+  if (identidad) datos.append(nodo("p", "despacho", identidad));
   const contacto = [texto(cliente.telefonos), texto(cliente.email), texto(cliente.direccion)].filter(Boolean).join(" · ");
   if (contacto) datos.append(nodo("p", "despacho", contacto));
+  datos.append(controlRepresentado(proceso));
   caja.append(arriba, datos);
   return caja;
+}
+
+const ETIQUETA_ROL = {
+  demandante: "demandante",
+  demandado: "demandado",
+  defensor: "defensor",
+  curador: "curador",
+  otro: "tercero u otra parte",
+};
+
+function campoRepresentado(etiquetaTexto, valor, tipo = "text") {
+  const etiqueta = nodo("label", "etiqueta", etiquetaTexto);
+  const campo = document.createElement(tipo === "area" ? "textarea" : "input");
+  if (tipo !== "area") campo.type = "text";
+  campo.maxLength = tipo === "area" ? 300 : 80;
+  campo.value = valor || "";
+  campo.setAttribute("aria-label", etiquetaTexto);
+  etiqueta.append(campo);
+  return { etiqueta, campo };
+}
+
+function controlRepresentado(proceso) {
+  const fila = nodo("div", "representado");
+  const etiqueta = nodo("label", "etiqueta", "Representa a");
+  etiqueta.htmlFor = "representado-elige";
+  const opciones = [];
+  const select = document.createElement("select");
+  select.id = "representado-elige";
+  select.append(new Option("Sin indicar", ""));
+  for (const [rol] of ROLES_PARTE) {
+    for (const sujeto of proceso.sujetos || []) {
+      if (sujeto.rol_base !== rol || !texto(sujeto.nombre)) continue;
+      opciones.push({
+        rol,
+        nombre: texto(sujeto.nombre),
+        cedula: texto(sujeto.identificacion) || "",
+      });
+      select.append(new Option(`${texto(sujeto.nombre)} · ${ETIQUETA_ROL[rol] || rol}`, String(opciones.length - 1)));
+    }
+  }
+  select.append(new Option("Texto libre", "__libre"));
+  const libre = document.createElement("input");
+  libre.type = "text";
+  libre.maxLength = 200;
+  libre.placeholder = "Quién representa, si no está entre las partes";
+  libre.setAttribute("aria-label", "Representado en texto libre");
+  const cedula = campoRepresentado("Cédula", texto(proceso.cliente?.representado_cedula));
+  const direccion = campoRepresentado("Dirección de notificación", texto(proceso.cliente?.representado_direccion), "area");
+  const telefono = campoRepresentado("Teléfono", texto(proceso.cliente?.representado_telefono));
+  const datos = nodo("div", "representado-datos");
+  datos.append(cedula.etiqueta, direccion.etiqueta, telefono.etiqueta);
+  const actual = texto(proceso.cliente?.representado);
+  const rol = texto(proceso.cliente?.representado_rol);
+  const indice = opciones.findIndex((opcion) => opcion.rol === rol && opcion.nombre === actual);
+  if (indice >= 0) select.value = String(indice);
+  else if (actual) {
+    select.value = "__libre";
+    libre.value = actual;
+  }
+  libre.hidden = select.value !== "__libre";
+  datos.hidden = !select.value;
+  function pedido() {
+    if (!select.value) return { texto: "", rol: "", cedula: "", direccion: "", telefono: "" };
+    if (select.value === "__libre") {
+      return {
+        texto: libre.value,
+        rol: "",
+        cedula: cedula.campo.value,
+        direccion: direccion.campo.value,
+        telefono: telefono.campo.value,
+      };
+    }
+    const opcion = opciones[Number(select.value)];
+    return {
+      texto: opcion.nombre,
+      rol: opcion.rol,
+      cedula: cedula.campo.value,
+      direccion: direccion.campo.value,
+      telefono: telefono.campo.value,
+    };
+  }
+  select.addEventListener("change", () => {
+    libre.hidden = select.value !== "__libre";
+    datos.hidden = !select.value;
+    if (select.value === "__libre") {
+      if (!libre.value && actual) libre.value = actual;
+      libre.focus();
+      return;
+    }
+    if (!select.value) {
+      guardarRepresentadoEnFicha(pedido());
+      return;
+    }
+    const opcion = opciones[Number(select.value)];
+    const mismo = opcion.nombre === actual && opcion.rol === rol;
+    if (!mismo) {
+      cedula.campo.value = opcion.cedula || "";
+      direccion.campo.value = "";
+      telefono.campo.value = "";
+    }
+    guardarRepresentadoEnFicha(pedido());
+  });
+  libre.addEventListener("change", () => {
+    if (texto(libre.value)) guardarRepresentadoEnFicha(pedido());
+  });
+  for (const campo of [cedula.campo, direccion.campo, telefono.campo]) {
+    campo.addEventListener("change", () => {
+      if (texto(pedido().texto)) guardarRepresentadoEnFicha(pedido());
+    });
+  }
+  fila.append(etiqueta, select, libre, datos);
+  return fila;
+}
+
+async function guardarRepresentadoEnFicha(dato) {
+  if (!estado.idAbierto) return;
+  const respuesta = await window.vigencia.guardarRepresentado(estado.idAbierto, dato);
+  if (!respuesta.ok) {
+    ayuda(respuesta.error, true);
+    return;
+  }
+  await cargar();
+  await abrirId(estado.idAbierto);
 }
 
 function pintarActos() {
@@ -833,6 +968,59 @@ function pintarActos() {
   actos.append(linea);
 }
 
+function partesDelEscrito(proceso) {
+  const sujetos = proceso?.sujetos || [];
+  const nombres = (rol) => sujetos.filter((sujeto) => sujeto.rol_base === rol && texto(sujeto.nombre)).map((sujeto) => texto(sujeto.nombre));
+  const demandantes = nombres("demandante");
+  const demandados = nombres("demandado");
+  if (demandantes.length || demandados.length) {
+    return `${demandantes.join(", ") || "Sin demandante"} contra ${demandados.join(", ") || "Sin demandado"}`;
+  }
+  const otros = sujetos.map((sujeto) => texto(sujeto.nombre)).filter(Boolean);
+  return otros.join(", ") || "Sin partes cargadas";
+}
+
+function pintarCartaEscrito() {
+  const proceso = estado.detalle;
+  if (!proceso) return;
+  $("escrito-despacho").textContent = texto(proceso.despacho) || "Despacho de conocimiento";
+  $("escrito-radicado").textContent = proceso.radicado || "Sin radicado";
+  $("escrito-partes").textContent = partesDelEscrito(proceso);
+  $("escrito-referencia").value = "";
+  const abogado = nombreCliente(proceso.cliente);
+  const elige = $("escrito-quien-elige");
+  const quien = $("escrito-quien");
+  if (abogado) {
+    elige.hidden = true;
+    const representado = texto(proceso.cliente?.representado);
+    quien.textContent = representado
+      ? `Presenta ${abogado}, en representación de ${representado}.`
+      : `Presenta ${abogado}.`;
+    return;
+  }
+  const select = $("escrito-presenta");
+  select.replaceChildren();
+  const orden = ROLES_PARTE.map(([rol]) => rol);
+  const sujetos = (proceso.sujetos || [])
+    .filter((sujeto) => texto(sujeto.nombre))
+    .sort((a, b) => orden.indexOf(a.rol_base) - orden.indexOf(b.rol_base) || texto(a.nombre).localeCompare(texto(b.nombre), "es"));
+  for (const sujeto of sujetos) {
+    const rol = ETIQUETA_ROL[sujeto.rol_base] || sujeto.rol_base || "parte";
+    select.append(new Option(`${texto(sujeto.nombre)} · ${rol}`, texto(sujeto.nombre)));
+  }
+  if (!sujetos.length) select.append(new Option("Quien suscribe", ""));
+  elige.hidden = false;
+  quien.textContent = "Este expediente no tiene abogado. Elija la parte que presenta el escrito.";
+}
+
+function quitarDocxEscrito() {
+  estado.ejemploDocx = null;
+  const entrada = $("escrito-docx");
+  if (entrada) entrada.value = "";
+  $("escrito-docx-nota").textContent = "Si ya tiene un memorial, se usa para entender la forma y los pormenores.";
+  $("escrito-docx-quitar").hidden = true;
+}
+
 function abrirEscrito() {
   if (!estado.detalle?.id_proceso) return;
   estado.borrador = null;
@@ -848,6 +1036,9 @@ function abrirEscrito() {
   $("escrito-word").disabled = true;
   $("escrito-pdf").disabled = true;
   $("escrito-generar").disabled = false;
+  quitarDocxEscrito();
+  pintarCartaEscrito();
+  olvidarDudas("escrito");
   mostrarDialogo("dialogo-escrito");
   cargarModelosEscrito();
   $("escrito-prompt").focus();
@@ -857,7 +1048,7 @@ async function cargarModelosEscrito() {
   const select = $("escrito-modelo");
   select.replaceChildren();
   const respuesta = await window.vigencia.modelosListar();
-  const modelos = respuesta?.ok ? respuesta.modelos : [{ id: "sencillo", nombre: "Sencillo (incluido)", detalle: "" }];
+  const modelos = respuesta?.ok ? respuesta.modelos : [{ id: "sencillo", nombre: "Sencillo (plantilla básica)", detalle: "" }];
   const activo = respuesta?.ok ? respuesta.activo : "sencillo";
   for (const modelo of modelos) {
     const opcion = document.createElement("option");
@@ -867,17 +1058,24 @@ async function cargarModelosEscrito() {
     select.append(opcion);
   }
   select.value = modelos.some((modelo) => modelo.id === activo) ? activo : "sencillo";
-  $("escrito-modo").value = respuesta?.modo === "libre" ? "libre" : "fiel";
   pintarNotaModelo();
+  await pintarContextoGeneracion();
 }
 
 function pintarNotaModelo() {
   const select = $("escrito-modelo");
   const nota = $("escrito-modelo-nota");
   const elegido = select.selectedOptions[0];
-  nota.textContent = elegido?.title && elegido.value !== "sencillo"
-    ? elegido.title
-    : "Modelo Sencillo incluido: no descarga nada.";
+  const sencillo = !elegido || elegido.value === "sencillo";
+  nota.textContent = sencillo
+    ? "Plantilla básica: no usa modelo ni la biblioteca. Siempre arma el mismo memorial."
+    : (elegido.title || "");
+  const notaContexto = $("escrito-contexto-nota");
+  if (notaContexto) {
+    notaContexto.textContent = sencillo
+      ? "La plantilla básica no usa estas piezas."
+      : "Quite la marca para dejar una pieza por fuera solo esta vez.";
+  }
 }
 
 async function cargar() {
@@ -1163,9 +1361,11 @@ async function mostrarAgregado(numero) {
 function abrirFormulario(cliente, asignar) {
   estado.formAsignar = asignar;
   estado.editando = cliente?.id || null;
-  $("form-titulo").textContent = cliente ? "Editar cliente" : "Nuevo cliente";
+  $("form-titulo").textContent = cliente ? "Editar abogado" : "Nuevo abogado";
   $("cli-nombre").value = cliente?.nombre || "";
   $("cli-apellidos").value = cliente?.apellidos || "";
+  $("cli-cedula").value = cliente?.cedula || "";
+  $("cli-tarjeta").value = cliente?.tarjeta || "";
   $("cli-telefonos").value = cliente?.telefonos || "";
   $("cli-direccion").value = cliente?.direccion || "";
   $("cli-email").value = cliente?.email || "";
@@ -1187,6 +1387,8 @@ async function guardarFormulario(evento) {
     id: estado.editando,
     nombre: $("cli-nombre").value,
     apellidos: $("cli-apellidos").value,
+    cedula: $("cli-cedula").value,
+    tarjeta: $("cli-tarjeta").value,
     telefonos: $("cli-telefonos").value,
     direccion: $("cli-direccion").value,
     email: $("cli-email").value,
@@ -1215,14 +1417,20 @@ function pintarDirectorio() {
   const caja = $("directorio");
   caja.replaceChildren();
   if (!estado.clientes.length) {
-    caja.append(nodo("p", "nota", "Todavía no hay clientes."));
+    caja.append(nodo("p", "nota", "Todavía no hay abogados."));
     return;
   }
   for (const cliente of estado.clientes) {
     const fila = nodo("article", "persona");
     const info = nodo("div");
     info.append(nodo("h3", "", nombreCliente(cliente)));
-    const extra = [texto(cliente.telefonos), texto(cliente.email), texto(cliente.direccion)].filter(Boolean).join(" · ");
+    const extra = [
+      texto(cliente.cedula) ? `C.C. ${texto(cliente.cedula)}` : "",
+      texto(cliente.tarjeta) ? `T.P. ${texto(cliente.tarjeta)}` : "",
+      texto(cliente.telefonos),
+      texto(cliente.email),
+      texto(cliente.direccion),
+    ].filter(Boolean).join(" · ");
     if (extra) info.append(nodo("p", "", extra));
     const acciones = nodo("div", "hermanos");
     const editar = nodo("button", "boton-linea", "Editar");
@@ -1232,7 +1440,7 @@ function pintarDirectorio() {
     borrar.type = "button";
     borrar.addEventListener("click", () => {
       estado.borrarId = cliente.id;
-      $("borrar-texto").textContent = `¿Borrar a ${nombreCliente(cliente)}? Los expedientes quedan sin ese cliente. El expediente no se borra.`;
+      $("borrar-texto").textContent = `¿Borrar a ${nombreCliente(cliente)}? Los expedientes quedan sin ese abogado. El expediente no se borra.`;
       mostrarDialogo("dialogo-borrar");
       $("borrar-cancelar").focus();
     });
@@ -1255,7 +1463,7 @@ function pintarAsignar() {
   caja.replaceChildren();
   const lista = estado.clientes.filter((cliente) => nombreCliente(cliente).toLowerCase().includes(q));
   if (!lista.length) {
-    caja.append(nodo("p", "nota", "No hay clientes con ese nombre."));
+    caja.append(nodo("p", "nota", "No hay abogados con ese nombre."));
     return;
   }
   for (const cliente of lista) {
@@ -1313,7 +1521,7 @@ document.addEventListener("keydown", (evento) => {
   }
   if (evento.key === "Escape") {
     if (cima === "dialogo-cliente") cerrarFormulario();
-    else if (cima === "dialogo-ajustes" || cima === "dialogo-csv" || cima === "dialogo-borrar" || cima === "dialogo-eliminar" || cima === "dialogo-escrito" || cima === "dialogo-modelos" || cima === "dialogo-iniciar" || cima === "dialogo-informe" || cima === "dialogo-asignar" || cima === "dialogo-directorio") ocultarDialogo(cima);
+    else if (cima === "dialogo-ajustes" || cima === "dialogo-csv" || cima === "dialogo-borrar" || cima === "dialogo-eliminar" || cima === "dialogo-escrito" || cima === "dialogo-modelos" || cima === "dialogo-iniciar" || cima === "dialogo-informe" || cima === "dialogo-asignar" || cima === "dialogo-directorio" || cima === "dialogo-biblioteca" || cima === "dialogo-pieza") ocultarDialogo(cima);
     else if (cima === "dialogo-busqueda" && !$("dialogo-cerrar").hidden) ocultarDialogo(cima);
     return;
   }
@@ -1466,7 +1674,7 @@ $("informe").addEventListener("click", async () => {
     return;
   }
   const n = Number(respuesta.cantidad) || 0;
-  ayuda(n === 1 ? "Se guardó 1 informe en PDF." : `Se guardaron ${n} informes en PDF, uno por cliente.`);
+  ayuda(n === 1 ? "Se guardó 1 informe en PDF." : `Se guardaron ${n} informes en PDF, uno por abogado.`);
 });
 
 $("abrir-clientes").addEventListener("click", () => {
@@ -1518,6 +1726,7 @@ $("descargar").addEventListener("click", async () => {
 
 $("escrito-cancelar").addEventListener("click", () => ocultarDialogo("dialogo-escrito"));
 $("escrito-modelo").addEventListener("change", async () => {
+  olvidarDudas("escrito");
   pintarNotaModelo();
   const respuesta = await window.vigencia.modelosUsar($("escrito-modelo").value);
   if (!respuesta?.ok) {
@@ -1525,28 +1734,8 @@ $("escrito-modelo").addEventListener("change", async () => {
     $("escrito-error").textContent = respuesta?.error || "No pude cambiar el modelo.";
   }
 });
-$("escrito-modo").addEventListener("change", async () => {
-  const respuesta = await window.vigencia.modelosModo($("escrito-modo").value);
-  if (!respuesta?.ok) {
-    $("escrito-error").hidden = false;
-    $("escrito-error").textContent = respuesta?.error || "No pude cambiar el modo.";
-  } else {
-    estado.borrador = null;
-    $("escrito-word").disabled = true;
-    $("escrito-pdf").disabled = true;
-  }
-});
 $("escrito-config").addEventListener("click", abrirConfigModelos);
 $("abrir-modelos").addEventListener("click", abrirConfigModelos);
-$("config-modo").addEventListener("change", async () => {
-  const respuesta = await window.vigencia.modelosModo($("config-modo").value);
-  if (!respuesta?.ok) {
-    $("modelos-error").hidden = false;
-    $("modelos-error").textContent = respuesta?.error || "No pude cambiar el modo.";
-  } else {
-    $("escrito-modo").value = $("config-modo").value;
-  }
-});
 $("config-importar").addEventListener("click", async () => {
   const respuesta = await window.vigencia.modelosImportar();
   if (!respuesta?.ok) {
@@ -1561,8 +1750,6 @@ $("config-importar").addEventListener("click", async () => {
 });
 async function abrirConfigModelos() {
   await pintarModelos();
-  const actual = await window.vigencia.modelosListar();
-  $("config-modo").value = actual?.modo === "libre" ? "libre" : "fiel";
   mostrarDialogo("dialogo-modelos");
   $("modelos-cerrar").focus();
 }
@@ -1588,11 +1775,34 @@ function tarjetaModelo(item) {
   return tarjeta;
 }
 
+function pintarMotor(estado) {
+  const linea = $("motor-estado");
+  const boton = $("motor-instalar");
+  if (!estado?.plataforma) {
+    linea.textContent = "Este computador no tiene un motor preparado. Use el modelo Sencillo.";
+    boton.hidden = true;
+    return;
+  }
+  boton.hidden = false;
+  if (estado.listo) {
+    linea.textContent = "Motor listo en este computador.";
+    boton.textContent = "Volver a instalar";
+    boton.className = "boton-linea";
+  } else {
+    linea.textContent = "El motor no está instalado. Los modelos GGUF lo necesitan.";
+    boton.textContent = "Instalar motor";
+    boton.className = "boton-cobre";
+  }
+}
+
 async function pintarModelos() {
   const caja = $("modelos-lista");
   caja.replaceChildren();
   $("nubes-lista").replaceChildren();
   $("modelos-error").hidden = true;
+  const motor = await window.vigencia.motorEstado();
+  if (motor?.ok) pintarMotor(motor);
+  else $("motor-estado").textContent = motor?.error || "No pude revisar el motor.";
   const respuesta = await window.vigencia.modelosRecomendados();
   if (!respuesta?.ok) {
     $("modelos-error").hidden = false;
@@ -1763,6 +1973,31 @@ async function descargarRecomendado(item, boton, estadoLinea) {
   await cargarModelosEscrito();
 }
 
+$("motor-instalar").addEventListener("click", async () => {
+  const boton = $("motor-instalar");
+  const linea = $("motor-estado");
+  boton.disabled = true;
+  linea.textContent = "Descargando el motor…";
+  $("modelos-error").hidden = true;
+  const dejarDeEscuchar = window.vigencia.alMotor((avance) => {
+    if (avance?.fase === "extraer") linea.textContent = "Instalando el motor…";
+    else linea.textContent = porcentajeDescarga(avance?.recibidos, avance?.total);
+  });
+  let respuesta = null;
+  try {
+    respuesta = await window.vigencia.motorInstalar();
+  } finally {
+    dejarDeEscuchar();
+    boton.disabled = false;
+  }
+  if (!respuesta?.ok) {
+    $("modelos-error").hidden = false;
+    $("modelos-error").textContent = respuesta?.error || "No pude instalar el motor.";
+    linea.textContent = "No se pudo instalar el motor.";
+    return;
+  }
+  pintarMotor(respuesta);
+});
 $("modelos-cerrar").addEventListener("click", () => {
   ocultarDialogo("dialogo-modelos");
   if (dialogoAlFrente() === "dialogo-escrito") $("escrito-prompt").focus();
@@ -1771,14 +2006,90 @@ $("escrito-prompt").addEventListener("input", () => {
   estado.borrador = null;
   $("escrito-word").disabled = true;
   $("escrito-pdf").disabled = true;
+  olvidarDudas("escrito");
 });
+$("escrito-referencia").addEventListener("input", () => {
+  estado.borrador = null;
+  $("escrito-word").disabled = true;
+  $("escrito-pdf").disabled = true;
+  olvidarDudas("escrito");
+});
+$("escrito-docx").addEventListener("change", () => {
+  const archivo = $("escrito-docx").files?.[0];
+  if (!archivo) return;
+  if (!/\.docx$/i.test(archivo.name) || archivo.size > 1_500_000) {
+    $("escrito-error").hidden = false;
+    $("escrito-error").textContent = archivo.size > 1_500_000
+      ? "El Word es demasiado grande. Use uno de menos de 1,5 MB."
+      : "Adjunte un archivo .docx.";
+    quitarDocxEscrito();
+    return;
+  }
+  const lector = new FileReader();
+  lector.onload = () => {
+    const base64 = String(lector.result || "").split(",")[1] || "";
+    estado.ejemploDocx = { nombre: archivo.name, base64 };
+    $("escrito-docx-nota").textContent = archivo.name;
+    $("escrito-docx-quitar").hidden = false;
+    $("escrito-error").hidden = true;
+    olvidarDudas("escrito");
+  };
+  lector.readAsDataURL(archivo);
+});
+$("escrito-docx-quitar").addEventListener("click", () => quitarDocxEscrito());
+function olvidarDudas(prefijo) {
+  if (prefijo === "escrito") estado.dudasEscrito = null;
+  else estado.dudasIniciar = null;
+  const caja = $(`${prefijo}-dudas`);
+  if (!caja) return;
+  caja.hidden = true;
+  $(`${prefijo}-dudas-lista`).replaceChildren();
+  $(`${prefijo}-aclaracion`).value = "";
+  $(`${prefijo}-generar`).textContent = prefijo === "escrito" ? "Redactar" : "Generar documento";
+}
+
+function mostrarDudas(prefijo, preguntas) {
+  if (prefijo === "escrito") estado.dudasEscrito = preguntas;
+  else estado.dudasIniciar = preguntas;
+  const lista = $(`${prefijo}-dudas-lista`);
+  lista.replaceChildren();
+  for (const pregunta of preguntas) lista.append(nodo("li", "", pregunta));
+  $(`${prefijo}-dudas`).hidden = false;
+  $(`${prefijo}-vivo`).hidden = true;
+  $(`${prefijo}-vista`).hidden = true;
+  $(`${prefijo}-word`).disabled = true;
+  $(`${prefijo}-pdf`).disabled = true;
+  $(`${prefijo}-generar`).textContent = "Redactar con esta respuesta";
+  $(`${prefijo}-estado`).hidden = false;
+  $(`${prefijo}-estado`).textContent = "El modelo necesita estos datos para redactar. Responda una sola vez.";
+  $(`${prefijo}-aclaracion`).focus();
+}
+
+function aclaracionPendiente(prefijo) {
+  const preguntas = prefijo === "escrito" ? estado.dudasEscrito : estado.dudasIniciar;
+  if (!preguntas?.length) return null;
+  const respuesta = String($(`${prefijo}-aclaracion`).value || "").trim();
+  if (!respuesta) return null;
+  return { preguntas, respuesta };
+}
+
 $("escrito-generar").addEventListener("click", async () => {
   if (!estado.detalle?.id_proceso) return;
+  const aclaracion = aclaracionPendiente("escrito");
+  if (estado.dudasEscrito && !aclaracion) {
+    $("escrito-error").hidden = false;
+    $("escrito-error").textContent = "Escriba la respuesta a las preguntas.";
+    $("escrito-estado").hidden = true;
+    return;
+  }
   $("escrito-error").hidden = true;
   $("escrito-estado").hidden = false;
-  $("escrito-estado").textContent = String($("escrito-modelo").value || "").startsWith("nube:")
-    ? "Pidiendo el memorial al proveedor con su clave…"
-    : "Redactando en este computador…";
+  $("escrito-estado").textContent = aclaracion
+    ? "Redactando con su respuesta…"
+    : (String($("escrito-modelo").value || "").startsWith("nube:")
+      ? "Pidiendo el memorial al proveedor con su clave…"
+      : "Redactando en este computador…");
+  if (aclaracion) $("escrito-dudas").hidden = true;
   $("escrito-generar").disabled = true;
   $("escrito-word").disabled = true;
   $("escrito-pdf").disabled = true;
@@ -1815,6 +2126,13 @@ $("escrito-generar").addEventListener("click", async () => {
       estado.detalle.id_proceso,
       $("escrito-prompt").value,
       $("escrito-modelo").value,
+      excluirMarcadas("escrito-contexto"),
+      aclaracion,
+      {
+        referencia: $("escrito-referencia").value,
+        presenta: $("escrito-quien-elige").hidden ? "" : $("escrito-presenta").value,
+        ejemploDocx: estado.ejemploDocx?.base64 || "",
+      },
     );
   } finally {
     dejarDeEscuchar();
@@ -1824,14 +2142,22 @@ $("escrito-generar").addEventListener("click", async () => {
     $("escrito-error").hidden = false;
     $("escrito-error").textContent = respuesta.error;
     $("escrito-estado").hidden = true;
+    if (estado.dudasEscrito) $("escrito-dudas").hidden = false;
     return;
   }
+  if (respuesta.dudas?.length) {
+    mostrarDudas("escrito", respuesta.dudas);
+    return;
+  }
+  olvidarDudas("escrito");
   estado.borrador = {
     asunto: respuesta.asunto,
     secciones: respuesta.secciones,
-    origen: respuesta.modelo?.id?.startsWith("nube:") ? "nube" : "local",
+    origen: respuesta.origen === "nube" ? "nube" : "local",
   };
-  $("escrito-estado").textContent = `Borrador listo con ${respuesta.modelo?.nombre || "el modelo local"}. Revise la vista previa.`;
+  $("escrito-estado").textContent = respuesta.respaldo
+    ? "El modelo no respondió. Este texto es la plantilla básica. Puede guardarlo o generar de nuevo."
+    : `Borrador listo con ${respuesta.modelo?.nombre || "el modelo local"}. Revise la vista previa.`;
   $("escrito-vivo").hidden = true;
   const vista = $("escrito-vista");
   vista.hidden = false;
@@ -1864,6 +2190,178 @@ $("form-escrito").addEventListener("submit", (evento) => {
   $("escrito-generar").click();
 });
 $("informe-cerrar").addEventListener("click", () => ocultarDialogo("dialogo-informe"));
+
+function excluirMarcadas(id) {
+  const caja = $(id);
+  if (!caja) return [];
+  return [...caja.querySelectorAll("input[data-pieza]")]
+    .filter((input) => !input.checked)
+    .map((input) => Number(input.dataset.pieza));
+}
+
+function pintarContexto(caja, piezas) {
+  if (!caja) return;
+  const excluidos = new Set(excluirMarcadas(caja.id));
+  caja.replaceChildren();
+  const activas = (piezas || []).filter((pieza) => pieza.activa);
+  if (!activas.length) {
+    caja.append(nodo("p", "ayuda", "No hay piezas activas. Cree alguna en Biblioteca."));
+    return;
+  }
+  for (const pieza of activas) {
+    const etiqueta = nodo("label", "casilla");
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.dataset.pieza = String(pieza.id);
+    input.checked = !excluidos.has(Number(pieza.id));
+    input.addEventListener("change", () => {
+      olvidarDudas(caja.id === "iniciar-contexto" ? "iniciar" : "escrito");
+    });
+    etiqueta.append(input, document.createTextNode(`${pieza.nombre} · ${pieza.tipoNombre}`));
+    caja.append(etiqueta);
+  }
+}
+
+async function pintarContextoGeneracion() {
+  const respuesta = await window.vigencia.piezasListar();
+  estado.piezas = respuesta?.ok ? respuesta.piezas : [];
+  pintarContexto($("escrito-contexto"), estado.piezas);
+  pintarContexto($("iniciar-contexto"), estado.piezas);
+  if (!$("dialogo-biblioteca").hidden) pintarBiblioteca();
+}
+
+function errorBiblioteca(mensaje) {
+  const caja = $("biblioteca-error");
+  caja.hidden = !mensaje;
+  caja.textContent = mensaje || "";
+}
+
+function pintarBiblioteca() {
+  const caja = $("biblioteca-lista");
+  caja.replaceChildren();
+  const piezas = estado.piezas || [];
+  if (!piezas.length) {
+    caja.append(nodo("p", "nota", "Todavía no hay piezas. Cree una o importe un .txt."));
+    return;
+  }
+  for (const pieza of piezas) {
+    const tarjeta = nodo("article", `persona${pieza.activa ? "" : " pieza-off"}`);
+    const info = nodo("div");
+    info.append(nodo("h3", "", pieza.nombre));
+    info.append(nodo("p", "", `${pieza.tipoNombre}${pieza.activa ? "" : " · apagada"}`));
+    const preview = String(pieza.texto || "").replace(/\s+/g, " ").trim();
+    info.append(nodo("p", "ayuda", preview.length > 180 ? `${preview.slice(0, 180)}…` : preview));
+    tarjeta.append(info);
+    const acciones = nodo("div", "hermanos");
+    const editar = nodo("button", "boton-linea", "Editar");
+    editar.type = "button";
+    editar.addEventListener("click", () => abrirFormaPieza(pieza));
+    const interruptor = nodo("button", "boton-linea", pieza.activa ? "Apagar" : "Encender");
+    interruptor.type = "button";
+    interruptor.addEventListener("click", () => cambiarPieza(pieza));
+    const borrar = nodo("button", "boton-texto", "Borrar");
+    borrar.type = "button";
+    borrar.addEventListener("click", () => confirmarBorrarPieza(pieza, borrar));
+    acciones.append(editar, interruptor, borrar);
+    tarjeta.append(acciones);
+    caja.append(tarjeta);
+  }
+}
+
+async function cambiarPieza(pieza) {
+  errorBiblioteca("");
+  const respuesta = await window.vigencia.piezaActivar(pieza.id, !pieza.activa);
+  if (!respuesta?.ok) {
+    errorBiblioteca(respuesta?.error || "No pude cambiar la pieza.");
+    return;
+  }
+  await pintarContextoGeneracion();
+}
+
+async function confirmarBorrarPieza(pieza, boton) {
+  if (boton.dataset.confirmar !== "1") {
+    boton.dataset.confirmar = "1";
+    boton.textContent = "Confirmar";
+    return;
+  }
+  errorBiblioteca("");
+  const respuesta = await window.vigencia.piezaBorrar(pieza.id);
+  if (!respuesta?.ok) {
+    errorBiblioteca(respuesta?.error || "No pude borrar la pieza.");
+    return;
+  }
+  await pintarContextoGeneracion();
+}
+
+function abrirFormaPieza(pieza) {
+  estado.piezaId = pieza?.id || null;
+  $("pieza-titulo").textContent = pieza?.id ? "Editar pieza" : "Nueva pieza";
+  $("pieza-nombre").value = pieza?.nombre || "";
+  $("pieza-tipo").value = pieza?.tipo || "plantilla";
+  $("pieza-texto").value = pieza?.texto || "";
+  $("pieza-error").hidden = true;
+  mostrarDialogo("dialogo-pieza");
+  $("pieza-nombre").focus();
+}
+
+async function abrirBiblioteca() {
+  errorBiblioteca("");
+  await pintarContextoGeneracion();
+  mostrarDialogo("dialogo-biblioteca");
+  $("biblioteca-nueva").focus();
+}
+
+$("biblioteca-cerrar").addEventListener("click", () => ocultarDialogo("dialogo-biblioteca"));
+$("biblioteca-nueva").addEventListener("click", () => abrirFormaPieza(null));
+$("abrir-biblioteca").addEventListener("click", abrirBiblioteca);
+$("escrito-biblioteca").addEventListener("click", abrirBiblioteca);
+$("iniciar-biblioteca").addEventListener("click", abrirBiblioteca);
+$("pieza-cancelar").addEventListener("click", () => ocultarDialogo("dialogo-pieza"));
+async function tomarTxt(archivo, enFormulario) {
+  const leido = (await archivo.text()).replace(/^\uFEFF/, "");
+  const recortado = leido.length > 20000;
+  const textoPieza = leido.slice(0, 20000);
+  const nombre = archivo.name.replace(/\.txt$/i, "").slice(0, 120);
+  if (enFormulario) {
+    if (!$("pieza-nombre").value.trim()) $("pieza-nombre").value = nombre;
+    $("pieza-texto").value = textoPieza;
+  } else {
+    abrirFormaPieza({ nombre, tipo: "plantilla", texto: textoPieza });
+  }
+  if (recortado) {
+    $("pieza-error").hidden = false;
+    $("pieza-error").textContent = "Se tomaron los primeros 20000 caracteres.";
+  }
+}
+$("pieza-pegar").addEventListener("click", () => $("pieza-archivo").click());
+$("biblioteca-importar").addEventListener("click", () => $("biblioteca-archivo").click());
+$("pieza-archivo").addEventListener("change", async () => {
+  const archivo = $("pieza-archivo").files?.[0];
+  $("pieza-archivo").value = "";
+  if (archivo) await tomarTxt(archivo, true);
+});
+$("biblioteca-archivo").addEventListener("change", async () => {
+  const archivo = $("biblioteca-archivo").files?.[0];
+  $("biblioteca-archivo").value = "";
+  if (archivo) await tomarTxt(archivo, false);
+});
+$("form-pieza").addEventListener("submit", async (evento) => {
+  evento.preventDefault();
+  $("pieza-error").hidden = true;
+  const respuesta = await window.vigencia.piezaGuardar({
+    id: estado.piezaId,
+    nombre: $("pieza-nombre").value,
+    tipo: $("pieza-tipo").value,
+    texto: $("pieza-texto").value,
+  });
+  if (!respuesta?.ok) {
+    $("pieza-error").hidden = false;
+    $("pieza-error").textContent = respuesta?.error || "No pude guardar la pieza.";
+    return;
+  }
+  ocultarDialogo("dialogo-pieza");
+  await pintarContextoGeneracion();
+});
 
 // --- Iniciar proceso (demanda, tutela o petición, sin radicado) ---
 estado.iniciar = { tipo: null, borrador: null };
@@ -1935,6 +2433,7 @@ function invalidarInicial() {
   estado.iniciar.borrador = null;
   $("iniciar-word").disabled = true;
   $("iniciar-pdf").disabled = true;
+  olvidarDudas("iniciar");
 }
 
 function abrirIniciar() {
@@ -1951,11 +2450,13 @@ function abrirIniciar() {
   $("iniciar-word").disabled = true;
   $("iniciar-pdf").disabled = true;
   $("iniciar-generar").disabled = false;
+  olvidarDudas("iniciar");
   const select = $("iniciar-modelo");
   select.replaceChildren();
   mostrarDialogo("dialogo-iniciar");
+  pintarContextoGeneracion();
   window.vigencia.modelosListar().then((respuesta) => {
-    const modelos = respuesta?.ok ? respuesta.modelos : [{ id: "sencillo", nombre: "Sencillo (incluido)" }];
+    const modelos = respuesta?.ok ? respuesta.modelos : [{ id: "sencillo", nombre: "Sencillo (plantilla básica)" }];
     for (const modelo of modelos) {
       const opcion = document.createElement("option");
       opcion.value = modelo.id;
@@ -1966,6 +2467,7 @@ function abrirIniciar() {
   });
 }
 
+$("iniciar-modelo").addEventListener("change", () => olvidarDudas("iniciar"));
 $("iniciar").addEventListener("click", abrirIniciar);
 $("iniciar-cancelar").addEventListener("click", () => ocultarDialogo("dialogo-iniciar"));
 $("form-iniciar").addEventListener("submit", (evento) => {
@@ -1978,11 +2480,21 @@ $("iniciar-generar").addEventListener("click", async () => {
     $("iniciar-error").textContent = "Elija si inicia demanda, tutela o derecho de petición.";
     return;
   }
+  const aclaracion = aclaracionPendiente("iniciar");
+  if (estado.dudasIniciar && !aclaracion) {
+    $("iniciar-error").hidden = false;
+    $("iniciar-error").textContent = "Escriba la respuesta a las preguntas.";
+    $("iniciar-estado").hidden = true;
+    return;
+  }
   $("iniciar-error").hidden = true;
   $("iniciar-estado").hidden = false;
-  $("iniciar-estado").textContent = String($("iniciar-modelo").value || "").startsWith("nube:")
-    ? "Pidiendo el documento al proveedor con su clave…"
-    : "Redactando en este computador…";
+  $("iniciar-estado").textContent = aclaracion
+    ? "Redactando con su respuesta…"
+    : (String($("iniciar-modelo").value || "").startsWith("nube:")
+      ? "Pidiendo el documento al proveedor con su clave…"
+      : "Redactando en este computador…");
+  if (aclaracion) $("iniciar-dudas").hidden = true;
   $("iniciar-generar").disabled = true;
   $("iniciar-word").disabled = true;
   $("iniciar-pdf").disabled = true;
@@ -2014,7 +2526,13 @@ $("iniciar-generar").addEventListener("click", async () => {
   });
   let respuesta = null;
   try {
-    respuesta = await window.vigencia.iniciarGenerar(estado.iniciar.tipo, datosIniciales(), $("iniciar-modelo").value);
+    respuesta = await window.vigencia.iniciarGenerar(
+      estado.iniciar.tipo,
+      datosIniciales(),
+      $("iniciar-modelo").value,
+      excluirMarcadas("iniciar-contexto"),
+      aclaracion,
+    );
   } finally {
     dejarDeEscuchar();
   }
@@ -2023,19 +2541,27 @@ $("iniciar-generar").addEventListener("click", async () => {
     $("iniciar-error").hidden = false;
     $("iniciar-error").textContent = respuesta.error;
     $("iniciar-estado").hidden = true;
+    if (estado.dudasIniciar) $("iniciar-dudas").hidden = false;
     return;
   }
+  if (respuesta.dudas?.length) {
+    mostrarDudas("iniciar", respuesta.dudas);
+    return;
+  }
+  olvidarDudas("iniciar");
   const definicion = TIPOS_INICIALES[estado.iniciar.tipo];
   estado.iniciar.borrador = {
     asunto: respuesta.asunto,
     secciones: respuesta.secciones,
-    origen: respuesta.modelo?.id?.startsWith("nube:") ? "nube" : "local",
+    origen: respuesta.origen === "nube" ? "nube" : "local",
     titulo: definicion.titulo,
     presentante: datosIniciales().presentante,
     contraparte: datosIniciales().contraparte,
     autoridad: datosIniciales().autoridad,
   };
-  $("iniciar-estado").textContent = `Documento listo con ${respuesta.modelo?.nombre || "el modelo"}. Revise la vista previa. Cuando lo radique y tenga los 23 dígitos, agréguelo en la lista.`;
+  $("iniciar-estado").textContent = respuesta.respaldo
+    ? "El modelo no respondió. Este texto es la plantilla básica. Puede guardarlo o generar de nuevo."
+    : `Documento listo con ${respuesta.modelo?.nombre || "el modelo"}. Revise la vista previa. Cuando lo radique y tenga los 23 dígitos, agréguelo en la lista.`;
   $("iniciar-vivo").hidden = true;
   const vista = $("iniciar-vista");
   vista.hidden = false;

@@ -37,7 +37,7 @@
         <p class="marca">Vigencia</p>
         <h1 class="nombre serif">Procesos</h1>
       </div>
-      <input id="busqueda" class="busqueda" placeholder="Radicado, parte, despacho, cliente o actuación" aria-label="Buscar en la lista" autocomplete="off">
+      <input id="busqueda" class="busqueda" placeholder="Radicado, parte, despacho, abogado o actuación" aria-label="Buscar en la lista" autocomplete="off">
       <div class="acciones">
         <p class="resumen" id="resumen">Cargando la base…</p>
         <p class="resumen resumen-auto" id="ultima-auto" hidden></p>
@@ -53,11 +53,12 @@
               <div class="combo-separador"></div>
               <p class="combo-titulo">Agregar</p>
               <button type="button" class="combo-opcion" id="cargar-csv" role="menuitem">Cargar CSV</button>
-              <button type="button" class="combo-opcion" id="informe" role="menuitem" title="Un PDF por cliente con las actuaciones de hoy. Si un expediente no se movió hoy, incluye la última actuación.">Informe del día</button>
+              <button type="button" class="combo-opcion" id="informe" role="menuitem" title="Un PDF por abogado con las actuaciones de hoy. Si un expediente no se movió hoy, incluye la última actuación.">Informe del día</button>
               <div class="combo-separador"></div>
               <p class="combo-titulo">Aplicación</p>
-              <button type="button" class="combo-opcion" id="abrir-clientes" role="menuitem" title="Personas de esta aplicación, solo en este computador">Clientes</button>
+              <button type="button" class="combo-opcion" id="abrir-clientes" role="menuitem" title="Abogados de esta aplicación, solo en este computador">Abogados</button>
               <button type="button" class="combo-opcion" id="abrir-modelos" role="menuitem" title="Modelos locales y claves de proveedores en la nube">Modelos de IA</button>
+              <button type="button" class="combo-opcion" id="abrir-biblioteca" role="menuitem" title="Plantillas, ejemplos, normas y estilo para los escritos">Biblioteca del escrito</button>
               <button type="button" class="combo-opcion" id="abrir-ajustes" role="menuitem" title="Horas de la revisión automática">Revisión automática</button>
               <button type="button" class="combo-opcion" id="tema" role="menuitem" aria-pressed="false">Tema oscuro</button>
               <button type="button" class="combo-opcion" id="salir" role="menuitem" title="Cierra Vigencia del todo. Cerrar la ventana la deja en la bandeja">Salir</button>
@@ -87,7 +88,7 @@
           <div id="combo-tipo"></div>
           <p class="etiqueta">Despacho</p>
           <div id="combo-despacho"></div>
-          <p class="etiqueta">Cliente</p>
+          <p class="etiqueta">Abogado</p>
           <div id="combo-cliente"></div>
           <div class="filtro-activo" id="filtro-activo"></div>
           <p class="cuenta" id="cuenta"></p>
@@ -132,36 +133,40 @@
 
   <div class="cortina" id="dialogo-directorio" hidden>
     <div class="dialogo dialogo-ancho" role="dialog" aria-modal="true" aria-labelledby="dir-titulo">
-      <h2 class="serif dialogo-titulo" id="dir-titulo">Clientes</h2>
-      <p class="nota">Los clientes solo se guardan en este computador. Puedes asignarlos a un expediente y filtrar la lista.</p>
+      <h2 class="serif dialogo-titulo" id="dir-titulo">Abogados</h2>
+      <p class="nota">Los abogados solo se guardan en este computador. Puedes asignarlos a un expediente y filtrar la lista.</p>
       <div class="directorio" id="directorio"></div>
       <div class="fila-fin">
         <button type="button" class="boton-texto" id="dir-cerrar">Cerrar</button>
-        <button type="button" class="boton-cobre" id="dir-nuevo">Nuevo cliente</button>
+        <button type="button" class="boton-cobre" id="dir-nuevo">Nuevo abogado</button>
       </div>
     </div>
   </div>
 
   <div class="cortina" id="dialogo-asignar" hidden>
     <div class="dialogo" role="dialog" aria-modal="true" aria-labelledby="asig-titulo">
-      <h2 class="serif dialogo-titulo" id="asig-titulo">Asignar cliente</h2>
-      <input id="asig-busca" placeholder="Buscar por nombre" autocomplete="off" aria-label="Buscar cliente">
+      <h2 class="serif dialogo-titulo" id="asig-titulo">Asignar abogado</h2>
+      <input id="asig-busca" placeholder="Buscar por nombre" autocomplete="off" aria-label="Buscar abogado">
       <div class="directorio" id="asig-lista"></div>
       <div class="fila-fin">
         <button type="button" class="boton-texto" id="asig-cancelar">Cancelar</button>
-        <button type="button" class="boton-linea" id="asig-nuevo">Nuevo cliente</button>
+        <button type="button" class="boton-linea" id="asig-nuevo">Nuevo abogado</button>
       </div>
     </div>
   </div>
 
   <div class="cortina" id="dialogo-cliente" hidden>
     <form class="dialogo" id="form-cliente" role="dialog" aria-modal="true" aria-labelledby="form-titulo">
-      <h2 class="serif dialogo-titulo" id="form-titulo">Nuevo cliente</h2>
-      <p class="nota">El cliente es de esta aplicación. No sale del computador ni se envía a la Rama.</p>
+      <h2 class="serif dialogo-titulo" id="form-titulo">Nuevo abogado</h2>
+      <p class="nota">El abogado es de esta aplicación. No sale del computador ni se envía a la Rama.</p>
       <label class="etiqueta" for="cli-nombre">Nombre</label>
       <input id="cli-nombre" autocomplete="off" required>
       <label class="etiqueta" for="cli-apellidos">Apellidos</label>
       <input id="cli-apellidos" autocomplete="off">
+      <label class="etiqueta" for="cli-cedula">Cédula</label>
+      <input id="cli-cedula" autocomplete="off">
+      <label class="etiqueta" for="cli-tarjeta">Tarjeta profesional</label>
+      <input id="cli-tarjeta" autocomplete="off">
       <label class="etiqueta" for="cli-telefonos">Teléfonos</label>
       <input id="cli-telefonos" autocomplete="off">
       <label class="etiqueta" for="cli-direccion">Dirección</label>
@@ -178,7 +183,7 @@
 
   <div class="cortina" id="dialogo-borrar" hidden>
     <div class="dialogo" role="dialog" aria-modal="true" aria-labelledby="borrar-titulo">
-      <h2 class="serif dialogo-titulo" id="borrar-titulo">Borrar cliente</h2>
+      <h2 class="serif dialogo-titulo" id="borrar-titulo">Borrar abogado</h2>
       <p class="nota" id="borrar-texto"></p>
       <div class="fila-fin">
         <button type="button" class="boton-texto" id="borrar-cancelar">Cancelar</button>
@@ -188,26 +193,65 @@
   </div>
 
   <div class="cortina" id="dialogo-escrito" hidden>
-    <form class="dialogo dialogo-ancho" id="form-escrito" role="dialog" aria-modal="true" aria-labelledby="escrito-titulo">
-      <h2 class="serif dialogo-titulo" id="escrito-titulo">Escrito para el juzgado</h2>
-      <p class="nota">La IA corre en este computador. Redacta el memorial con el juzgado, el radicado, las partes y las actuaciones de este expediente. Revise la vista previa antes de descargarlo.</p>
-      <div class="fila-modelo">
-        <div class="campo-modelo">
+    <form class="dialogo dialogo-escrito" id="form-escrito" role="dialog" aria-modal="true" aria-labelledby="escrito-titulo">
+      <div class="escrito-cabeza">
+        <div>
+          <h2 class="serif dialogo-titulo" id="escrito-titulo">Escrito para el juzgado</h2>
+          <p class="nota">El encabezado sale del expediente. Abajo cuente qué quiere decirle al despacho.</p>
+        </div>
+        <div class="escrito-modelo">
           <label class="etiqueta" for="escrito-modelo">Modelo</label>
           <select id="escrito-modelo"></select>
+          <button type="button" class="boton-linea" id="escrito-config" title="Modelos locales y claves en la nube">Modelos</button>
+          <button type="button" class="boton-linea" id="escrito-biblioteca" title="Plantillas, ejemplos, normas y estilo">Biblioteca</button>
         </div>
-        <div class="campo-fidelidad">
-          <label class="etiqueta" for="escrito-modo">Texto</label>
-          <select id="escrito-modo" title="Fiel: solo entra lo que conserva el sentido del expediente. Libre: entra el texto del modelo tal cual, aunque alucine.">
-            <option value="fiel">Fiel</option>
-            <option value="libre">Libre</option>
-          </select>
-        </div>
-        <button type="button" class="boton-linea" id="escrito-config" title="Modelos locales, claves en la nube y fidelidad del texto">Modelos</button>
       </div>
-      <p class="ayuda" id="escrito-modelo-nota">Modelo Sencillo incluido: no descarga nada.</p>
-      <label class="etiqueta" for="escrito-prompt">Petición</label>
-      <textarea id="escrito-prompt" placeholder="Ejemplo: solicito impulso porque el proceso está quieto desde hace meses."></textarea>
+      <p class="ayuda" id="escrito-modelo-nota">Plantilla básica: no descarga nada.</p>
+      <section class="carta-escrito" aria-label="Encabezado del escrito">
+        <p class="juez">Señor Juez</p>
+        <p class="despacho" id="escrito-despacho"></p>
+        <p class="esd">E. S. D.</p>
+        <dl class="carta-ref">
+          <div>
+            <dt><label for="escrito-referencia">Referencia</label></dt>
+            <dd><input id="escrito-referencia" maxlength="80" autocomplete="off" placeholder="Impulso procesal"></dd>
+          </div>
+          <div>
+            <dt>Radicado</dt>
+            <dd class="mono" id="escrito-radicado"></dd>
+          </div>
+          <div>
+            <dt>Partes</dt>
+            <dd id="escrito-partes"></dd>
+          </div>
+        </dl>
+        <p class="escrito-quien" id="escrito-quien"></p>
+        <div id="escrito-quien-elige" hidden>
+          <label class="etiqueta" for="escrito-presenta">Quién presenta</label>
+          <select id="escrito-presenta"></select>
+        </div>
+      </section>
+      <label class="etiqueta" for="escrito-prompt">Qué debe decir el escrito</label>
+      <textarea id="escrito-prompt" placeholder="Una idea basta. Por ejemplo: sustituir el poder a la doctora Ana López, o pedir impulso porque el proceso está quieto desde el último auto."></textarea>
+      <p class="ayuda">La referencia, si la deja vacía, se resume en tres a cinco palabras a partir de este texto.</p>
+      <div class="escrito-docx">
+        <label class="boton-linea archivo-boton">Adjuntar un .docx
+          <input id="escrito-docx" class="archivo-oculto" type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
+        </label>
+        <p class="ayuda" id="escrito-docx-nota">Si ya tiene un memorial, se usa para entender la forma y los pormenores.</p>
+        <button type="button" class="boton-texto" id="escrito-docx-quitar" hidden>Quitar</button>
+      </div>
+      <details class="escrito-extra">
+        <summary>Piezas de la biblioteca para este escrito</summary>
+        <p class="ayuda" id="escrito-contexto-nota">Quite la marca para dejar una pieza por fuera solo esta vez.</p>
+        <div id="escrito-contexto" class="contexto-lista"></div>
+      </details>
+      <div id="escrito-dudas" hidden>
+        <p class="etiqueta">Preguntas</p>
+        <ol id="escrito-dudas-lista" class="dudas-lista"></ol>
+        <label class="etiqueta" for="escrito-aclaracion">Su respuesta</label>
+        <textarea id="escrito-aclaracion" placeholder="Responda en este espacio. Con esto se redacta el escrito."></textarea>
+      </div>
       <p class="ayuda error" id="escrito-error" hidden></p>
       <p class="ayuda" id="escrito-estado" hidden></p>
       <div id="escrito-vivo" hidden></div>
@@ -216,7 +260,7 @@
         <button type="button" class="boton-texto" id="escrito-cancelar">Cancelar</button>
         <button type="button" class="boton-linea" id="escrito-word" disabled>Guardar Word</button>
         <button type="button" class="boton-linea" id="escrito-pdf" disabled>Descargar PDF</button>
-        <button type="button" class="boton-cobre" id="escrito-generar">Generar documento</button>
+        <button type="button" class="boton-cobre" id="escrito-generar">Redactar</button>
       </div>
     </form>
   </div>
@@ -224,16 +268,15 @@
   <div class="cortina" id="dialogo-modelos" hidden>
     <div class="dialogo dialogo-ancho" role="dialog" aria-modal="true" aria-labelledby="modelos-titulo">
       <h2 class="serif dialogo-titulo" id="modelos-titulo">Modelos de IA</h2>
-      <p class="nota">Aquí se configuran los modelos. Al generar el documento solo aparecen los configurados: el Sencillo, los GGUF instalados y los proveedores con clave guardada.</p>
+      <p class="nota">Aquí se configuran los modelos. Al generar el documento solo aparecen los configurados: la plantilla básica, los GGUF instalados y los proveedores con clave guardada.</p>
       <div class="fila-modelo">
-        <div class="campo-fidelidad">
-          <label class="etiqueta" for="config-modo">Texto del modelo</label>
-          <select id="config-modo" title="Fiel: solo entra lo que conserva el sentido del expediente. Libre: entra el texto del modelo tal cual, aunque alucine.">
-            <option value="fiel">Fiel</option>
-            <option value="libre">Libre</option>
-          </select>
-        </div>
         <button type="button" class="boton-linea" id="config-importar" title="Traer un archivo .gguf de este computador">Importar .gguf</button>
+      </div>
+      <h3 class="modelos-sub">Motor nativo</h3>
+      <p class="nota">Los modelos GGUF lo necesitan en este computador. Si el instalador no lo trajo, se descarga aquí y queda junto a sus expedientes. El modelo Sencillo no lo usa.</p>
+      <div class="fila-modelo">
+        <p class="ayuda" id="motor-estado">Revisando el motor…</p>
+        <button type="button" class="boton-cobre" id="motor-instalar">Instalar motor</button>
       </div>
       <h3 class="modelos-sub">Modelos locales (en este computador)</h3>
       <p class="nota">Se descargan una sola vez de Hugging Face y después trabajan sin internet.</p>
@@ -261,6 +304,16 @@
           <label class="etiqueta" for="iniciar-modelo">Modelo</label>
           <select id="iniciar-modelo"></select>
         </div>
+        <button type="button" class="boton-linea" id="iniciar-biblioteca" title="Plantillas, ejemplos, normas y estilo">Biblioteca</button>
+      </div>
+      <p class="ayuda">Con un modelo, la estructura la decide el escrito. La plantilla básica sigue el índice del artículo.</p>
+      <p class="etiqueta">Contexto de esta generación</p>
+      <div id="iniciar-contexto" class="contexto-lista"></div>
+      <div id="iniciar-dudas" hidden>
+        <p class="etiqueta">Preguntas</p>
+        <ol id="iniciar-dudas-lista" class="dudas-lista"></ol>
+        <label class="etiqueta" for="iniciar-aclaracion">Su respuesta</label>
+        <textarea id="iniciar-aclaracion" placeholder="Responda en este espacio. Con esto se redacta el escrito."></textarea>
       </div>
       <p class="ayuda error" id="iniciar-error" hidden></p>
       <p class="ayuda" id="iniciar-estado" hidden></p>
@@ -313,6 +366,43 @@
       <p class="ayuda error" id="aj-error" hidden></p>
       <div class="fila-fin">
         <button type="button" class="boton-texto" id="aj-cancelar">Cancelar</button>
+        <button type="submit" class="boton-cobre">Guardar</button>
+      </div>
+    </form>
+  </div>
+  <div class="cortina" id="dialogo-biblioteca" hidden>
+    <div class="dialogo dialogo-ancho" role="dialog" aria-modal="true" aria-labelledby="biblioteca-titulo">
+      <h2 class="serif dialogo-titulo" id="biblioteca-titulo">Biblioteca del escrito</h2>
+      <p class="nota">Plantillas, ejemplos, normas y estilo de este computador. Entran al memorial cuando están activas. Borrar una pieza no toca los expedientes. Con un modelo en la nube, estas piezas salen a internet igual que el escrito.</p>
+      <p class="ayuda error" id="biblioteca-error" hidden></p>
+      <div class="directorio" id="biblioteca-lista"></div>
+      <input id="biblioteca-archivo" class="archivo-oculto" type="file" accept=".txt,text/plain">
+      <div class="fila-fin">
+        <button type="button" class="boton-texto" id="biblioteca-cerrar">Cerrar</button>
+        <button type="button" class="boton-linea" id="biblioteca-importar">Importar .txt</button>
+        <button type="button" class="boton-cobre" id="biblioteca-nueva">Nueva pieza</button>
+      </div>
+    </div>
+  </div>
+  <div class="cortina" id="dialogo-pieza" hidden>
+    <form class="dialogo" id="form-pieza" role="dialog" aria-modal="true" aria-labelledby="pieza-titulo">
+      <h2 class="serif dialogo-titulo" id="pieza-titulo">Nueva pieza</h2>
+      <label class="etiqueta" for="pieza-nombre">Nombre</label>
+      <input id="pieza-nombre" maxlength="120" autocomplete="off">
+      <label class="etiqueta" for="pieza-tipo">Tipo</label>
+      <select id="pieza-tipo">
+        <option value="plantilla">Plantilla</option>
+        <option value="ejemplo">Ejemplo</option>
+        <option value="norma">Norma</option>
+        <option value="estilo">Estilo</option>
+      </select>
+      <label class="etiqueta" for="pieza-texto">Texto</label>
+      <textarea id="pieza-texto" placeholder="Pegue la plantilla, el ejemplo, el artículo o la instrucción de estilo."></textarea>
+      <input id="pieza-archivo" class="archivo-oculto" type="file" accept=".txt,text/plain">
+      <p class="ayuda error" id="pieza-error" hidden></p>
+      <div class="fila-fin">
+        <button type="button" class="boton-texto" id="pieza-cancelar">Cancelar</button>
+        <button type="button" class="boton-linea" id="pieza-pegar">Pegar desde .txt</button>
         <button type="submit" class="boton-cobre">Guardar</button>
       </div>
     </form>

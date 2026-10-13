@@ -1,0 +1,75 @@
+# Al pushear un tag v* (ej. git tag v3.2.0 && git push origin v3.2.0):
+# 1) arma los instaladores en su SO nativo, 2) crea el release de GitHub
+# con esos artefactos, 3) los espeja a S3 con nombres estables, que son
+# los que enlaza el landing (el repo es privado: sus releases no son
+# descargables por el público). Requiere AWS_ROLE_ARN.
+name: Publicar release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  armar:
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - os: ubuntu-latest
+            comando: dist:linux
+          - os: windows-latest
+            comando: dist:win
+          - os: macos-latest
+            comando: dist:mac
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: electron/package-lock.json
+      - run: npm ci
+        working-directory: electron
+      - run: npm run ${{ matrix.comando }}
+        working-directory: electron
+      - uses: actions/upload-artifact@v4
+        with:
+          name: instaladores-${{ runner.os }}
+          path: electron/dist/Vigencia*
+          if-no-files-found: error
+          retention-days: 30
+
+  publicar:
+    needs: armar
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: instaladores-*
+          merge-multiple: true
+          path: instaladores
+      - run: ls -la instaladores/
+      - run: gh release create "$TAG" --title "$TAG" --generate-notes instaladores/Vigencia*
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+
+  espejar:
+    needs: publicar
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-east-1
+      - run: ./electron/script/publicar-descargas.sh "$TAG"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}

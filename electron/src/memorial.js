@@ -17,15 +17,17 @@ function pieHtml(origen) {
 }
 
 const EXCLUIDOS_CUERPO = new Set(["Destinatario", "Referencia"]);
+const SIN_TITULO = new Set([
+  "Presentación", "Antecedentes", "Hechos", "Fundamentos", "Peticiones",
+  "Pruebas", "Anexos", "Notificaciones", "Cuerpo", "Cierre", "Escrito",
+]);
 
 function referenciaHtml(ficha, asunto) {
-  const proceso = [texto(ficha?.tipo_proceso), texto(ficha?.clase_proceso)].filter(Boolean).join(" · ");
   const filas = [
+    ["Referencia", texto(ficha?.referencia) || asunto || "Memorial", false],
     ["Radicado", texto(ficha?.radicado) || "sin número", true],
-    ["Proceso", proceso || "—", false],
     ["Demandante", texto(ficha?.demandantes) || "no figura en el expediente", false],
     ["Demandado", texto(ficha?.demandados) || "no figura en el expediente", false],
-    ["Asunto", asunto || "Memorial", false],
   ];
   return `<table class="ref">${filas.map(([clave, valor, mono]) => `
     <tr><th>${html(clave)}</th><td${mono ? ' class="mono"' : ""}>${html(valor)}</td></tr>`).join("")}
@@ -41,7 +43,8 @@ function cuerpoHtml(secciones) {
         if (cierre && /___/.test(parrafo)) return `<p class="firma">${html(parrafo)}</p>`;
         return `<p>${html(parrafo)}</p>`;
       }).join("");
-      return `<section><h2>${html(seccion.titulo)}</h2>${parrafos}</section>`;
+      const titulo = SIN_TITULO.has(seccion.titulo) ? "" : `<h2>${html(seccion.titulo)}</h2>`;
+      return `<section>${titulo}${parrafos}</section>`;
     }).join("");
 }
 
@@ -73,8 +76,7 @@ const ESTILOS = `
 
 export function vistaMemorial({ asunto, secciones, ficha, fecha, origen }) {
   return `<div class="doc-hoja">
-    <p class="marca">Vigencia · memorial</p>
-    <h1>${html(asunto || "Memorial")}</h1>
+    <p class="marca">Vista previa</p>
     ${destinoHtml(ficha, fecha)}
     ${referenciaHtml(ficha, asunto)}
     ${cuerpoHtml(secciones)}
@@ -93,7 +95,6 @@ export function htmlMemorial({ asunto, secciones, ficha, fecha, origen }) {
 <body>
   <div class="hoja">
     ${destinoHtml(ficha, fecha)}
-    <h1>${html(asunto || "Memorial")}</h1>
     ${referenciaHtml(ficha, asunto)}
     ${cuerpoHtml(secciones)}
     ${pieHtml(origen)}

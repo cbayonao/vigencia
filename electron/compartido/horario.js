@@ -135,7 +135,7 @@ export function resumenCambios(avisos, maximoLineas = 4) {
       porProceso.set(clave, {
         id_proceso: aviso.id_proceso ?? null,
         radicado: aviso.radicado || "",
-        cliente: nombreDe(aviso) || "Sin cliente",
+        cliente: nombreDe(aviso) || "Sin abogado",
         total: 0,
         tipos: new Map(),
       });

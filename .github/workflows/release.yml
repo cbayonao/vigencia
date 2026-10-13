@@ -1,0 +1,44 @@
+# Arma los instaladores en cada cambio de electron/** en main y los deja
+# como artefactos (30 días). Es el semáforo antes de crear un tag v*:
+# si un instalador sale con el verificador del motor en rojo, el build
+# falla aquí y ese tag no se publica.
+name: Armar instaladores
+
+on:
+  push:
+    branches: [main]
+    paths: ["electron/**"]
+
+permissions:
+  contents: read
+
+jobs:
+  armar:
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - os: ubuntu-latest
+            comando: dist:linux
+          - os: windows-latest
+            comando: dist:win
+          - os: macos-latest
+            comando: dist:mac
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: electron/package-lock.json
+      - run: npm ci
+        working-directory: electron
+      - run: npm run ${{ matrix.comando }}
+        working-directory: electron
+      - uses: actions/upload-artifact@v4
+        with:
+          name: instaladores-${{ runner.os }}
+          path: electron/dist/Vigencia*
+          if-no-files-found: error
+          retention-days: 30

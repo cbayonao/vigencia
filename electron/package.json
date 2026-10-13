@@ -13,7 +13,11 @@
     "start": "electron .",
     "test": "node --test",
     "dist:linux": "electron-builder --linux AppImage deb",
-    "dist:win": "node script/nsis-sin-wine.mjs && electron-builder --win nsis"
+    "postdist:linux": "node script/verificar-motor.mjs dist/linux-unpacked linux-x64",
+    "dist:win": "node script/traer-win.mjs && node script/nsis-sin-wine.mjs && electron-builder --win nsis",
+    "postdist:win": "node script/verificar-motor.mjs dist/win-unpacked win-x64",
+    "dist:mac": "electron-builder --mac dmg",
+    "postdist:mac": "node script/verificar-motor.mjs dist/mac mac-arm64"
   },
   "build": {
     "appId": "co.vigencia.app",
@@ -33,9 +37,18 @@
       "compartido/**/*",
       "package.json",
       "node_modules/node-llama-cpp/**/*",
-      "!node_modules/node-llama-cpp/llama/**",
+      "!node_modules/node-llama-cpp/llama/llama.cpp/**",
+      "!node_modules/node-llama-cpp/llama/gitRelease.bundle",
+      "!node_modules/node-llama-cpp/llama/localBuilds/**",
+      "!node_modules/node-llama-cpp/llama/addon/**",
       "node_modules/@node-llama-cpp/linux-x64/**/*",
       "node_modules/@node-llama-cpp/win-x64/**/*",
+      "node_modules/@node-llama-cpp/mac-arm64/**/*",
+      "node_modules/@node-llama-cpp/mac-x64/**/*",
+      "!node_modules/@node-llama-cpp/linux-arm64/**/*",
+      "!node_modules/@node-llama-cpp/linux-armv7l/**/*",
+      "!node_modules/@node-llama-cpp/linux-x64-cuda*/**/*",
+      "!node_modules/@node-llama-cpp/linux-x64-vulkan/**/*",
       "!script/**"
     ],
     "linux": {
@@ -44,7 +57,7 @@
         "deb"
       ],
       "category": "Office",
-      "artifactName": "Vigencia-${version}.${ext}",
+      "artifactName": "Vigencia.${ext}",
       "synopsis": "Consulta local de procesos judiciales",
       "maintainer": "Vigencia <vigencia@localhost>",
       "syncDesktopName": true,
@@ -54,7 +67,7 @@
       "target": [
         "nsis"
       ],
-      "artifactName": "Vigencia-Setup-${version}.${ext}",
+      "artifactName": "Vigencia-Setup.${ext}",
       "signAndEditExecutable": false,
       "signExecutable": false,
       "icon": "build/icon.ico"
@@ -66,6 +79,13 @@
       "allowElevation": true,
       "deleteAppDataOnUninstall": false,
       "shortcutName": "Vigencia"
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "artifactName": "Vigencia.${ext}",
+      "category": "public.app-category.productivity"
     }
   },
   "devDependencies": {

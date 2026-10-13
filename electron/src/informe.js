@@ -15,11 +15,11 @@ export function fechaInforme(dia) {
 }
 
 export function nombreArchivoInforme(cliente, dia, usados = new Set()) {
-  const limpio = (nombreCliente(cliente) || "Cliente")
+  const limpio = (nombreCliente(cliente) || "Abogado")
     .replace(/[\\/:*?"<>|]+/g, " ")
     .replace(/\s+/g, " ")
     .trim()
-    .slice(0, 80) || "Cliente";
+    .slice(0, 80) || "Abogado";
   let nombre = `Informe ${dia} ${limpio}.pdf`;
   let n = 2;
   while (usados.has(nombre.toLocaleLowerCase("es"))) {
@@ -83,13 +83,19 @@ function bloqueProceso(proceso) {
 export function htmlInforme(informe, dia) {
   const cliente = informe.cliente || {};
   const procesos = informe.procesos || [];
-  const contacto = [texto(cliente.telefonos), texto(cliente.email), texto(cliente.direccion)].filter(Boolean).join(" · ");
+  const contacto = [
+    texto(cliente.cedula) ? `C.C. ${texto(cliente.cedula)}` : "",
+    texto(cliente.tarjeta) ? `T.P. ${texto(cliente.tarjeta)}` : "",
+    texto(cliente.telefonos),
+    texto(cliente.email),
+    texto(cliente.direccion),
+  ].filter(Boolean).join(" · ");
   const cuenta = procesos.length === 1 ? "1 expediente" : `${procesos.length} expedientes`;
   return `<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="utf-8">
-  <title>Informe ${html(dia)} ${html(nombreCliente(cliente) || "Cliente")}</title>
+  <title>Informe ${html(dia)} ${html(nombreCliente(cliente) || "Abogado")}</title>
   <style>
     @page { size: A4; margin: 16mm 14mm; }
     body { margin: 0; color: #221c16; font-family: "Liberation Sans", "Segoe UI", sans-serif; font-size: 12px; line-height: 1.45; }
@@ -115,7 +121,7 @@ export function htmlInforme(informe, dia) {
   <p class="marca">Vigencia</p>
   <h1>Informe diario</h1>
   <p class="fecha">${html(fechaInforme(dia))}</p>
-  <p class="cliente">${html(nombreCliente(cliente) || "Cliente")}</p>
+  <p class="cliente">${html(nombreCliente(cliente) || "Abogado")}</p>
   ${contacto ? `<p class="contacto">${html(contacto)}</p>` : ""}
   <p class="cuenta">${cuenta}</p>
   ${procesos.map(bloqueProceso).join("")}

@@ -1,0 +1,4 @@
+# Ejemplo. Cópialo a terraform.tfvars (no va a git) solo si cambias los valores.
+# dominio     = "vigencia.askleia.co"
+# bucket      = "vigencia-askleia-co-sitio"
+# price_class = "PriceClass_All"

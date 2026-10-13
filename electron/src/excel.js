@@ -41,7 +41,7 @@ export function libroExcel({ procesos = [], actuaciones = [] }) {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <?mso-application progid="Excel.Sheet"?>
 <Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
-${hoja("Expedientes", ["Radicado", "Despacho", "Tipo", "Clase", "Demandantes", "Demandados", "Cliente", "Última actuación", "Fecha última actuación"], expedientes)}
+${hoja("Expedientes", ["Radicado", "Despacho", "Tipo", "Clase", "Demandantes", "Demandados", "Abogado", "Última actuación", "Fecha última actuación"], expedientes)}
 ${hoja("Del día", ["Radicado", "Despacho", "Fecha", "Actuación", "Anotación"], delDia)}
 </Workbook>
 `;

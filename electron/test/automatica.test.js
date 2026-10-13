@@ -89,7 +89,7 @@ test("la base guarda las horas validadas y rechaza más de dos o repetidas", () 
   const tmp = temporal();
   try {
     assert.deepEqual(leerHorarios(tmp.db), ["07:00", "13:00"]);
-    assert.equal(Number(uno(tmp.db, "SELECT COUNT(*) AS n FROM schema_migracion").n), 4);
+    assert.equal(Number(uno(tmp.db, "SELECT COUNT(*) AS n FROM schema_migracion").n), 7);
     assert.deepEqual(guardarHorarios(tmp.db, ["18:00", "06:30"]), ["06:30", "18:00"]);
     assert.deepEqual(leerHorarios(tmp.db), ["06:30", "18:00"]);
     assert.throws(() => guardarHorarios(tmp.db, ["07:00", "12:00", "18:00"]), Aviso);
@@ -257,7 +257,7 @@ test("el resumen de cambios lleva radicado y cliente, y sin cambios no hay resum
   assert.equal(resumen.titulo, "2 expedientes con cambios");
   assert.equal(resumen.total, 4);
   assert.deepEqual(resumen.ids, [1, 2]);
-  assert.equal(resumen.cuerpo, "A1 · Ana Pérez: 2 actuaciones nuevas, 1 actuación modificada\nB2 · Sin cliente: 1 actuación retirada");
+  assert.equal(resumen.cuerpo, "A1 · Ana Pérez: 2 actuaciones nuevas, 1 actuación modificada\nB2 · Sin abogado: 1 actuación retirada");
   const muchos = resumenCambios([1, 2, 3, 4, 5, 6].map((id) => ({ id_proceso: id, radicado: `R${id}`, tipo: "actuacion_nueva" })));
   assert.equal(muchos.cuerpo.split("\n").length, 5);
   assert.equal(muchos.cuerpo.split("\n").at(-1), "y 2 expedientes más");

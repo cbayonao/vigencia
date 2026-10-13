@@ -125,6 +125,8 @@ export function listarProcesos(db) {
         c.id AS cliente_id,
         c.nombre AS cliente_nombre,
         c.apellidos AS cliente_apellidos,
+        pc.representado AS representado,
+        pc.representado_rol AS representado_rol,
         0 AS sin_expediente
     FROM proceso p
     LEFT JOIN proceso_cliente pc ON pc.id_proceso = p.id_proceso
@@ -157,7 +159,9 @@ export function detalleProceso(db, idProceso) {
     ORDER BY fecha_actuacion DESC, consecutivo DESC
   `, [idProceso]);
   proceso.cliente = uno(db, `
-    SELECT c.id, c.nombre, c.apellidos, c.telefonos, c.direccion, c.email
+    SELECT c.id, c.nombre, c.apellidos, c.cedula, c.tarjeta, c.telefonos, c.direccion, c.email,
+           pc.representado, pc.representado_rol,
+           pc.representado_cedula, pc.representado_direccion, pc.representado_telefono
     FROM proceso_cliente pc
     JOIN cliente c ON c.id = pc.cliente_id
     WHERE pc.id_proceso = ?
@@ -234,7 +238,7 @@ export function guardarPausaActualizar(db, hasta) {
 
 export function listarClientes(db) {
   const lista = filas(db, `
-    SELECT id, nombre, apellidos, telefonos, direccion, email
+    SELECT id, nombre, apellidos, cedula, tarjeta, telefonos, direccion, email
     FROM cliente
   `);
   lista.sort((a, b) => nombreCliente(a).localeCompare(nombreCliente(b), "es", { sensitivity: "base" }));
@@ -245,32 +249,34 @@ export function guardarCliente(db, datos) {
   const nombre = limitar(texto(datos?.nombre), 120, "El nombre");
   if (!nombre) throw new Aviso("El nombre es obligatorio.");
   const apellidos = limitar(texto(datos?.apellidos), 120, "Los apellidos");
+  const cedula = limitar(texto(datos?.cedula), 40, "La cédula");
+  const tarjeta = limitar(texto(datos?.tarjeta), 40, "La tarjeta profesional");
   const telefonos = limitar(texto(datos?.telefonos), 200, "Los teléfonos");
   const direccion = limitar(texto(datos?.direccion), 300, "La dirección");
   const email = limitar(texto(datos?.email), 200, "El correo");
   if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Aviso("El correo no parece válido.");
   const momento = ahora();
   if (datos?.id) {
-    const id = exigirEntero(datos.id, "El cliente");
-    if (!uno(db, "SELECT id FROM cliente WHERE id = ?", [id])) throw new Aviso("Ese cliente no está.");
+    const id = exigirEntero(datos.id, "El abogado");
+    if (!uno(db, "SELECT id FROM cliente WHERE id = ?", [id])) throw new Aviso("Ese abogado no está.");
     run(db, `
       UPDATE cliente
-      SET nombre = ?, apellidos = ?, telefonos = ?, direccion = ?, email = ?, actualizado_en = ?
+      SET nombre = ?, apellidos = ?, cedula = ?, tarjeta = ?, telefonos = ?, direccion = ?, email = ?, actualizado_en = ?
       WHERE id = ?
-    `, [nombre, apellidos, telefonos, direccion, email, momento, id]);
+    `, [nombre, apellidos, cedula, tarjeta, telefonos, direccion, email, momento, id]);
     return id;
   }
   const info = run(db, `
-    INSERT INTO cliente (nombre, apellidos, telefonos, direccion, email, creado_en, actualizado_en)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `, [nombre, apellidos, telefonos, direccion, email, momento, momento]);
+    INSERT INTO cliente (nombre, apellidos, cedula, tarjeta, telefonos, direccion, email, creado_en, actualizado_en)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `, [nombre, apellidos, cedula, tarjeta, telefonos, direccion, email, momento, momento]);
   return Number(info.lastInsertRowid);
 }
 
 export function borrarCliente(db, idCliente) {
-  const id = exigirEntero(idCliente, "El cliente");
+  const id = exigirEntero(idCliente, "El abogado");
   const info = run(db, "DELETE FROM cliente WHERE id = ?", [id]);
-  if (!Number(info.changes)) throw new Aviso("Ese cliente no está.");
+  if (!Number(info.changes)) throw new Aviso("Ese abogado no está.");
 }
 
 export function borrarProceso(db, idProceso) {
@@ -370,6 +376,8 @@ export function informesDelDia(db, dia) {
       cliente: {
         nombre: cliente.nombre,
         apellidos: cliente.apellidos,
+        cedula: cliente.cedula,
+        tarjeta: cliente.tarjeta,
         telefonos: cliente.telefonos,
         direccion: cliente.direccion,
         email: cliente.email,
@@ -388,8 +396,8 @@ export function asignarCliente(db, idProceso, clienteId) {
     run(db, "DELETE FROM proceso_cliente WHERE id_proceso = ?", [proceso]);
     return;
   }
-  const cliente = exigirEntero(clienteId, "El cliente");
-  if (!uno(db, "SELECT id FROM cliente WHERE id = ?", [cliente])) throw new Aviso("Ese cliente no está.");
+  const cliente = exigirEntero(clienteId, "El abogado");
+  if (!uno(db, "SELECT id FROM cliente WHERE id = ?", [cliente])) throw new Aviso("Ese abogado no está.");
   run(db, `
     INSERT INTO proceso_cliente (id_proceso, cliente_id, asignado_en)
     VALUES (?, ?, ?)
@@ -397,6 +405,27 @@ export function asignarCliente(db, idProceso, clienteId) {
       cliente_id = excluded.cliente_id,
       asignado_en = excluded.asignado_en
   `, [proceso, cliente, ahora()]);
+}
+
+const ROLES_REPRESENTADO = new Set(["demandante", "demandado", "defensor", "curador", "otro"]);
+
+export function guardarRepresentado(db, idProceso, dato = {}) {
+  const proceso = exigirEntero(idProceso, "El expediente");
+  if (!uno(db, "SELECT id_proceso FROM proceso_cliente WHERE id_proceso = ?", [proceso])) {
+    throw new Aviso("Asigne un abogado antes de indicar a quién representa.");
+  }
+  const nombre = limitar(texto(dato?.texto ?? dato?.representado), 200, "El representado");
+  const rol = texto(dato?.rol);
+  const rolLimpio = rol && ROLES_REPRESENTADO.has(rol) ? rol : null;
+  const cedula = nombre ? limitar(texto(dato?.cedula), 40, "La cédula") : null;
+  const direccion = nombre ? limitar(texto(dato?.direccion), 300, "La dirección") : null;
+  const telefono = nombre ? limitar(texto(dato?.telefono), 80, "El teléfono") : null;
+  run(db, `
+    UPDATE proceso_cliente
+    SET representado = ?, representado_rol = ?,
+        representado_cedula = ?, representado_direccion = ?, representado_telefono = ?
+    WHERE id_proceso = ?
+  `, [nombre, nombre ? rolLimpio : null, cedula, direccion, telefono, proceso]);
 }
 
 export function leerAjuste(db, clave) {

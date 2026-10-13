@@ -27,8 +27,20 @@ __pycache__/
 .engram/
 /build/
 /modelos/
+/motor/
 electron/dist/
 electron/semilla/
+landing/dist/
+landing/node_modules/
+landing/.astro/
+landing/terraform/.terraform/
+landing/terraform/*.tfstate
+landing/terraform/*.tfstate.*
+landing/terraform/terraform.tfvars
+
+# Sistema y miscelánea (los .terraform.lock.hcl SÍ van a git)
+.DS_Store
+Thumbs.db
 
 # Instaladores
 *.AppImage

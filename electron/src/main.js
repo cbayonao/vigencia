@@ -1,3 +1,4 @@
+import { estadoMotor, instalarMotor, usarDatosMotor } from "./motor.js";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -31,6 +32,7 @@ import {
   Aviso,
   abrirBase,
   asignarCliente,
+  guardarRepresentado,
   borrarCliente,
   borrarProceso,
   datosParaExcel,
@@ -60,11 +62,12 @@ import { bitacoraEn } from "./guardar.js";
 import { abiertaAlIniciarSesion, configurarInicio } from "./inicio.js";
 import { crearProgramador } from "./programador.js";
 import { libroExcel } from "./excel.js";
-import { docxDeEscrito } from "./docx.js";
+import { docxDeEscrito, textoDeDocx } from "./docx.js";
 import { htmlInforme, fechaInforme, nombreArchivoInforme } from "./informe.js";
 import { pdfDesdeHtml } from "./pdf.js";
 import { alCambiar, estadoCorrida, lanzar } from "./jobs.js";
 import { fichaDeDetalle, redactarEscrito } from "../compartido/redactor.js";
+import { activarPieza, borrarPieza, guardarPieza, listarPiezas } from "./biblioteca.js";
 import { generarBorrador, generarInicial, guardarActivo, guardarModo, importarModelo, listarModelos, descargarModelo, modelosRecomendados, leerNubes, guardarNube } from "./ia.js";
 import { htmlMemorial } from "./memorial.js";
 import { directorioDatos } from "./rutas.js";
@@ -156,6 +159,7 @@ function prepararDatos() {
     env: process.env,
   });
   fs.mkdirSync(datosDir, { recursive: true });
+  usarDatosMotor(datosDir);
   const base = path.join(datosDir, "grokvig.sqlite");
   db = abrirBase(base);
   cerrarRevisionesColgadas(db);
@@ -511,6 +515,10 @@ if (bloqueo) {
       asignarCliente(db, dato?.idProceso, dato?.clienteId);
       return {};
     }));
+    ipcMain.handle("guardar-representado", (_evento, dato) => responder(() => {
+      guardarRepresentado(db, dato?.idProceso, dato?.representado || {});
+      return {};
+    }));
     ipcMain.handle("estado", () => {
       const pendientes = cambiosPendientes;
       cambiosPendientes = null;
@@ -627,7 +635,7 @@ if (bloqueo) {
       try {
         const dia = ahora().slice(0, 10);
         const informes = informesDelDia(db, dia);
-        if (!informes.length) return { ok: false, error: "Ningún cliente tiene expedientes." };
+        if (!informes.length) return { ok: false, error: "Ningún abogado tiene expedientes." };
         const elegido = await dialog.showOpenDialog(ventana, {
           title: "Carpeta para los informes del día",
           buttonLabel: "Guardar aquí",
@@ -648,7 +656,7 @@ if (bloqueo) {
             fs.writeFileSync(destino, pdf);
           } catch (error) {
             console.error(error);
-            const quien = nombreCliente(informe.cliente) || "un cliente";
+            const quien = nombreCliente(informe.cliente) || "un abogado";
             throw new Aviso(`No pude guardar el informe de ${quien}.`);
           }
         }
@@ -676,6 +684,15 @@ if (bloqueo) {
       return { asunto: escrito.asunto, secciones: escrito.secciones };
     }));
     ipcMain.handle("modelos-listar", () => responder(() => listarModelos(datosDir)));
+    ipcMain.handle("piezas-listar", () => responder(() => ({ piezas: listarPiezas(db) })));
+    ipcMain.handle("pieza-guardar", (_evento, dato) => responder(() => ({ pieza: guardarPieza(db, dato) })));
+    ipcMain.handle("pieza-activar", (_evento, dato) => responder(() => ({
+      pieza: activarPieza(db, dato?.id, Boolean(dato?.activa)),
+    })));
+    ipcMain.handle("pieza-borrar", (_evento, dato) => responder(() => {
+      borrarPieza(db, dato?.id);
+      return {};
+    }));
     ipcMain.handle("modelos-modo", (_evento, dato) => responder(() => guardarModo(datosDir, dato?.modo)));
     ipcMain.handle("modelos-nube", () => responder(() => ({ nubes: leerNubes(datosDir) })));
     ipcMain.handle("modelos-guardar-nube", (_evento, dato) => responder(() => guardarNube(datosDir, dato || {})));
@@ -707,6 +724,28 @@ if (bloqueo) {
       }
     });
     ipcMain.handle("modelos-recomendados", () => responder(() => ({ modelos: modelosRecomendados(datosDir) })));
+    ipcMain.handle("motor-estado", () => responder(() => estadoMotor(datosDir, {
+      raiz: RAIZ,
+      recursos: process.resourcesPath,
+    })));
+    ipcMain.handle("motor-instalar", async (evento) => {
+      try {
+        const estado = await instalarMotor(datosDir, {
+          raiz: RAIZ,
+          recursos: process.resourcesPath,
+          onProgreso: (avance) => {
+            try {
+              evento.sender.send("motor-progreso", avance);
+            } catch {
+              /* la ventana se cerró */
+            }
+          },
+        });
+        return { ok: true, ...estado };
+      } catch (error) {
+        return { ok: false, error: mensajeHumano(error) };
+      }
+    });
     ipcMain.handle("modelos-descargar", async (evento, dato) => {
       try {
         const { id } = await descargarModelo(datosDir, dato?.id, (avance) => {
@@ -746,6 +785,9 @@ if (bloqueo) {
           datos: dato?.datos || {},
           hoy: ahora().slice(0, 10),
           modeloId: dato?.modelo,
+          piezas: listarPiezas(db),
+          excluir: dato?.excluir,
+          aclaracion: dato?.aclaracion,
           onProgreso: (avance) => {
             try {
               evento.sender.send("borrador-progreso", avance);
@@ -805,12 +847,24 @@ if (bloqueo) {
     ipcMain.handle("escrito-generar", async (evento, dato) => {      try {
         const proceso = detalleProceso(db, dato?.id);
         if (!proceso) return { ok: false, error: "Ese expediente no está." };
+        let ejemplo = "";
+        if (dato?.ejemploDocx) {
+          const leido = textoDeDocx(Buffer.from(String(dato.ejemploDocx), "base64"));
+          if (!leido.ok) return { ok: false, error: leido.error };
+          ejemplo = leido.texto;
+        }
         const borrador = await generarBorrador({
           datosDir,
           proceso,
           prompt: dato?.prompt,
           hoy: ahora().slice(0, 10),
           modeloId: dato?.modelo,
+          piezas: listarPiezas(db),
+          excluir: dato?.excluir,
+          aclaracion: dato?.aclaracion,
+          referencia: dato?.referencia,
+          presenta: dato?.presenta,
+          ejemplo,
           onProgreso: (avance) => {
             try {
               evento.sender.send("borrador-progreso", avance);

@@ -2,12 +2,15 @@ import fs from "node:fs";
 import https from "node:https";
 import http from "node:http";
 import path from "node:path";
-import { fichaDeDetalle, redactarEscrito } from "../compartido/redactor.js";
-import { redactarInicial, reglaDe, TIPOS_INICIALES } from "../compartido/iniciales.js";
+import { pathToFileURL } from "node:url";
+import { aplicarPresentante, fichaDeDetalle, redactarEscrito, referenciaCorta } from "../compartido/redactor.js";
+import { redactarInicial, TIPOS_INICIALES } from "../compartido/iniciales.js";
+import { armarEncargo, clasificarRespuesta, fuentesDelEncargo, marcarCitas } from "../compartido/encargo.js";
 import { texto } from "../compartido/logica.js";
 import { fechaInforme } from "./informe.js";
 import { vistaMemorial } from "./memorial.js";
 import { Aviso } from "./db.js";
+import { AVISO_MOTOR, entradaDelMotor, esFalloDeMotor, prepararReleaseMotor } from "./motor.js";
 import { PROVEEDORES, chatNube } from "./nube.js";
 
 export const MODELO_SENCILLO = "sencillo";
@@ -238,8 +241,8 @@ export function listarModelos(datosDir) {
   const modelos = [
     {
       id: MODELO_SENCILLO,
-      nombre: "Sencillo (incluido)",
-      detalle: "Redactor local, sin descargas. Pule el memorial con el contexto del expediente.",
+      nombre: "Sencillo (plantilla básica)",
+      detalle: "Sin modelo. Arma el memorial con la plantilla de siempre y no usa la biblioteca.",
       instalado: true,
     },
     ...ggufInstalados(datosDir),
@@ -343,16 +346,56 @@ export function importarModelo(datosDir, origen) {
 // conectores sobrios y peticiones en tono respetuoso. Los fundamentos quedan
 // intactos para no citar normas nuevas.
 // --- Motor GGUF (node-llama-cpp, 100% local) ---
-let motor = null; // { ruta, llama, modelo }
+// Electron usa su propio asignador. Un bloque alineado de cerca de 1 GB lo
+// tumba con SIGILL. El contexto se queda por debajo de ese tamaño, y un
+// modelo cuyo archivo ya pasa de 900 MB no se carga.
+const TOPE_BLOQUE = 480 * 1024 * 1024;
+const TOPE_MODELO = 900 * 1024 * 1024;
+const CONTEXTO_MIN = 2048;
+const CONTEXTO_MAX = 16384;
+let motor = null; // { ruta, llama, modelo, cpp }
+
+function enteroPositivo(valor) {
+  if (Array.isArray(valor)) return enteroPositivo(valor[0]);
+  const numero = Number(valor);
+  if (!Number.isFinite(numero) || numero <= 0) return 0;
+  return Math.floor(numero);
+}
+
+export function bytesPorToken(meta) {
+  const capas = enteroPositivo(meta?.block_count);
+  const atencion = meta?.attention || {};
+  const cabezas = enteroPositivo(atencion.head_count);
+  const cabezasKv = enteroPositivo(atencion.head_count_kv) || cabezas;
+  const largo = enteroPositivo(atencion.key_length)
+    || (cabezas ? Math.floor(enteroPositivo(meta?.embedding_length) / cabezas) : 0);
+  if (!capas || !cabezasKv || !largo) return 0;
+  return 2 * capas * cabezasKv * largo * 2;
+}
+
+export function cabeElModelo(bytes) {
+  return Number(bytes) <= TOPE_MODELO;
+}
+
+export function tamanoDeContexto(meta) {
+  const porToken = bytesPorToken(meta);
+  if (!porToken) return CONTEXTO_MIN;
+  const cabe = Math.floor(TOPE_BLOQUE / porToken);
+  const ajustado = cabe - (cabe % 256);
+  return Math.max(CONTEXTO_MIN, Math.min(CONTEXTO_MAX, ajustado));
+}
 
 async function cargarMotor(ruta) {
   if (motor?.ruta === ruta && motor?.modelo) return motor;
   await soltarMotor();
+  prepararReleaseMotor();
   let llamaCpp = null;
   try {
-    llamaCpp = await import("node-llama-cpp");
-  } catch {
-    throw new Aviso("El motor nativo no está instalado. Reinstale Vigencia o use el modelo Sencillo.");
+    const entrada = entradaDelMotor();
+    llamaCpp = entrada ? await import(pathToFileURL(entrada).href) : await import("node-llama-cpp");
+  } catch (error) {
+    console.error(error);
+    throw new Aviso(AVISO_MOTOR);
   }
   let stat = null;
   try {
@@ -361,9 +404,19 @@ async function cargarMotor(ruta) {
     throw new Aviso("No encontré el archivo del modelo en la carpeta de modelos.");
   }
   if (!stat.isFile()) throw new Aviso("No encontré el archivo del modelo en la carpeta de modelos.");
-  const llama = await llamaCpp.getLlama();
+  if (!cabeElModelo(stat.size)) {
+    throw new Aviso("Ese modelo no cabe en la ventana. Use uno más pequeño, como el de 1B, o el modelo Sencillo.");
+  }
+  let llama = null;
+  try {
+    llama = await llamaCpp.getLlama({ gpu: false });
+  } catch (error) {
+    console.error(error);
+    if (esFalloDeMotor(error)) throw new Aviso(AVISO_MOTOR);
+    throw error;
+  }
   const modelo = await llama.loadModel({ modelPath: ruta });
-  motor = { ruta, llama, modelo };
+  motor = { ruta, llama, modelo, cpp: llamaCpp };
   return motor;
 }
 
@@ -398,7 +451,19 @@ export function contextoExpediente(ficha, proceso, maxActuaciones = 10) {
   if (ficha.departamento) lineas.push(`Departamento: ${ficha.departamento}`);
   lineas.push(`Demandante: ${ficha.demandantes || "no figura"}`);
   lineas.push(`Demandado: ${ficha.demandados || "no figura"}`);
-  if (ficha.cliente) lineas.push(`Quien presenta: ${ficha.cliente}`);
+  if (ficha.cliente) lineas.push(`Abogado: ${ficha.cliente}`);
+  if (ficha.cedula) lineas.push(`Cédula del abogado: ${ficha.cedula}`);
+  if (ficha.tarjeta) lineas.push(`Tarjeta profesional: ${ficha.tarjeta}`);
+  if (ficha.telefonos) lineas.push(`Teléfonos del abogado: ${ficha.telefonos}`);
+  if (ficha.direccion) lineas.push(`Dirección del abogado: ${ficha.direccion}`);
+  if (ficha.email) lineas.push(`Correo del abogado: ${ficha.email}`);
+  if (ficha.representado) {
+    const lado = ficha.representadoRol ? ` (${ficha.representadoRol})` : "";
+    lineas.push(`Representa a: ${ficha.representado}${lado}`);
+  }
+  if (ficha.representadoCedula) lineas.push(`Cédula del representado: ${ficha.representadoCedula}`);
+  if (ficha.representadoDireccion) lineas.push(`Dirección del representado: ${ficha.representadoDireccion}`);
+  if (ficha.representadoTelefono) lineas.push(`Teléfono del representado: ${ficha.representadoTelefono}`);
   const actos = (proceso?.actuaciones || []).slice(0, maxActuaciones);
   if (actos.length) {
     lineas.push(`Últimas ${actos.length} actuaciones (de la más reciente a la más antigua):`);
@@ -463,101 +528,112 @@ export function extraerPuntos(respuesta, maximo = 12) {
   return puntos;
 }
 
-// bloques: [{ titulo, items, regla }]. El modo decide si entra el texto del
-// modelo tal cual (libre) o solo lo fiel al punto base (fiel).
-async function mejorarBloques({ bloques, contextoTxt, promptTxt, modo, onProgreso, generar }) {
-  const salida = {};
-  for (const bloque of bloques) {
-    const lista = bloque.items.map((item, i) => `${i + 1}. ${item}`).join("\n");
-    let acumulado = "";
-    const respuesta = await generar(
-      `Mejora la redacción de estos puntos de ${bloque.titulo} en tono formal y sobrio, uno por línea numerada. Usa como referencia el contexto y la petición. ${bloque.regla} Devuelve solo la lista.\nContexto:\n${contextoTxt}\nPetición: ${promptTxt}\nPuntos:\n${lista}`,
-      (fragmento) => {
-        acumulado += fragmento;
-        try {
-          onProgreso?.({ seccion: bloque.titulo, texto: acumulado });
-        } catch {
-          /* la ventana ya no escucha */
-        }
-      },
-    );
-    salida[bloque.titulo] = filtrarPorModo(bloque.items, extraerPuntos(respuesta, bloque.items.length), modo);
-  }
-  return salida;
-}
-
-function bloquesDeMemorial(base) {
-  const tomar = (titulo) => base.secciones.find((s) => s.titulo === titulo)?.parrafos || [];
-  return [
-    { titulo: "Hechos", items: tomar("Hechos"), regla: "No agregues hechos que no estén en el contexto ni en la petición." },
-    { titulo: "Peticiones", items: tomar("Peticiones"), regla: "No agregues peticiones nuevas." },
-    { titulo: "Fundamentos", items: tomar("Fundamentos"), regla: "No cites números de artículos ni leyes distintas a las mencionadas." },
-  ];
-}
-
-// El modelo local reescribe bloque por bloque con los puntos base del
-// redactor y las reglas de fidelidad. Si un bloque no sirve, el modo decide:
-// fiel vuelve al redactor, libre deja el texto del modelo aunque alucine.
-async function reescribirConGguf({ rutaModelo, ficha, proceso, prompt, base, modo, onProgreso, bloques, contextoTxt, promptTxt }) {
-  const { modelo } = await cargarMotor(rutaModelo);
-  const contexto = await modelo.createContext();
+function emitirEscrito(onProgreso, texto) {
   try {
-    const sesion = new (await import("node-llama-cpp")).LlamaChatSession({
-      contextSequence: contexto.getSequence(),
+    onProgreso?.({ seccion: "Escrito", texto });
+  } catch {
+    /* la ventana ya no escucha */
+  }
+}
+
+function respuestaInservible(valor) {
+  const limpio = String(valor || "").trim();
+  if (!limpio) return true;
+  return limpio.length < 400 && /lo siento|no puedo (cumplir|ayudar|redactar)|como modelo de lenguaje/i.test(limpio);
+}
+
+async function textoDelModelo({ datosDir, elegido, encargo, onProgreso }) {
+  if (elegido.id.startsWith("nube:")) {
+    const proveedor = elegido.id.slice("nube:".length);
+    const tiendaDato = leerTienda(datosDir);
+    const nube = tiendaDato.nubes[proveedor] || {};
+    const definicion = PROVEEDORES[proveedor];
+    if (!definicion) throw new Aviso("Ese proveedor no está soportado.");
+    if (!nube.key) throw new Aviso(`Guarde su clave de ${definicion.nombre} primero.`);
+    const modelo = nube.modelo || definicion.modeloSugerido;
+    if (!modelo) throw new Aviso(`Escriba el nombre del modelo de ${definicion.nombre}.`);
+    let acumulado = "";
+    const respuesta = await chatNube({
+      proveedor,
+      key: nube.key,
+      modelo,
+      base: nube.base,
+      texto: encargo,
+      maxTokens: 2048,
+      onToken: (fragmento) => {
+        acumulado += fragmento;
+        emitirEscrito(onProgreso, acumulado);
+      },
     });
-    const generarLocal = (texto, onToken) => sesion.prompt(texto, {
-      maxTokens: 512,
-      temperature: 0.2,
-      onTextChunk: onToken,
-    });
-    const mejorados = await mejorarBloques({
-      bloques: bloques || bloquesDeMemorial(base),
-      contextoTxt: contextoTxt || contextoExpediente(ficha, proceso),
-      promptTxt: promptTxt || prompt,
-      modo,
-      onProgreso,
-      generar: generarLocal,
-    });
-    return mejorados;
-  } finally {
+    return {
+      texto: String(respuesta || acumulado || ""),
+      nombre: `${definicion.nombre} · ${modelo}`,
+      origen: "nube",
+    };
+  }
+  if (elegido.id.startsWith("gguf:")) {
+    const rutaModelo = path.join(carpetaModelos(datosDir), elegido.archivo);
+    const cargado = await cargarMotor(rutaModelo);
+    let meta = null;
     try {
-      await contexto.dispose();
+      if (cargado.cpp.readGgufFileInfo) {
+        const info = await cargado.cpp.readGgufFileInfo(rutaModelo);
+        meta = info?.architectureMetadata || null;
+      }
     } catch {
-      /* el contexto se libera con el modelo */
+      meta = null;
+    }
+    const contexto = await cargado.modelo.createContext({
+      contextSize: tamanoDeContexto(meta),
+    });
+    try {
+      const sesion = new cargado.cpp.LlamaChatSession({
+        contextSequence: contexto.getSequence(),
+      });
+      let acumulado = "";
+      const respuesta = await sesion.prompt(encargo, {
+        maxTokens: 1536,
+        temperature: 0.3,
+        onTextChunk: (fragmento) => {
+          acumulado += String(fragmento || "");
+          emitirEscrito(onProgreso, acumulado);
+        },
+      });
+      return {
+        texto: String(respuesta || acumulado || ""),
+        nombre: elegido.nombre,
+        origen: "local",
+      };
+    } finally {
+      try {
+        await contexto.dispose();
+      } catch {
+        /* el contexto se libera con el modelo */
+      }
     }
   }
+  return null;
 }
 
-async function redactarConNube({ datosDir, proveedor, ficha, proceso, prompt, base, modo, onProgreso, bloques, contextoTxt, promptTxt }) {
-  const tiendaDato = leerTienda(datosDir);
-  const nube = tiendaDato.nubes[proveedor] || {};
-  const definicion = PROVEEDORES[proveedor];
-  if (!definicion) throw new Aviso("Ese proveedor no está soportado.");
-  if (!nube.key) throw new Aviso(`Guarde su clave de ${definicion.nombre} primero.`);
-  const modelo = nube.modelo || definicion.modeloSugerido;
-  if (!modelo) throw new Aviso(`Escriba el nombre del modelo de ${definicion.nombre}.`);
-  const generarNube = (texto, onToken) => chatNube({
-    proveedor,
-    key: nube.key,
-    modelo,
-    base: nube.base,
-    texto,
-    onToken,
-  });
-  try {
-    const mejorados = await mejorarBloques({
-      bloques: bloques || bloquesDeMemorial(base),
-      contextoTxt: contextoTxt || contextoExpediente(ficha, proceso),
-      promptTxt: promptTxt || prompt,
-      modo,
-      onProgreso,
-      generar: generarNube,
-    });
-    return { mejorados, modelo };
-  } catch (error) {
-    if (error instanceof Aviso) throw error;
-    throw new Aviso(error?.message || "El proveedor no respondió. Revise la clave, el modelo y la conexión.");
+function aclaracionUtil(aclaracion) {
+  const respuesta = String(aclaracion?.respuesta ?? "").replace(/\r\n/g, "\n").trim();
+  if (!respuesta) return null;
+  const preguntas = (Array.isArray(aclaracion?.preguntas) ? aclaracion.preguntas : [])
+    .map((pregunta) => texto(pregunta))
+    .filter(Boolean)
+    .slice(0, 4);
+  return { preguntas, respuesta };
+}
+
+function documentoDeModelo(pedido, fuentes, cerrar) {
+  if (!pedido || respuestaInservible(pedido.texto)) {
+    throw new Error("El modelo no devolvió el memorial.");
   }
+  const clasificado = clasificarRespuesta(pedido.texto, { cerrar });
+  if (clasificado.tipo === "dudas") return { dudas: clasificado.preguntas };
+  const secciones = marcarCitas(clasificado.secciones, fuentes);
+  if (!secciones.length) throw new Error("El modelo no devolvió el memorial.");
+  return { asunto: clasificado.asunto, secciones };
 }
 
 export function pulirConSencillo(base) {  const secciones = (base.secciones || []).map((seccion) => ({
@@ -583,16 +659,79 @@ export function pulirConSencillo(base) {  const secciones = (base.secciones || [
   return { asunto: base.asunto, secciones };
 }
 
-export async function generarBorrador({ datosDir, proceso, prompt, hoy, modeloId, onProgreso }) {
+function elegirModelo(datosDir, modeloId) {
+  const { modelos, activo } = listarModelos(datosDir);
+  return modelos.find((modelo) => modelo.id === (modeloId || activo)) || modelos[0];
+}
+
+function usaModelo(elegido) {
+  return Boolean(elegido?.id?.startsWith("nube:") || elegido?.id?.startsWith("gguf:"));
+}
+
+async function conEncargo({ datosDir, elegido, encargo, fuentes, onProgreso, plantilla, aclaracion }) {
+  try {
+    const pedido = await textoDelModelo({ datosDir, elegido, encargo, onProgreso });
+    const escrito = documentoDeModelo(pedido, fuentes, Boolean(aclaracion));
+    if (escrito.dudas) {
+      return {
+        dudas: escrito.dudas,
+        modelo: { id: elegido.id, nombre: pedido.nombre },
+        origen: pedido.origen,
+        respaldo: false,
+      };
+    }
+    return {
+      asunto: escrito.asunto,
+      secciones: escrito.secciones,
+      modelo: { id: elegido.id, nombre: pedido.nombre },
+      origen: pedido.origen,
+      respaldo: false,
+    };
+  } catch (error) {
+    if (error instanceof Aviso) throw error;
+    if (elegido.id.startsWith("gguf:")) await soltarMotor();
+    console.error(error);
+    return {
+      asunto: plantilla.asunto,
+      secciones: plantilla.secciones,
+      modelo: { id: MODELO_SENCILLO, nombre: "Plantilla básica" },
+      origen: "local",
+      respaldo: true,
+    };
+  }
+}
+
+function conVista(resultado, ficha, hoy) {
+  if (resultado.dudas) {
+    return {
+      dudas: resultado.dudas,
+      modelo: resultado.modelo,
+      origen: resultado.origen,
+      respaldo: false,
+    };
+  }
+  return {
+    ...resultado,
+    vista: vistaMemorial({
+      asunto: resultado.asunto,
+      secciones: resultado.secciones,
+      ficha,
+      fecha: hoy,
+      origen: resultado.origen,
+    }),
+  };
+}
+
+export async function generarBorrador({ datosDir, proceso, prompt, hoy, modeloId, onProgreso, piezas, excluir, aclaracion, referencia, presenta, ejemplo }) {
   const pedido = texto(prompt);
   if (!pedido) {
-    const error = new Error("Escriba qué debe pedirle al juzgado.");
+    const error = new Error("Escriba qué debe decir el escrito.");
     error.aviso = true;
     throw error;
   }
-  const { modelos, activo, modo } = listarModelos(datosDir);
-  const elegido = modelos.find((modelo) => modelo.id === (modeloId || activo)) || modelos[0];
-  const ficha = fichaDeDetalle(proceso);
+  const elegido = elegirModelo(datosDir, modeloId);
+  const ficha = aplicarPresentante(fichaDeDetalle(proceso), proceso, presenta);
+  ficha.referencia = referenciaCorta(referencia, pedido);
   const hoyLargo = fechaInforme(String(hoy || "").slice(0, 10));
   let base = null;
   try {
@@ -601,110 +740,72 @@ export async function generarBorrador({ datosDir, proceso, prompt, hoy, modeloId
     if (error?.aviso) throw new Aviso(error.message);
     throw error;
   }
-  let secciones = base.secciones;
-  let nombreModelo = elegido.nombre;
-  let origen = "local";
-  if (elegido.id.startsWith("nube:")) {
-    const proveedor = elegido.id.slice("nube:".length);
-    try {
-      const nube = await redactarConNube({
-        datosDir,
-        proveedor,
-        ficha,
-        proceso,
-        prompt: pedido,
-        base,
-        modo,
-        onProgreso,
-      });
-      nombreModelo = `${PROVEEDORES[proveedor].nombre} · ${nube.modelo}`;
-      origen = "nube";
-      secciones = base.secciones.map((seccion) => {
-        if (seccion.titulo === "Hechos") return { ...seccion, parrafos: nube.mejorados.Hechos };
-        if (seccion.titulo === "Peticiones") return { ...seccion, parrafos: nube.mejorados.Peticiones };
-        if (seccion.titulo === "Fundamentos") return { ...seccion, parrafos: nube.mejorados.Fundamentos };
-        return seccion;
-      });
-    } catch (error) {
-      if (error instanceof Aviso) throw error;
-      throw new Aviso(error?.message || "El proveedor no respondió.");
-    }
-  } else if (elegido.id.startsWith("gguf:")) {
-    const rutaModelo = path.join(carpetaModelos(datosDir), elegido.archivo);
-    try {
-      const mejorados = await reescribirConGguf({
-        rutaModelo,
-        ficha,
-        proceso,
-        prompt: pedido,
-        base,
-        modo,
-        onProgreso,
-      });
-      secciones = base.secciones.map((seccion) => {
-        if (seccion.titulo === "Hechos") return { ...seccion, parrafos: mejorados.Hechos };
-        if (seccion.titulo === "Peticiones") return { ...seccion, parrafos: mejorados.Peticiones };
-        if (seccion.titulo === "Fundamentos") return { ...seccion, parrafos: mejorados.Fundamentos };
-        return seccion;
-      });
-    } catch (error) {
-      if (error instanceof Aviso) throw error;
-      await soltarMotor();
-      throw new Aviso("El modelo no pudo redactar. Revise que haya memoria libre o use el modelo Sencillo.");
-    }
-  } else {
-    secciones = pulirConSencillo(base).secciones;
-  }
-  return {
-    asunto: base.asunto,
-    secciones,
-    modelo: { id: elegido.id, nombre: nombreModelo },
-    vista: vistaMemorial({ asunto: base.asunto, secciones, ficha, fecha: hoy, origen }),
+  const plantilla = pulirConSencillo(base);
+  let resultado = {
+    asunto: plantilla.asunto,
+    secciones: plantilla.secciones,
+    modelo: { id: elegido.id, nombre: elegido.nombre },
+    origen: "local",
+    respaldo: false,
   };
+  const vuelta = aclaracionUtil(aclaracion);
+  if (usaModelo(elegido)) {
+    const contexto = contextoExpediente(ficha, proceso);
+    const encargo = armarEncargo({
+      contexto,
+      peticion: pedido,
+      piezas,
+      excluir,
+      hoy: hoyLargo,
+      aclaracion: vuelta,
+      ejemplo,
+      referencia: ficha.referencia,
+    });
+    resultado = await conEncargo({
+      datosDir,
+      elegido,
+      encargo,
+      fuentes: fuentesDelEncargo({ contexto, peticion: pedido, piezas, excluir, aclaracion: vuelta, ejemplo }),
+      onProgreso,
+      plantilla,
+      aclaracion: vuelta,
+    });
+  }
+  return conVista(resultado, ficha, hoy);
 }
 
-function contextoInicial(tipo, datos) {
+function materialInicial(tipo, datos) {
   const definicion = TIPOS_INICIALES[tipo] || {};
-  const lineas = [
-    `Documento: ${definicion.titulo || tipo} (${definicion.norma || ""})`,
-    `Presenta: ${datos.presentante || "[sin nombre]"}${datos.identificacion ? `, ${datos.identificacion}` : ""}`,
-    `Contra: ${datos.contraparte || "[sin contraparte]"}`,
-    `Dirigido a: ${datos.autoridad || "[sin autoridad]"}`,
-    `Ciudad: ${datos.ciudad || "[sin ciudad]"}`,
+  const campos = [
+    ["Documento", definicion.titulo],
+    ["Ciudad", datos.ciudad],
+    ["Quien presenta", datos.presentante],
+    ["Identificación", datos.identificacion],
+    ["Domicilio", datos.domicilio],
+    ["Contraparte", datos.contraparte],
+    ["Autoridad", datos.autoridad],
+    ["Hechos", datos.hechos],
+    ["Lo que pide", datos.pretensiones],
+    ["Pruebas", datos.pruebas],
+    ["Cuantía", datos.cuantia],
+    ["Derecho", datos.derecho],
   ];
-  if (datos.derecho) lineas.push(`Derecho invocado: ${datos.derecho}`);
-  if (datos.cuantia) lineas.push(`Cuantía: ${datos.cuantia}`);
+  const lineas = [];
+  for (const [etiqueta, valor] of campos) {
+    const limpio = texto(valor);
+    if (limpio) lineas.push(`${etiqueta}: ${limpio}`);
+  }
   if (datos.juramento) lineas.push("La persona jura no haber presentado otra tutela por estos hechos.");
+  if (texto(datos.instruccion)) lineas.push(`Instrucción: ${texto(datos.instruccion)}`);
   return lineas.join("\n");
 }
 
-function bloquesDeInicial(base, tipo) {
-  const tomar = (titulo) => base.secciones.find((s) => s.titulo === titulo)?.parrafos || [];
-  const peticiones = tipo === "demanda" ? tomar("Pretensiones") : tomar("Peticiones");
-  const tituloPeticiones = tipo === "demanda" ? "Pretensiones" : "Peticiones";
-  const regla = reglaDe(tipo);
-  return [
-    { titulo: "Hechos", items: tomar("Hechos"), regla: `${regla} No agregues hechos nuevos.` },
-    { titulo: tituloPeticiones, items: peticiones, regla: `${regla} No agregues peticiones nuevas.` },
-    { titulo: "Fundamentos", items: tomar("Fundamentos"), regla: `${regla} No cites normas distintas a las mencionadas.` },
-  ];
-}
-
-function aplicarMejoras(base, mejorados) {
-  return base.secciones.map((seccion) => (
-    Object.prototype.hasOwnProperty.call(mejorados, seccion.titulo)
-      ? { ...seccion, parrafos: mejorados[seccion.titulo] }
-      : seccion
-  ));
-}
-
-export async function generarInicial({ datosDir, tipo, datos = {}, hoy, modeloId, onProgreso }) {
+export async function generarInicial({ datosDir, tipo, datos = {}, hoy, modeloId, onProgreso, piezas, excluir, aclaracion }) {
   const definicion = TIPOS_INICIALES[tipo];
   if (!definicion) {
     throw new Aviso("Elija si inicia demanda, tutela o derecho de petición.");
   }
-  const { modelos, activo, modo } = listarModelos(datosDir);
-  const elegido = modelos.find((modelo) => modelo.id === (modeloId || activo)) || modelos[0];
+  const elegido = elegirModelo(datosDir, modeloId);
   const hoyLargo = fechaInforme(String(hoy || "").slice(0, 10));
   let base = null;
   try {
@@ -713,9 +814,6 @@ export async function generarInicial({ datosDir, tipo, datos = {}, hoy, modeloId
     if (error?.aviso) throw new Aviso(error.message);
     throw error;
   }
-  const bloques = bloquesDeInicial(base, tipo);
-  const contextoTxt = contextoInicial(tipo, datos);
-  const promptTxt = datos.instruccion || `Redacte la ${definicion.titulo.toLowerCase()} completa siguiendo los requisitos.`;
   const ficha = {
     despacho: datos.autoridad,
     radicado: "sin radicar",
@@ -723,34 +821,33 @@ export async function generarInicial({ datosDir, tipo, datos = {}, hoy, modeloId
     demandantes: datos.presentante,
     demandados: datos.contraparte,
   };
-  let secciones = base.secciones;
-  let nombreModelo = elegido.nombre;
-  let origen = "local";
-  if (elegido.id.startsWith("nube:")) {
-    const proveedor = elegido.id.slice("nube:".length);
-    const nube = await redactarConNube({
-      datosDir, proveedor, base, modo, onProgreso, bloques, contextoTxt, promptTxt,
-    });
-    nombreModelo = `${PROVEEDORES[proveedor].nombre} · ${nube.modelo}`;
-    origen = "nube";
-    secciones = aplicarMejoras(base, nube.mejorados);
-  } else if (elegido.id.startsWith("gguf:")) {
-    const rutaModelo = path.join(carpetaModelos(datosDir), elegido.archivo);
-    try {
-      const mejorados = await reescribirConGguf({
-        rutaModelo, base, modo, onProgreso, bloques, contextoTxt, promptTxt,
-      });
-      secciones = aplicarMejoras(base, mejorados);
-    } catch (error) {
-      if (error instanceof Aviso) throw error;
-      await soltarMotor();
-      throw new Aviso("El modelo no pudo redactar. Revise que haya memoria libre o use el modelo Sencillo.");
-    }
-  }
-  return {
+  let resultado = {
     asunto: base.asunto,
-    secciones,
-    modelo: { id: elegido.id, nombre: nombreModelo },
-    vista: vistaMemorial({ asunto: base.asunto, secciones, ficha, fecha: hoy, origen }),
+    secciones: base.secciones,
+    modelo: { id: elegido.id, nombre: elegido.nombre },
+    origen: "local",
+    respaldo: false,
   };
+  const vuelta = aclaracionUtil(aclaracion);
+  if (usaModelo(elegido)) {
+    const material = materialInicial(tipo, datos);
+    const peticion = texto(datos.instruccion) || `Redacte la ${definicion.titulo.toLowerCase()} con los datos del contexto.`;
+    resultado = await conEncargo({
+      datosDir,
+      elegido,
+      encargo: armarEncargo({
+        contexto: material,
+        peticion,
+        piezas,
+        excluir,
+        hoy: hoyLargo,
+        aclaracion: vuelta,
+      }),
+      fuentes: fuentesDelEncargo({ contexto: material, peticion, piezas, excluir, aclaracion: vuelta }),
+      onProgreso,
+      plantilla: base,
+      aclaracion: vuelta,
+    });
+  }
+  return conVista(resultado, ficha, hoy);
 }

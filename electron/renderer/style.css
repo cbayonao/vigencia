@@ -227,6 +227,11 @@ input::selection, textarea::selection { background: var(--cobre-suave); color: v
 .cliente-arriba { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .cliente-acciones { display: flex; gap: 8px; flex: 0 0 auto; }
 .cliente-datos { margin-top: 4px; }
+.representado { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; max-width: 28rem; }
+.representado .etiqueta { margin: 0; }
+.representado select, .representado input, .representado textarea { width: 100%; }
+.representado-datos { display: flex; flex-direction: column; gap: 6px; }
+.representado-datos .etiqueta { display: flex; flex-direction: column; gap: 4px; }
 .cta-memorial {
   margin: 10px 32px 0;
   max-width: 52rem;
@@ -418,6 +423,31 @@ input::selection, textarea::selection { background: var(--cobre-suave); color: v
   box-shadow: 0 18px 40px var(--sombra);
 }
 .dialogo-ancho { width: min(760px, 94vw); }
+.dialogo-escrito { width: min(720px, 94vw); }
+.escrito-cabeza { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; }
+.escrito-modelo { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; justify-content: flex-end; }
+.escrito-modelo .etiqueta { margin: 0; width: 100%; text-align: right; }
+.escrito-modelo select { min-width: 180px; }
+.carta-escrito { margin: 14px 0; padding: 18px 18px 14px; background: var(--papel); border: 1px solid var(--linea); border-radius: 14px; }
+.carta-escrito .juez, .carta-escrito .despacho, .carta-escrito .esd { margin: 0; font-family: Palatino, Georgia, serif; }
+.carta-escrito .despacho { font-weight: 700; margin-top: 2px; }
+.carta-escrito .esd { margin-top: 2px; color: var(--suave); }
+.carta-ref { display: grid; gap: 8px; margin: 14px 0 0; }
+.carta-ref div { display: grid; grid-template-columns: 96px 1fr; gap: 8px; align-items: center; }
+.carta-ref dt, .carta-ref dd { margin: 0; }
+.carta-ref dt { font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--cobre); font-weight: 700; }
+.carta-ref input, #escrito-presenta { width: 100%; }
+.escrito-quien { margin: 12px 0 0; }
+#escrito-prompt { min-height: 132px; }
+.escrito-docx { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 8px; }
+.archivo-boton { position: relative; overflow: hidden; }
+.escrito-extra { margin-top: 12px; }
+.escrito-extra summary { cursor: pointer; color: var(--cobre); font-weight: 700; }
+@media (max-width: 720px) {
+  .escrito-cabeza, .carta-ref div { display: block; }
+  .escrito-modelo { justify-content: flex-start; margin-top: 10px; }
+  .escrito-modelo .etiqueta { text-align: left; }
+}
 .fallas { display: flex; flex-direction: column; gap: 10px; max-height: 42vh; overflow: auto; margin: 12px 0 16px; }
 .falla { border: 1px solid var(--linea); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
 .falla .mono { margin: 0; }
@@ -506,3 +536,9 @@ input::selection, textarea::selection { background: var(--cobre-suave); color: v
 .resumen-auto { font-size: 12px; }
 .casilla { display: flex; gap: 8px; align-items: center; margin: 12px 0 4px; font-size: 14px; }
 .casilla input { width: auto; margin: 0; }
+.dudas-lista { margin: 4px 0 12px; padding-left: 1.2rem; }
+.dudas-lista li { margin: 4px 0; }
+.contexto-lista { display: flex; flex-direction: column; gap: 2px; margin: 4px 0 10px; }
+.contexto-lista .casilla { margin: 0; }
+.pieza-off { opacity: 0.55; }
+.archivo-oculto { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); border: 0; }

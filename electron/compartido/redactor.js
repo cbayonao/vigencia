@@ -1,7 +1,5 @@
 import { fechaCorta, nombreCliente, texto } from "./logica.js";
 
-const PEDIDO = /^(se\s+)?(libre|ordene|requiera|conceda|revoque|confirme|compulse|fije|señale|corra|notifique|expida|entregue|reconozca|decrete|declare|tenga|impulse|remita|suspenda|levante|archive|oficie)/i;
-
 const TIPOS = [
   { id: "tutela", claves: ["tutela"], asunto: "Acción de tutela" },
   { id: "reposicion", claves: ["reposición", "reposicion"], asunto: "Recurso de reposición" },
@@ -13,6 +11,9 @@ const TIPOS = [
   { id: "contestacion", claves: ["contestación", "contestacion", "contestar"], asunto: "Contestación" },
   { id: "alegatos", claves: ["alegato"], asunto: "Alegatos de conclusión" },
   { id: "traslado", claves: ["traslado"], asunto: "Pronunciamiento en el traslado" },
+  { id: "sustitucion", claves: ["sustitu"], asunto: "Sustitución de poder" },
+  { id: "inadmision", claves: ["inadmis"], asunto: "Inadmisión" },
+  { id: "requerimiento", claves: ["requerimiento"], asunto: "Respuesta a requerimiento" },
 ];
 
 function tipoDe(prompt) {
@@ -50,12 +51,6 @@ function partir(frase) {
   };
 }
 
-function esSoloTipo(frase, tipo) {
-  const normal = frase.normalize("NFD").replace(/\p{Mn}/gu, "").toLowerCase();
-  const marcas = [tipo.asunto, ...(tipo.claves || [])].map((clave) => clave.normalize("NFD").replace(/\p{Mn}/gu, "").toLowerCase());
-  return marcas.includes(normal);
-}
-
 function punto(frase) {
   const limpia = frase.trim().replace(/[.!?]+$/g, "");
   return `${limpia}.`;
@@ -85,9 +80,7 @@ function fundamentos(tipo) {
 
 function antecedente(expediente) {
   const ultima = expediente.ultima;
-  if (!ultima || (!texto(ultima.actuacion) && !texto(ultima.fecha))) {
-    return "En el expediente de la referencia no hay una actuación posterior que deba reseñarse en este memorial.";
-  }
+  if (!ultima || (!texto(ultima.actuacion) && !texto(ultima.fecha))) return "";
   const cuando = texto(ultima.fecha) ? `El ${fechaCorta(ultima.fecha)}` : "En el expediente";
   const que = texto(ultima.actuacion) || "una actuación";
   let frase = `${cuando} quedó registrada esta actuación: ${que}.`;
@@ -95,7 +88,54 @@ function antecedente(expediente) {
   return frase;
 }
 
-export function redactarEscrito({ expediente, prompt, hoy }) {
+export function referenciaCorta(escrita, pedido = "") {
+  const propia = texto(escrita);
+  if (propia) {
+    const corta = propia.split(/\s+/).slice(0, 5).join(" ");
+    return corta.charAt(0).toUpperCase() + corta.slice(1);
+  }
+  const tipo = tipoDe(String(pedido || ""));
+  if (tipo.id !== "memorial") return tipo.asunto;
+  const base = nucleo(oraciones(String(pedido || ""))[0] || "Memorial");
+  const corte = base.split(/\s+(?:porque|ya que|debido a que|dado que)\s+/i)[0];
+  const corta = corte.split(/\s+/).filter(Boolean).slice(0, 5).join(" ");
+  return corta || "Memorial";
+}
+
+export function aplicarPresentante(ficha, proceso, presenta) {
+  const copia = { ...(ficha || {}) };
+  if (texto(copia.cliente)) return copia;
+  if (texto(copia.representado)) {
+    copia.cliente = texto(copia.representado);
+    copia.cedula = texto(copia.representadoCedula);
+    copia.tarjeta = null;
+    copia.representado = null;
+    copia.representadoRol = null;
+    return copia;
+  }
+  const nombre = texto(presenta);
+  const sujetos = proceso?.sujetos || [];
+  const sujeto = sujetos.find((item) => texto(item.nombre) === nombre)
+    || sujetos.find((item) => texto(item.nombre));
+  copia.cliente = texto(sujeto?.nombre) || nombre || "";
+  copia.cedula = texto(sujeto?.identificacion);
+  copia.tarjeta = null;
+  return copia;
+}
+
+const CON_NORMA = new Set(["tutela", "reposicion", "apelacion", "copias", "impulso", "cautelar"]);
+
+function parrafosDelPedido(pedido) {
+  return oraciones(pedido).map((oracion) => {
+    const frase = nucleo(oracion);
+    const piezas = partir(frase);
+    if (!piezas.soporte) return punto(piezas.pedido);
+    const soporte = `${piezas.soporte.charAt(0).toLowerCase()}${piezas.soporte.slice(1)}`;
+    return punto(`${piezas.pedido}, porque ${soporte}`);
+  });
+}
+
+export function redactarEscrito({ expediente, prompt, hoy, referencia } = {}) {
   const pedido = texto(prompt);
   if (!pedido) {
     const error = new Error("Escriba qué debe pedirle al juzgado.");
@@ -107,27 +147,18 @@ export function redactarEscrito({ expediente, prompt, hoy }) {
     error.aviso = true;
     throw error;
   }
-  const ficha = expediente || {};
+  const ficha = { ...(expediente || {}), referencia: referenciaCorta(referencia || expediente?.referencia, pedido) };
   const tipo = tipoDe(pedido);
   const despacho = texto(ficha.despacho) || "Despacho de conocimiento";
-  const partes = oraciones(pedido).map(nucleo);
-  const hechos = [];
-  const peticiones = [];
-  for (const frase of partes) {
-    const piezas = partir(frase);
-    if (piezas.soporte) hechos.push(punto(piezas.soporte));
-    if (!esSoloTipo(piezas.pedido, tipo) && (PEDIDO.test(piezas.pedido) || piezas.soporte)) peticiones.push(punto(piezas.pedido));
-    else if (!piezas.soporte) hechos.push(punto(piezas.pedido));
-  }
-  if (!hechos.length) hechos.push("Los hechos en que se apoya la petición son los que ya constan en el expediente y los que se indican en este memorial.");
-  if (!peticiones.length) peticiones.push("Proveer de conformidad con lo expuesto en los hechos.");
-  const proceso = [texto(ficha.tipo_proceso), texto(ficha.clase_proceso)].filter(Boolean).join(" · ");
   const cliente = texto(ficha.cliente);
-  const quien = cliente || "El suscrito";
+  const enNombre = fraseRepresentado(ficha);
+  const quien = fraseAbogado(cliente || "El suscrito", ficha);
   const verbo = cliente ? "presento" : "presenta";
-  const pido = cliente ? "Solicito" : "Se solicita";
-  const pieza = tipo.id === "memorial" ? "este memorial" : `este memorial de ${tipo.asunto.toLowerCase()}`;
   const contacto = [texto(ficha.telefonos), texto(ficha.email), texto(ficha.direccion)].filter(Boolean).join(" · ");
+  const avisoRepresentado = [texto(ficha.representadoDireccion), texto(ficha.representadoTelefono)].filter(Boolean).join(" · ");
+  const avisos = [];
+  if (contacto) avisos.push(`Recibo notificaciones en ${contacto}.`);
+  if (avisoRepresentado) avisos.push(`Las notificaciones de ${texto(ficha.representado) || "quien represento"} se reciben en ${avisoRepresentado}.`);
   const lugar = texto(ficha.departamento);
   const secciones = [
     {
@@ -143,57 +174,66 @@ export function redactarEscrito({ expediente, prompt, hoy }) {
       titulo: "Referencia",
       parrafos: [
         `Radicado: ${texto(ficha.radicado) || "sin número"}`,
-        proceso ? `Proceso: ${proceso}` : "",
+        `Referencia: ${ficha.referencia}`,
         `Demandante: ${texto(ficha.demandantes) || "no figura en el expediente"}`,
         `Demandado: ${texto(ficha.demandados) || "no figura en el expediente"}`,
-        `Asunto: ${tipo.asunto}`,
       ].filter(Boolean),
     },
     {
       titulo: "Presentación",
       parrafos: [
-        `${quien}, dentro del expediente de la referencia, comedidamente ${verbo} ${pieza} ante su despacho.`,
+        `${quien}${enNombre}, por medio del presente escrito, comedidamente ${verbo} a su despacho lo siguiente.`,
       ],
     },
     {
-      titulo: "Antecedentes",
-      parrafos: [antecedente(ficha)],
+      titulo: "Cuerpo",
+      parrafos: [
+        ...parrafosDelPedido(pedido),
+        antecedente(ficha),
+        CON_NORMA.has(tipo.id) ? fundamentos(tipo) : "",
+      ].filter(Boolean),
     },
-    {
-      titulo: "Hechos",
-      parrafos: hechos.map((hecho, indice) => `${indice + 1}. ${hecho}`),
-    },
-    {
-      titulo: "Fundamentos",
-      parrafos: [fundamentos(tipo)],
-    },
-    {
-      titulo: "Peticiones",
-      parrafos: peticiones.map((item, indice) => `${indice + 1}. ${item}`),
-    },
-    {
-      titulo: "Pruebas",
-      parrafos: [`${pido} que se tengan como prueba las piezas del expediente, en especial la actuación reseñada, y los documentos que se arrimen con este memorial.`],
-    },
-    {
-      titulo: "Anexos",
-      parrafos: ["Los documentos que se acompañan a este memorial y los que ya obran en el expediente."],
-    },
-    {
-      titulo: "Notificaciones",
-      parrafos: [contacto ? `Recibo notificaciones en ${contacto}.` : "Recibo notificaciones en la dirección que figure en el expediente."],
-    },
+    ...(avisos.length ? [{ titulo: "Notificaciones", parrafos: avisos }] : []),
     {
       titulo: "Cierre",
       parrafos: [
-        "Del señor juez, comedidamente,",
         "Atentamente,",
         "________________________________",
         cliente || "Firma",
-      ],
+        texto(ficha.cedula) ? `C.C. ${texto(ficha.cedula)}` : "",
+        texto(ficha.tarjeta) ? `T.P. ${texto(ficha.tarjeta)}` : "",
+      ].filter(Boolean),
     },
   ];
-  return { asunto: tipo.asunto, secciones };
+  return { asunto: ficha.referencia, secciones };
+}
+
+function fraseAbogado(nombre, ficha) {
+  const datos = [
+    texto(ficha.cedula) ? `cédula ${texto(ficha.cedula)}` : "",
+    texto(ficha.tarjeta) ? `tarjeta profesional ${texto(ficha.tarjeta)}` : "",
+  ].filter(Boolean);
+  return datos.length ? `${nombre}, con ${datos.join(" y ")}` : nombre;
+}
+
+function fraseRepresentado(ficha) {
+  const nombre = texto(ficha.representado);
+  if (!nombre) return "";
+  const lado = texto(ficha.representadoRol);
+  const cabeza = `${nombre}${lado ? ` (${lado})` : ""}`;
+  const datos = [
+    texto(ficha.representadoCedula) ? `cédula ${texto(ficha.representadoCedula)}` : "",
+    texto(ficha.representadoDireccion) ? `dirección ${texto(ficha.representadoDireccion)}` : "",
+    texto(ficha.representadoTelefono) ? `teléfono ${texto(ficha.representadoTelefono)}` : "",
+  ].filter(Boolean);
+  const quien = datos.length ? `${cabeza}, con ${datos.join(", ")}` : cabeza;
+  return `, en representación de ${quien}`;
+}
+
+function ladoRepresentado(rol) {
+  const limpio = texto(rol);
+  if (limpio === "otro") return "tercero u otra parte";
+  return limpio;
 }
 
 export function fichaDeDetalle(proceso) {
@@ -209,6 +249,13 @@ export function fichaDeDetalle(proceso) {
     demandantes: unir("demandante"),
     demandados: unir("demandado"),
     cliente: nombreCliente(proceso?.cliente),
+    cedula: texto(proceso?.cliente?.cedula),
+    tarjeta: texto(proceso?.cliente?.tarjeta),
+    representado: texto(proceso?.cliente?.representado),
+    representadoRol: ladoRepresentado(proceso?.cliente?.representado_rol),
+    representadoCedula: texto(proceso?.cliente?.representado_cedula),
+    representadoDireccion: texto(proceso?.cliente?.representado_direccion),
+    representadoTelefono: texto(proceso?.cliente?.representado_telefono),
     telefonos: proceso?.cliente?.telefonos,
     email: proceso?.cliente?.email,
     direccion: proceso?.cliente?.direccion,

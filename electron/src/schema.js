@@ -239,4 +239,74 @@ export const MIGRACIONES = [
       `);
     },
   },
+  {
+    version: 5,
+    nombre: "biblioteca del escrito",
+    up(db) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS pieza (
+            id            INTEGER PRIMARY KEY,
+            nombre        TEXT NOT NULL,
+            tipo          TEXT NOT NULL CHECK (tipo IN ('plantilla', 'ejemplo', 'norma', 'estilo')),
+            texto         TEXT NOT NULL,
+            activa        INTEGER NOT NULL DEFAULT 1 CHECK (activa IN (0, 1)),
+            creado_en     TEXT NOT NULL,
+            actualizado_en TEXT NOT NULL
+        );
+      `);
+      const insertar = db.prepare(`
+        INSERT INTO pieza (nombre, tipo, texto, activa, creado_en, actualizado_en)
+        VALUES (?, ?, ?, 1, ?, ?)
+      `);
+      const marca = "2026-10-12T00:00:00.000Z";
+      const semillas = [
+        [
+          "Tono del memorial",
+          "estilo",
+          "Trato de usted. Tono formal y sobrio. No cites jurisprudencia. No abras secciones que el caso no necesite. Cierra con la firma de quien presenta.",
+        ],
+        [
+          "Demanda, artículo 82 del CGP",
+          "norma",
+          "Si el escrito es una demanda, el artículo 82 del Código General del Proceso pide: juez, partes con identificación y domicilio, pretensiones, hechos numerados, pruebas, fundamentos de derecho, cuantía cuando define el trámite, y direcciones de notificación. Si falta un dato, márcalo como [Dato pendiente].",
+        ],
+        [
+          "Tutela, artículo 14 del Decreto 2591 de 1991",
+          "norma",
+          "Si el escrito es una tutela, el artículo 86 de la Constitución y el artículo 14 del Decreto 2591 de 1991 piden: la acción u omisión, el derecho fundamental, la autoridad o persona accionada, el juramento de no haber presentado otra tutela por los mismos hechos, y el nombre y la ubicación de quien solicita. Si falta un dato, márcalo como [Dato pendiente].",
+        ],
+        [
+          "Derecho de petición, artículo 16 de la Ley 1755 de 2015",
+          "norma",
+          "Si el escrito es un derecho de petición, el artículo 16 de la Ley 1755 de 2015 pide: la autoridad, el nombre y la dirección de quien solicita, el objeto, las razones y los documentos. Si falta un dato, márcalo como [Dato pendiente].",
+        ],
+      ];
+      for (const [nombre, tipo, texto] of semillas) {
+        insertar.run(nombre, tipo, texto, marca, marca);
+      }
+    },
+  },
+  {
+    version: 6,
+    nombre: "representado del abogado",
+    up(db) {
+      db.exec(`
+        ALTER TABLE proceso_cliente ADD COLUMN representado TEXT;
+        ALTER TABLE proceso_cliente ADD COLUMN representado_rol TEXT;
+      `);
+    },
+  },
+  {
+    version: 7,
+    nombre: "cedula y tarjeta del abogado",
+    up(db) {
+      db.exec(`
+        ALTER TABLE cliente ADD COLUMN cedula TEXT;
+        ALTER TABLE cliente ADD COLUMN tarjeta TEXT;
+        ALTER TABLE proceso_cliente ADD COLUMN representado_cedula TEXT;
+        ALTER TABLE proceso_cliente ADD COLUMN representado_direccion TEXT;
+        ALTER TABLE proceso_cliente ADD COLUMN representado_telefono TEXT;
+      `);
+    },
+  },
 ];

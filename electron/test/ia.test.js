@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { generarBorrador, listarModelos, pulirConSencillo, contextoExpediente, extraerPuntos, semejantes, filtrarPorModo, guardarModo, leerNubes, guardarNube, RECOMENDADOS, urlDeModelo, esGgufValido } from "../src/ia.js";
+import { generarBorrador, listarModelos, pulirConSencillo, contextoExpediente, extraerPuntos, semejantes, filtrarPorModo, guardarModo, leerNubes, guardarNube, RECOMENDADOS, urlDeModelo, esGgufValido, tamanoDeContexto, cabeElModelo } from "../src/ia.js";
 import { htmlMemorial, vistaMemorial } from "../src/memorial.js";
 import { redactarEscrito } from "../compartido/redactor.js";
 
@@ -52,8 +52,18 @@ test("el contexto del expediente lleva juzgado, partes y actuaciones", () => {
     radicado: proceso.radicado, despacho: proceso.despacho, departamento: "Bogotá",
     tipo_proceso: "Verbal", clase_proceso: "Unión marital",
     demandantes: "Ana Parte", demandados: "Luis Parte", cliente: "Ana Pérez",
+    representado: "Luis Parte", representadoRol: "demandado",
+    cedula: "123", tarjeta: "456",
+    representadoCedula: "999", representadoDireccion: "Calle 9", representadoTelefono: "300",
   };
   const contexto = contextoExpediente(ficha, proceso);
+  assert.ok(contexto.includes("Abogado: Ana Pérez"));
+  assert.ok(contexto.includes("Cédula del abogado: 123"));
+  assert.ok(contexto.includes("Tarjeta profesional: 456"));
+  assert.ok(contexto.includes("Representa a: Luis Parte (demandado)"));
+  assert.ok(contexto.includes("Cédula del representado: 999"));
+  assert.ok(contexto.includes("Dirección del representado: Calle 9"));
+  assert.ok(contexto.includes("Teléfono del representado: 300"));
   assert.ok(contexto.includes("Juzgado 2 de Familia"));
   assert.ok(contexto.includes("11001311000220220047400"));
   assert.ok(contexto.includes("Ana Parte"));
@@ -158,4 +168,22 @@ test("los modelos listan el sencillo y los gguf importados", () => {
   assert.equal(activo, "sencillo");
   assert.ok(modelos.some((m) => m.id === "sencillo" && m.instalado));
   assert.ok(modelos.some((m) => m.id === "gguf:mini.gguf"));
+});
+
+test("el contexto del modelo local queda por debajo del bloque que tumba la ventana", () => {
+  const unoB = tamanoDeContexto({
+    block_count: 16,
+    embedding_length: 2048,
+    attention: { head_count: 32, head_count_kv: 8, key_length: 64 },
+  });
+  const tresB = tamanoDeContexto({
+    block_count: 28,
+    embedding_length: 3072,
+    attention: { head_count: 24, head_count_kv: 8, key_length: 128 },
+  });
+  assert.equal(unoB, 15360);
+  assert.equal(tresB, 4352);
+  assert.equal(tamanoDeContexto({}), 2048);
+  assert.equal(cabeElModelo(771 * 1024 * 1024), true);
+  assert.equal(cabeElModelo(1.9 * 1024 * 1024 * 1024), false);
 });

@@ -30,70 +30,38 @@ El programa instalado y el de desarrollo son dos instalaciones distintas. Una ll
 
 ## Activar una máquina a mano
 
-La firma está en este repositorio (`licencia/claves/licencia-privada.pem`). El comando se corre aquí, en la raíz del repositorio, no dentro de la carpeta `electron`.
+Hay dos papeles, no los mezcles:
 
-1. Abre Vigencia en la máquina que quieres activar y déjala en **Iniciar el plan**. Así nace su `licencia.json`.
-2. Copia ese archivo. No lo muevas. Si lo mueves, la aplicación crea otro y la llave no coincide.
-3. En la raíz de este repositorio firma la copia. El comando imprime dos líneas: la fecha y, debajo, la llave.
-4. En esa misma ventana, pega solo la línea larga en **Código de activación** y pulsa **Activar**. No pegues la frase de la fecha.
+- **Máquina A = la firma.** Es este computador Linux con el repositorio. Aquí vive `licencia/claves/licencia-privada.pem`: no está en git, no se sube a ningún lado y **nunca se copia a otra máquina**. Todo instalador armado desde este repositorio solo acepta llaves firmadas con esa privada.
+- **Máquina B = la del cliente.** El Windows donde instalaste Vigencia. Aquí **no se generan llaves ni se clona el repo para firmar**: cualquier llave creada en B la ignora la aplicación y da «Ese código no abre esta instalación.»
 
-### Linux
+Pasos (la llave dura 10 años y solo abre la máquina para la que se creó):
 
-```bash
-cp ~/.config/Vigencia/licencia.json /tmp/vigencia-licencia.json
-node licencia/emitir.mjs /tmp/vigencia-licencia.json
-```
+1. En **B**, abre Vigencia y déjala en **Iniciar el plan**. Así nace su `licencia.json` con su identificador.
+2. En **B**, **copia** ese archivo a un USB o correo (no lo muevas: si falta, la app crea otro identificador y la llave no coincide). En Windows instalado está en `%APPDATA%\Vigencia\licencia.json`.
+3. En **A**, firma la copia desde la raíz del repositorio (no dentro de `electron`). El comando imprime una línea de confirmación y, debajo, la llave larga:
+   ```bash
+   node licencia/emitir.mjs /tmp/vigencia-licencia.json
+   ```
+4. En **B**, pega solo la línea larga en **Código de activación** y pulsa **Activar**.
 
-### Mac
+Atajo alternativo para el paso 3 y 4: el comando también deja la llave ya escrita dentro de la copia que firmaste. Puedes devolver ese archivo a **B** (sobrescribiendo el original con Vigencia cerrada) y abrir: entra directo sin pegar nada.
 
-```bash
-cp "$HOME/Library/Application Support/Vigencia/licencia.json" /tmp/vigencia-licencia.json
-node licencia/emitir.mjs /tmp/vigencia-licencia.json
-```
+### Si la máquina que activas es esta misma (A)
 
-### Windows (PowerShell)
-
-```powershell
-Copy-Item "$env:APPDATA\Vigencia\licencia.json" "$env:TEMP\vigencia-licencia.json"
-node licencia/emitir.mjs "$env:TEMP\vigencia-licencia.json"
-```
-
-### Este repositorio, con `npm start`
-
-El archivo ya está en la raíz. Desde la raíz:
+Solo cuando el programa y la firma están en el mismo computador se firma en su sitio. Desde la raíz del repositorio:
 
 ```bash
+# Linux instalado / desarrollo: ajusta la ruta al archivo de esa instalación
+node licencia/emitir.mjs ~/.config/Vigencia/licencia.json
 node licencia/emitir.mjs licencia.json
 ```
 
-Si el terminal está dentro de `electron`:
-
-```bash
-node ../licencia/emitir.mjs ../licencia.json
-```
-
-Ese comando activa el desarrollo. No activa el programa instalado.
-
-### Si la aplicación está cerrada
-
-Puedes firmar el archivo en su sitio y después abrir Vigencia. No hace falta pegar la llave.
-
-Linux:
-
-```bash
-node licencia/emitir.mjs ~/.config/Vigencia/licencia.json
-```
-
-Mac:
-
-```bash
-node licencia/emitir.mjs "$HOME/Library/Application Support/Vigencia/licencia.json"
-```
-
-Windows (PowerShell):
-
 ```powershell
+# Windows instalado
 node licencia/emitir.mjs "$env:APPDATA\Vigencia\licencia.json"
 ```
+
+Ese comando activa esa instalación. No activa el programa instalado en otro computador.
 
 Para volver a ver la página de pago, vacía `token` y `visto` en el `licencia.json` de esa máquina, cierra con **Salir** y ábrela otra vez.

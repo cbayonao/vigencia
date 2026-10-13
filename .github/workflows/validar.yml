@@ -1,0 +1,55 @@
+name: Validar
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  landing:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: landing/package-lock.json
+      - run: npm ci
+        working-directory: landing
+      - run: npm run build
+        working-directory: landing
+
+  electron:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: electron/package-lock.json
+      - run: npm ci
+        working-directory: electron
+      - run: npm test
+        working-directory: electron
+
+  terraform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.15"
+          terraform_wrapper: false
+      - run: terraform fmt -check
+        working-directory: landing/terraform
+      - run: terraform init -backend=false -input=false && terraform validate
+        working-directory: landing/terraform
+      - run: terraform fmt -check
+        working-directory: licencia/terraform
+      - run: terraform init -backend=false -input=false && terraform validate
+        working-directory: licencia/terraform

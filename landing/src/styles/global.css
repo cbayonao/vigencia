@@ -1,0 +1,113 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Fraunces", ui-serif, Georgia, serif;
+  --color-papel: #faf7f1;
+  --color-tinta: #1c1917;
+  --color-cobre: #b45309;
+  --color-cobre-claro: #f59e0b;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+body {
+  background: #faf7f1;
+  color: #1c1917;
+  overflow-x: hidden;
+}
+
+/* ---------- animaciones ---------- */
+@keyframes flotar {
+  0%, 100% { transform: translateY(0) rotate(-1deg); }
+  50% { transform: translateY(-14px) rotate(1deg); }
+}
+@keyframes flotar2 {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+@keyframes gradiente {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+@keyframes pulso-suave {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(180, 83, 9, 0.35); }
+  50% { box-shadow: 0 0 0 14px rgba(180, 83, 9, 0); }
+}
+@keyframes marquesina {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+@keyframes cursor {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+@keyframes brillo {
+  from { transform: translateX(-100%) skewX(-15deg); }
+  to { transform: translateX(250%) skewX(-15deg); }
+}
+
+.anim-flotar { animation: flotar 6s ease-in-out infinite; }
+.anim-flotar2 { animation: flotar2 5s ease-in-out infinite; }
+.anim-pulso { animation: pulso-suave 2.4s ease-in-out infinite; }
+.fondo-animado {
+  background-size: 200% 200%;
+  animation: gradiente 12s ease infinite;
+}
+.marquesina-pista {
+  animation: marquesina 32s linear infinite;
+}
+.marquesina-pista:hover { animation-play-state: paused; }
+.cursor-vivo::after {
+  content: "▍";
+  animation: cursor 1s steps(1) infinite;
+  color: #b45309;
+}
+.btn-brillo { position: relative; overflow: hidden; }
+.btn-brillo::before {
+  content: "";
+  position: absolute;
+  top: 0; bottom: 0;
+  width: 40%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.45), transparent);
+  animation: brillo 3.2s ease-in-out infinite;
+}
+
+/* reveal on scroll */
+.revelar {
+  opacity: 0;
+  transform: translateY(34px);
+  transition: opacity .8s cubic-bezier(.22,1,.36,1), transform .8s cubic-bezier(.22,1,.36,1);
+}
+.revelar.visible {
+  opacity: 1;
+  transform: none;
+}
+.revelar-izq { transform: translateX(-40px); }
+.revelar-der { transform: translateX(40px); }
+.revelar-izq.visible, .revelar-der.visible { transform: none; }
+
+/* timeline */
+.linea-tiempo::before {
+  content: "";
+  position: absolute;
+  left: 19px;
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
+  background: linear-gradient(#f59e0b, #b45309, #f59e0b);
+  opacity: .5;
+}
+
+/* tarjeta cristal app */
+.mock-ventana {
+  box-shadow: 0 30px 80px -20px rgba(28,25,23,.35), 0 2px 0 rgba(255,255,255,.6) inset;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .anim-flotar, .anim-flotar2, .anim-pulso, .fondo-animado, .marquesina-pista, .btn-brillo::before {
+    animation: none !important;
+  }
+  .revelar { opacity: 1; transform: none; transition: none; }
+}

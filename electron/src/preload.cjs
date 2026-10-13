@@ -11,6 +11,13 @@ contextBridge.exposeInMainWorld("vigencia", {
   prepararEscrito: (id, prompt) => ipcRenderer.invoke("preparar-escrito", { id, prompt }),
   modelosListar: () => ipcRenderer.invoke("modelos-listar"),
   modelosRecomendados: () => ipcRenderer.invoke("modelos-recomendados"),
+  motorEstado: () => ipcRenderer.invoke("motor-estado"),
+  motorInstalar: () => ipcRenderer.invoke("motor-instalar"),
+  alMotor: (fn) => {
+    const canal = (_evento, dato) => fn(dato);
+    ipcRenderer.on("motor-progreso", canal);
+    return () => ipcRenderer.removeListener("motor-progreso", canal);
+  },
   modelosDescargar: (id) => ipcRenderer.invoke("modelos-descargar", { id }),
   alModelo: (fn) => {
     const canal = (_evento, dato) => fn(dato);
@@ -22,10 +29,16 @@ contextBridge.exposeInMainWorld("vigencia", {
   modelosNube: () => ipcRenderer.invoke("modelos-nube"),
   modelosGuardarNube: (datos) => ipcRenderer.invoke("modelos-guardar-nube", datos),
   modelosProbar: (datos) => ipcRenderer.invoke("modelos-probar", datos),
-  iniciarGenerar: (tipo, datos, modelo) => ipcRenderer.invoke("iniciar-generar", { tipo, datos, modelo }),
+  iniciarGenerar: (tipo, datos, modelo, excluir, aclaracion) => ipcRenderer.invoke("iniciar-generar", { tipo, datos, modelo, excluir, aclaracion }),
+  piezasListar: () => ipcRenderer.invoke("piezas-listar"),
+  piezaGuardar: (datos) => ipcRenderer.invoke("pieza-guardar", datos),
+  piezaActivar: (id, activa) => ipcRenderer.invoke("pieza-activar", { id, activa }),
+  piezaBorrar: (id) => ipcRenderer.invoke("pieza-borrar", { id }),
   iniciarGuardar: (inicial) => ipcRenderer.invoke("iniciar-guardar", inicial),
   modelosImportar: () => ipcRenderer.invoke("modelos-importar"),
-  generarBorrador: (id, prompt, modelo) => ipcRenderer.invoke("escrito-generar", { id, prompt, modelo }),
+  generarBorrador: (id, prompt, modelo, excluir, aclaracion, extra) => ipcRenderer.invoke("escrito-generar", {
+    id, prompt, modelo, excluir, aclaracion, ...(extra || {}),
+  }),
   guardarBorradorWord: (id, borrador) => ipcRenderer.invoke("escrito-guardar-borrador", { id, borrador }),
   guardarBorradorPdf: (id, borrador) => ipcRenderer.invoke("escrito-guardar-pdf", { id, borrador }),
   alBorrador: (fn) => {
@@ -35,6 +48,7 @@ contextBridge.exposeInMainWorld("vigencia", {
   },
   guardarEscrito: (id, prompt) => ipcRenderer.invoke("guardar-escrito", { id, prompt }),
   asignarCliente: (idProceso, clienteId) => ipcRenderer.invoke("asignar-cliente", { idProceso, clienteId }),
+  guardarRepresentado: (idProceso, representado) => ipcRenderer.invoke("guardar-representado", { idProceso, representado }),
   estado: () => ipcRenderer.invoke("estado"),
   actualizar: () => ipcRenderer.invoke("actualizar"),
   actualizarUno: (id) => ipcRenderer.invoke("actualizar-uno", id),

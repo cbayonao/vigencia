@@ -1,0 +1,37 @@
+# Publica el landing cuando cambia landing/** en main.
+# Requiere el secreto AWS_ROLE_ARN (rol IAM con OIDC hacia este repo).
+name: Desplegar landing
+
+on:
+  push:
+    branches: [main]
+    paths: ["landing/**"]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  desplegar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-east-1
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.15"
+          terraform_wrapper: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: landing/package-lock.json
+      - run: terraform init -input=false && terraform apply -auto-approve -input=false
+        working-directory: landing/terraform
+      - run: ./landing/script/desplegar.sh
+        env:
+          # El build consulta el último release para activar la tarjeta de Mac.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

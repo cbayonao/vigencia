@@ -12,12 +12,15 @@ import {
   borrarCliente,
   borrarProceso,
   datosParaExcel,
+  detalleProceso,
   filas,
   guardarCliente,
+  guardarRepresentado,
   guardarInformeRevision,
   guardarPausaActualizar,
   leerInformeRevision,
   leerPausaActualizar,
+  listarClientes,
   listarProcesos,
   uno,
 } from "../src/db.js";
@@ -81,7 +84,7 @@ test("la migración agrega clientes y no borra expedientes", () => {
   assert.ok(uno(db, "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'cliente'"));
   assert.ok(uno(db, "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'pausa_boton'"));
   assert.ok(uno(db, "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'informe_revision'"));
-  assert.equal(Number(uno(db, "SELECT COUNT(*) AS n FROM schema_migracion").n), 4);
+  assert.equal(Number(uno(db, "SELECT COUNT(*) AS n FROM schema_migracion").n), 7);
   guardarPausaActualizar(db, "2026-10-10 13:00:00");
   db.close();
   const otra = abrirBase(tmp.ruta);
@@ -98,7 +101,7 @@ test("la migración agrega clientes y no borra expedientes", () => {
   assert.equal(informe.fallidos, 1);
   assert.equal(informe.fallas[0].causa, "La Rama no respondió.");
   assert.equal("id_proceso" in informe.fallas[0], false);
-  assert.equal(Number(uno(otra, "SELECT COUNT(*) AS n FROM schema_migracion").n), 4);
+  assert.equal(Number(uno(otra, "SELECT COUNT(*) AS n FROM schema_migracion").n), 7);
   assert.equal(Number(uno(otra, "SELECT COUNT(*) AS n FROM proceso").n), 1);
   otra.close();
   tmp.borrar();
@@ -114,11 +117,36 @@ test("asignar, filtrar y borrar un cliente no borra el expediente", () => {
     telefonos: "300 111",
     direccion: "Calle 1",
     email: "ana@ejemplo.com",
+    cedula: "123",
+    tarjeta: "456",
   });
   asignarCliente(db, 7, id);
+  assert.equal(listarClientes(db).find((c) => c.id === id).cedula, "123");
+  assert.equal(listarClientes(db).find((c) => c.id === id).tarjeta, "456");
+  assert.throws(() => guardarRepresentado(db, 8, { texto: "Nadie" }), /Asigne un abogado/);
+  guardarRepresentado(db, 7, {
+    texto: "Luis Parte",
+    rol: "demandado",
+    cedula: "999",
+    direccion: "Calle 9",
+    telefono: "300",
+  });
   const lista = listarProcesos(db);
   assert.equal(lista.find((p) => p.id_proceso === 7).cliente_nombre, "Ana");
-  borrarCliente(db, id);
+  assert.equal(lista.find((p) => p.id_proceso === 7).representado, "Luis Parte");
+  assert.equal(detalleProceso(db, 7).cliente.representado_rol, "demandado");
+  assert.equal(detalleProceso(db, 7).cliente.cedula, "123");
+  assert.equal(detalleProceso(db, 7).cliente.representado_cedula, "999");
+  assert.equal(detalleProceso(db, 7).cliente.representado_direccion, "Calle 9");
+  assert.equal(detalleProceso(db, 7).cliente.representado_telefono, "300");
+  const otro = guardarCliente(db, { nombre: "Luis" });
+  asignarCliente(db, 7, otro);
+  assert.equal(detalleProceso(db, 7).cliente.representado, "Luis Parte");
+  assert.equal(detalleProceso(db, 7).cliente.representado_cedula, "999");
+  guardarRepresentado(db, 7, { texto: "Un tercero", rol: "inventado" });
+  assert.equal(detalleProceso(db, 7).cliente.representado, "Un tercero");
+  assert.equal(detalleProceso(db, 7).cliente.representado_rol, null);
+  borrarCliente(db, otro);
   assert.equal(Number(uno(db, "SELECT COUNT(*) AS n FROM proceso").n), 1);
   assert.equal(Number(uno(db, "SELECT COUNT(*) AS n FROM proceso_cliente").n), 0);
   assert.equal(listarProcesos(db).find((p) => p.id_proceso === 7).cliente_id, null);

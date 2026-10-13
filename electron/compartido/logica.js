@@ -120,6 +120,7 @@ export function coincide(proceso, consulta) {
     "clase_proceso",
     "cliente_nombre",
     "cliente_apellidos",
+    "representado",
   ].map((campo) => texto(proceso?.[campo]) || "").join(" ");
   const todo = `${bolsa} ${tipoClave(proceso?.tipo_proceso)}`.toLowerCase();
   return consulta.split(/\s+/).filter(Boolean).every((parte) => todo.includes(parte));

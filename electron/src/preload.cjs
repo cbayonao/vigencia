@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld("vigencia", {
   modelosRecomendados: () => ipcRenderer.invoke("modelos-recomendados"),
   motorEstado: () => ipcRenderer.invoke("motor-estado"),
   motorInstalar: () => ipcRenderer.invoke("motor-instalar"),
+  motorDiagnosticar: () => ipcRenderer.invoke("motor-diagnostico"),
   alMotor: (fn) => {
     const canal = (_evento, dato) => fn(dato);
     ipcRenderer.on("motor-progreso", canal);
@@ -60,6 +61,19 @@ contextBridge.exposeInMainWorld("vigencia", {
   ajustes: () => ipcRenderer.invoke("ajustes"),
   guardarAjustes: (datos) => ipcRenderer.invoke("guardar-ajustes", datos),
   salir: () => ipcRenderer.invoke("salir"),
+  actualizacionComprobar: () => ipcRenderer.invoke("actualizacion-comprobar"),
+  actualizacionOmitir: (version) => ipcRenderer.invoke("actualizacion-omitir", { version }),
+  actualizacionDescargar: (archivo) => ipcRenderer.invoke("actualizacion-descargar", { archivo }),
+  alActualizacion: (fn) => {
+    const canal = (_evento, dato) => fn(dato);
+    ipcRenderer.on("actualizacion-disponible", canal);
+    return () => ipcRenderer.removeListener("actualizacion-disponible", canal);
+  },
+  alDescargaApp: (fn) => {
+    const canal = (_evento, dato) => fn(dato);
+    ipcRenderer.on("actualizacion-progreso", canal);
+    return () => ipcRenderer.removeListener("actualizacion-progreso", canal);
+  },
   licencia: () => ipcRenderer.invoke("licencia"),
   iniciarPlan: () => ipcRenderer.invoke("licencia-iniciar"),
   confirmarPlan: () => ipcRenderer.invoke("licencia-confirmar"),

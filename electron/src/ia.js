@@ -10,7 +10,7 @@ import { texto } from "../compartido/logica.js";
 import { fechaInforme } from "./informe.js";
 import { vistaMemorial } from "./memorial.js";
 import { Aviso } from "./db.js";
-import { AVISO_MOTOR, entradaDelMotor, esFalloDeMotor, prepararReleaseMotor } from "./motor.js";
+import { AVISO_MOTOR, entradaDelMotor, esFalloDeMotor, prepararReleaseMotor, repararCopiaMotor } from "./motor.js";
 import { PROVEEDORES, chatNube } from "./nube.js";
 
 export const MODELO_SENCILLO = "sencillo";
@@ -385,18 +385,17 @@ export function tamanoDeContexto(meta) {
   return Math.max(CONTEXTO_MIN, Math.min(CONTEXTO_MAX, ajustado));
 }
 
+async function intentarArrancar() {
+  const entrada = entradaDelMotor();
+  const llamaCpp = entrada ? await import(pathToFileURL(entrada).href) : await import("node-llama-cpp");
+  const llama = await llamaCpp.getLlama({ gpu: false });
+  return { llamaCpp, llama };
+}
+
 async function cargarMotor(ruta) {
   if (motor?.ruta === ruta && motor?.modelo) return motor;
   await soltarMotor();
   prepararReleaseMotor();
-  let llamaCpp = null;
-  try {
-    const entrada = entradaDelMotor();
-    llamaCpp = entrada ? await import(pathToFileURL(entrada).href) : await import("node-llama-cpp");
-  } catch (error) {
-    console.error(error);
-    throw new Aviso(AVISO_MOTOR);
-  }
   let stat = null;
   try {
     stat = fs.statSync(ruta);
@@ -407,14 +406,27 @@ async function cargarMotor(ruta) {
   if (!cabeElModelo(stat.size)) {
     throw new Aviso("Ese modelo no cabe en la ventana. Use uno más pequeño, como el de 1B, o el modelo Sencillo.");
   }
-  let llama = null;
+  let arranque = null;
   try {
-    llama = await llamaCpp.getLlama({ gpu: false });
+    arranque = await intentarArrancar();
   } catch (error) {
     console.error(error);
-    if (esFalloDeMotor(error)) throw new Aviso(AVISO_MOTOR);
-    throw error;
+    if (!esFalloDeMotor(error)) throw error;
+    // La copia en datos pudo quedar incompleta: se repara una vez y se
+    // reintenta (los binarios descargados se conservan).
+    try {
+      repararCopiaMotor();
+    } catch (errorReparo) {
+      console.error(errorReparo);
+    }
+    try {
+      arranque = await intentarArrancar();
+    } catch (error2) {
+      console.error(error2);
+      throw new Aviso(AVISO_MOTOR);
+    }
   }
+  const { llamaCpp, llama } = arranque;
   const modelo = await llama.loadModel({ modelPath: ruta });
   motor = { ruta, llama, modelo, cpp: llamaCpp };
   return motor;

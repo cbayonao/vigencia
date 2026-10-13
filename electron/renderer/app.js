@@ -297,6 +297,7 @@ const CAPAS = [
   "dialogo-ajustes",
   "dialogo-biblioteca",
   "dialogo-pieza",
+  "dialogo-actualizar",
 ];
 
 function cerrarMenuOpciones() {
@@ -1521,7 +1522,7 @@ document.addEventListener("keydown", (evento) => {
   }
   if (evento.key === "Escape") {
     if (cima === "dialogo-cliente") cerrarFormulario();
-    else if (cima === "dialogo-ajustes" || cima === "dialogo-csv" || cima === "dialogo-borrar" || cima === "dialogo-eliminar" || cima === "dialogo-escrito" || cima === "dialogo-modelos" || cima === "dialogo-iniciar" || cima === "dialogo-informe" || cima === "dialogo-asignar" || cima === "dialogo-directorio" || cima === "dialogo-biblioteca" || cima === "dialogo-pieza") ocultarDialogo(cima);
+    else if (cima === "dialogo-ajustes" || cima === "dialogo-csv" || cima === "dialogo-borrar" || cima === "dialogo-eliminar" || cima === "dialogo-escrito" || cima === "dialogo-modelos" || cima === "dialogo-iniciar" || cima === "dialogo-informe" || cima === "dialogo-asignar" || cima === "dialogo-directorio" || cima === "dialogo-biblioteca" || cima === "dialogo-pieza" || cima === "dialogo-actualizar") ocultarDialogo(cima);
     else if (cima === "dialogo-busqueda" && !$("dialogo-cerrar").hidden) ocultarDialogo(cima);
     return;
   }
@@ -1998,6 +1999,124 @@ $("motor-instalar").addEventListener("click", async () => {
   }
   pintarMotor(respuesta);
 });
+$("motor-diagnosticar").addEventListener("click", async () => {
+  const boton = $("motor-diagnosticar");
+  const caja = $("motor-detalle");
+  const copiar = $("motor-copiar");
+  boton.disabled = true;
+  copiar.hidden = true;
+  $("modelos-error").hidden = true;
+  caja.textContent = "Revisando paso a paso…";
+  caja.hidden = false;
+  let respuesta = null;
+  try {
+    respuesta = await window.vigencia.motorDiagnostico();
+  } catch {
+    respuesta = { ok: false };
+  } finally {
+    boton.disabled = false;
+  }
+  if (!respuesta?.ok) {
+    $("modelos-error").hidden = false;
+    $("modelos-error").textContent = respuesta?.error || "No pude correr el diagnóstico.";
+    caja.hidden = true;
+    return;
+  }
+  const lineas = [`Plataforma: ${respuesta.plataforma || "desconocida"}`];
+  for (const paso of respuesta.pasos || []) lineas.push(`${paso.ok ? "✓" : "✕"} ${paso.nombre}: ${paso.detalle}`);
+  caja.textContent = lineas.join("\n");
+  copiar.hidden = false;
+});
+$("motor-copiar").addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText($("motor-detalle").textContent);
+    $("motor-copiar").textContent = "Copiado ✓";
+    setTimeout(() => {
+      $("motor-copiar").textContent = "Copiar detalle";
+    }, 2000);
+  } catch {
+    $("modelos-error").hidden = false;
+    $("modelos-error").textContent = "No pude copiar. Seleccione el texto y cópielo a mano.";
+  }
+});
+let actualizacionPendiente = null;
+function abrirActualizacion(info) {
+  actualizacionPendiente = info;
+  $("actualizar-error").hidden = true;
+  $("actualizar-progreso").hidden = true;
+  const boton = $("actualizar-descargar");
+  boton.disabled = false;
+  boton.textContent = "Descargar";
+  if (!info?.novedad) {
+    $("actualizar-texto").textContent = `Tiene la versión ${info?.actual || "instalada"}. No hay nada nuevo.`;
+    $("actualizar-descargar").hidden = true;
+    $("actualizar-omitir").hidden = true;
+  } else {
+    $("actualizar-texto").textContent = `Tiene la ${info.actual} y ya salió la ${info.disponible}. Se descarga el instalador y usted lo instala.`;
+    $("actualizar-descargar").hidden = false;
+    $("actualizar-omitir").hidden = false;
+  }
+  mostrarDialogo("dialogo-actualizar");
+}
+$("buscar-actualizacion").addEventListener("click", async () => {
+  $("actualizar-texto").textContent = "Revisando…";
+  $("actualizar-error").hidden = true;
+  $("actualizar-progreso").hidden = true;
+  $("actualizar-descargar").hidden = true;
+  $("actualizar-omitir").hidden = true;
+  mostrarDialogo("dialogo-actualizar");
+  let respuesta = null;
+  try {
+    respuesta = await window.vigencia.actualizacionComprobar();
+  } catch {
+    respuesta = { ok: false };
+  }
+  if (!respuesta?.ok) {
+    $("actualizar-texto").textContent = "No pude revisar. Verifique la conexión e intente de nuevo.";
+    return;
+  }
+  abrirActualizacion(respuesta);
+});
+$("actualizar-descargar").addEventListener("click", async () => {
+  const info = actualizacionPendiente;
+  if (!info?.archivo) return;
+  const boton = $("actualizar-descargar");
+  boton.disabled = true;
+  boton.textContent = "Descargando…";
+  $("actualizar-error").hidden = true;
+  const progreso = $("actualizar-progreso");
+  progreso.hidden = false;
+  progreso.textContent = "Descargando…";
+  const dejar = window.vigencia.alDescargaApp((avance) => {
+    progreso.textContent = avance?.fase === "descarga" && avance?.total
+      ? porcentajeDescarga(avance.recibidos, avance.total)
+      : "Descargando…";
+  });
+  let respuesta = null;
+  try {
+    respuesta = await window.vigencia.actualizacionDescargar(info.archivo);
+  } finally {
+    dejar();
+    boton.disabled = false;
+    boton.textContent = "Descargar";
+  }
+  if (!respuesta?.ok) {
+    $("actualizar-error").hidden = false;
+    $("actualizar-error").textContent = respuesta?.error || "No pude descargar.";
+    return;
+  }
+  progreso.textContent = respuesta.accion === "carpeta"
+    ? "Descargado. Ábralo desde la carpeta que se mostró."
+    : respuesta.accion === "montar"
+      ? "Descargado. Arrastre Vigencia a Aplicaciones e iníciela desde allí."
+      : "Descargado. Siga el instalador; al terminar abra Vigencia de nuevo.";
+});
+$("actualizar-omitir").addEventListener("click", async () => {
+  if (actualizacionPendiente?.disponible) await window.vigencia.actualizacionOmitir(actualizacionPendiente.disponible);
+  ocultarDialogo("dialogo-actualizar");
+});
+$("actualizar-cerrar").addEventListener("click", () => ocultarDialogo("dialogo-actualizar"));
+window.vigencia.alActualizacion((info) => abrirActualizacion(info));
 $("modelos-cerrar").addEventListener("click", () => {
   ocultarDialogo("dialogo-modelos");
   if (dialogoAlFrente() === "dialogo-escrito") $("escrito-prompt").focus();

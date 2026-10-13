@@ -245,18 +245,44 @@ export function debeOmitir(relativo) {
   return /\.(node|so|dll|dylib)$/i.test(normal);
 }
 
-export function copiarArbol(origen, destino, raiz = origen) {
+export function copiarArbol(origen, destino, raiz = origen, vistos = new Set()) {
   const rel = path.relative(raiz, origen);
   if (rel && debeOmitir(rel)) return;
-  const stat = fs.statSync(origen);
+  let stat;
+  try {
+    stat = fs.lstatSync(origen);
+  } catch {
+    return; // roto o sin permiso: se omite sin tumbar la copia
+  }
+  let fuente = origen;
+  if (stat.isSymbolicLink()) {
+    try {
+      fuente = fs.realpathSync(origen);
+    } catch {
+      return; // enlace roto: se omite
+    }
+    if (vistos.has(fuente)) return; // ciclo: se omite
+    vistos.add(fuente);
+    try {
+      stat = fs.statSync(fuente);
+    } catch {
+      return;
+    }
+  }
   if (stat.isDirectory()) {
     fs.mkdirSync(destino, { recursive: true });
-    for (const nombre of fs.readdirSync(origen)) copiarArbol(path.join(origen, nombre), path.join(destino, nombre), raiz);
+    for (const nombre of fs.readdirSync(fuente)) {
+      try {
+        copiarArbol(path.join(fuente, nombre), path.join(destino, nombre), raiz, vistos);
+      } catch {
+        /* un archivo problemático no tumba la copia */
+      }
+    }
     return;
   }
   if (!stat.isFile()) return;
   fs.mkdirSync(path.dirname(destino), { recursive: true });
-  fs.copyFileSync(origen, destino);
+  fs.copyFileSync(fuente, destino);
 }
 
 function rutaPaqueteInstalado() {
@@ -286,7 +312,19 @@ export function asegurarCopiaMotor(datosDir, opciones = {}) {
   const nodeModulesAsar = path.resolve(instalado, "..", "..");
   const destino = path.join(datosDir, "motor", "node_modules");
   const indice = path.join(destino, "node-llama-cpp", "dist", "index.js");
-  if (!fs.existsSync(indice)) copiarArbol(nodeModulesAsar, destino);
+  if (!fs.existsSync(indice)) {
+    // Copia atómica: si algo se interrumpe, la próxima vez se reintenta
+    // desde cero en lugar de confiar en una copia a medias.
+    const tmp = `${destino}.nuevo`;
+    fs.rmSync(tmp, { recursive: true, force: true });
+    copiarArbol(nodeModulesAsar, tmp);
+    if (!fs.existsSync(path.join(tmp, "node-llama-cpp", "dist", "index.js"))) {
+      fs.rmSync(tmp, { recursive: true, force: true });
+      throw new Aviso("La copia del motor quedó incompleta. Intente de nuevo.");
+    }
+    fs.rmSync(destino, { recursive: true, force: true });
+    fs.renameSync(tmp, destino);
+  }
   const plat = plataformaDe(opciones.platform ?? process.platform, opciones.arch ?? process.arch);
   const unpacked = opciones.recursos
     ? path.join(opciones.recursos, "app.asar.unpacked", "node_modules")
@@ -303,6 +341,98 @@ export function asegurarCopiaMotor(datosDir, opciones = {}) {
     fs.writeFileSync(release, RELEASE_JSON);
   }
   return fs.existsSync(indice) ? indice : null;
+}
+
+export function repararCopiaMotor(datosDir = carpetaDatos, opciones = {}) {
+  if (!datosDir) return null;
+  const recursos = opciones.recursos ?? (typeof process !== "undefined" ? process.resourcesPath : "") ?? "";
+  const plat = plataformaDe(opciones.platform ?? process.platform, opciones.arch ?? process.arch);
+  const raiz = path.join(datosDir, "motor", "node_modules");
+  const copiaPlat = plat ? path.join(raiz, "@node-llama-cpp", plat.carpeta) : "";
+  // Los binarios descargados mandan sobre los empaquetados: se apartan y se
+  // devuelven después, para no obligar a otra descarga de ~100 MB.
+  let respaldo = "";
+  if (copiaPlat && buscarAddon(copiaPlat)) {
+    respaldo = path.join(datosDir, "motor", `respaldo-${plat.carpeta}`);
+    fs.rmSync(respaldo, { recursive: true, force: true });
+    fs.renameSync(copiaPlat, respaldo);
+  }
+  fs.rmSync(raiz, { recursive: true, force: true });
+  const entrada = asegurarCopiaMotor(datosDir, { ...opciones, recursos });
+  if (respaldo && entrada && plat) {
+    fs.cpSync(respaldo, carpetaPaquete(datosDir, plat.carpeta), { recursive: true });
+  }
+  if (respaldo) fs.rmSync(respaldo, { recursive: true, force: true });
+  return entrada;
+}
+
+function recortarDetalle(error, largo = 300) {
+  return String(error?.message || error || "").replace(/\s+/g, " ").slice(0, largo);
+}
+
+// Revisión paso a paso para el botón Diagnosticar de Modelos de IA: dice
+// exactamente qué falta o qué falló, en lugar del aviso genérico.
+export async function diagnosticoMotor(datosDir = carpetaDatos, opciones = {}) {
+  const pasos = [];
+  const marcar = (nombre, ok, detalle) => pasos.push({ nombre, ok: !!ok, detalle: String(detalle ?? "") });
+  const platform = opciones.platform ?? process.platform;
+  const arch = opciones.arch ?? process.arch;
+  const plat = plataformaDe(platform, arch);
+  marcar("plataforma", !!plat, plat ? `${platform}-${arch} usa ${plat.carpeta}` : `${platform}-${arch} no tiene motor preparado`);
+  if (!plat) return { plataforma: null, pasos };
+  let datosAddon = null;
+  try {
+    datosAddon = buscarAddon(carpetaPaquete(datosDir, plat.carpeta));
+  } catch (error) {
+    marcar("binario descargado", false, recortarDetalle(error));
+  }
+  if (datosAddon === null && pasos.length === 1) {
+    marcar("binario descargado", false, "ausente en la carpeta de datos");
+  } else if (datosAddon) {
+    marcar("binario descargado", true, datosAddon);
+  }
+  const recursos = opciones.recursos ?? (typeof process !== "undefined" ? process.resourcesPath : "") ?? "";
+  const empacado = binarioEmpaquetado(plat, { ...opciones, recursos });
+  marcar("binario empaquetado", !!empacado, empacado || "ausente en app.asar.unpacked");
+  let instalado = "";
+  try {
+    instalado = opciones.paqueteInstalado ?? rutaPaqueteInstalado();
+  } catch (error) {
+    instalado = "";
+    marcar("paquete instalado", false, recortarDetalle(error));
+  }
+  if (instalado) marcar("paquete instalado", true, instalado);
+  else if (pasos.every((p) => p.nombre !== "paquete instalado")) marcar("paquete instalado", false, "node-llama-cpp no resuelve");
+  let entrada = null;
+  try {
+    entrada = asegurarCopiaMotor(datosDir, { ...opciones, recursos });
+    marcar("copia en datos", !!entrada, entrada || "no aplica fuera del instalador");
+  } catch (error) {
+    marcar("copia en datos", false, recortarDetalle(error));
+  }
+  if (entrada) {
+    try {
+      await import(pathToFileURL(entrada).href);
+      marcar("importación", true, "la copia carga");
+    } catch (error) {
+      marcar("importación", false, recortarDetalle(error));
+    }
+    if (opciones.probar) {
+      try {
+        const copia = await import(pathToFileURL(entrada).href);
+        const llama = await copia.getLlama({ gpu: false });
+        try {
+          await llama.dispose?.();
+        } catch {
+          /* ya estaba liberado */
+        }
+        marcar("arranque", true, "el binario arranca");
+      } catch (error) {
+        marcar("arranque", false, recortarDetalle(error));
+      }
+    }
+  }
+  return { plataforma: plat.carpeta, pasos };
 }
 
 export async function instalarMotor(datosDir, opciones = {}) {

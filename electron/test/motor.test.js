@@ -9,6 +9,7 @@ import {
   archivoDePaquete,
   asegurarCopiaMotor,
   debeOmitir,
+  diagnosticoMotor,
   esFalloDeMotor,
   esRutaRelease,
   estadoMotor,
@@ -16,6 +17,7 @@ import {
   instalarMotor,
   plataformaDe,
   prepararReleaseMotor,
+  repararCopiaMotor,
   urlDelTarball,
   versionDelPaquete,
 } from "../src/motor.js";
@@ -160,4 +162,50 @@ test("extraer rechaza un paquete sin el binario", async () => {
   const tgz = path.join(dir, "vacio.tgz");
   execFileSync("tar", ["-czf", tgz, "-C", path.join(dir, "armado"), "package"]);
   await assert.rejects(() => extraerPaquete(tgz, path.join(dir, "destino")), /no trae el binario/);
+});
+
+test("reparar conserva los binarios descargados y repone el JS", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "vigencia-reparo-"));
+  const nodeModules = path.join(dir, "app.asar", "node_modules");
+  fs.mkdirSync(path.join(nodeModules, "node-llama-cpp", "dist"), { recursive: true });
+  fs.writeFileSync(path.join(nodeModules, "node-llama-cpp", "dist", "index.js"), "export const marca = 1;\n");
+  fs.writeFileSync(path.join(nodeModules, "node-llama-cpp", "package.json"), "{}\n");
+  const unpacked = path.join(dir, "app.asar.unpacked", "node_modules", "@node-llama-cpp", "linux-x64", "bins", "linux-x64");
+  fs.mkdirSync(unpacked, { recursive: true });
+  fs.writeFileSync(path.join(unpacked, "llama-addon.node"), "empaquetado");
+  const datos = path.join(dir, "datos");
+  const opciones = {
+    paqueteInstalado: path.join(nodeModules, "node-llama-cpp", "package.json"),
+    recursos: dir,
+    platform: "linux",
+    arch: "x64",
+  };
+  const entrada = asegurarCopiaMotor(datos, opciones);
+  assert.equal(fs.existsSync(entrada), true);
+  // Se envenena la copia y se simula una descarga del menú.
+  fs.rmSync(path.join(datos, "motor", "node_modules", "node-llama-cpp", "dist", "index.js"));
+  const addon = path.join(datos, "motor", "node_modules", "@node-llama-cpp", "linux-x64", "bins", "linux-x64", "llama-addon.node");
+  fs.writeFileSync(addon, "descargado");
+  const entrada2 = repararCopiaMotor(datos, opciones);
+  assert.equal(fs.existsSync(entrada2), true);
+  assert.equal(fs.readFileSync(path.join(datos, "motor", "node_modules", "node-llama-cpp", "dist", "index.js"), "utf8"), "export const marca = 1;\n");
+  assert.equal(fs.readFileSync(addon, "utf8"), "descargado");
+});
+
+test("el diagnóstico reporta cada paso sin tocar nada fuera del instalador", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "vigencia-diagnostico-"));
+  const informe = await diagnosticoMotor(path.join(dir, "datos"), {
+    platform: "linux",
+    arch: "x64",
+    recursos: "",
+  });
+  assert.equal(informe.plataforma, "linux-x64");
+  assert.deepEqual(informe.pasos.map((p) => p.nombre), [
+    "plataforma",
+    "binario descargado",
+    "binario empaquetado",
+    "paquete instalado",
+    "copia en datos",
+  ]);
+  assert.equal(informe.pasos.every((p) => typeof p.ok === "boolean" && typeof p.detalle === "string"), true);
 });

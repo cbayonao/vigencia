@@ -12,7 +12,20 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
 gh release download "$TAG" --dir "$tmp" --pattern 'Vigencia*'
-aws s3 cp "$tmp" "s3://$BUCKET/" --recursive --exclude '*' --include 'Vigencia*'
+
+VERSION="${TAG#v}"
+cat > "$tmp/version.json" <<EOF
+{
+  "version": "$VERSION",
+  "notas": "https://github.com/cbayonao/vigencia/releases/tag/$TAG",
+  "archivos": {
+    "win32": "Vigencia-Setup.exe",
+    "darwin": "Vigencia.dmg",
+    "linux": "Vigencia.AppImage"
+  }
+}
+EOF
+aws s3 cp "$tmp" "s3://$BUCKET/" --recursive --exclude '*' --include 'Vigencia*' --include 'version.json'
 
 DIST=$(aws cloudfront list-distributions \
   --query "DistributionList.Items[?Aliases.Items[0]=='vigencia.askleia.co'].Id" \

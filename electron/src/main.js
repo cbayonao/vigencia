@@ -1,4 +1,4 @@
-import { estadoMotor, instalarMotor, usarDatosMotor } from "./motor.js";
+import { estadoMotor, instalarMotor, usarDatosMotor, diagnosticoMotor } from "./motor.js";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -70,6 +70,7 @@ import { fichaDeDetalle, redactarEscrito } from "../compartido/redactor.js";
 import { activarPieza, borrarPieza, guardarPieza, listarPiezas } from "./biblioteca.js";
 import { generarBorrador, generarInicial, guardarActivo, guardarModo, importarModelo, listarModelos, descargarModelo, modelosRecomendados, leerNubes, guardarNube } from "./ia.js";
 import { htmlMemorial } from "./memorial.js";
+import { consultarVersion, descargarActualizacion } from "./actualizar.js";
 import { directorioDatos } from "./rutas.js";
 
 protocol.registerSchemesAsPrivileged([
@@ -267,6 +268,54 @@ function abrirCambios(ids) {
     enviar("abrir-cambios", ids);
     cambiosPendientes = null;
   }
+}
+
+function rutaOmitida() {
+  return path.join(datosDir, "actualizacion-omitida.txt");
+}
+
+function leerOmitida() {
+  try {
+    return fs.readFileSync(rutaOmitida(), "utf8").trim();
+  } catch {
+    return "";
+  }
+}
+
+function guardarOmitida(version) {
+  try {
+    fs.writeFileSync(rutaOmitida(), String(version || ""));
+  } catch (error) {
+    console.error(error);
+  }
+}
+
+// Revisa una vez por arranque si hay versión nueva, sin bloquear nada.
+// Solo interrumpe si hay novedad que el usuario no haya omitido.
+function programarRevisionActualizacion() {
+  setTimeout(async () => {
+    if (!ventana || ventana.isDestroyed()) return;
+    let info = null;
+    try {
+      info = await consultarVersion(app.getVersion());
+    } catch {
+      return;
+    }
+    if (!info?.novedad || !info.archivo) return;
+    if (leerOmitida() === info.disponible) return;
+    if (ventana.isVisible()) {
+      enviar("actualizacion-disponible", info);
+      return;
+    }
+    notificar({
+      title: "Hay una actualización de Vigencia",
+      body: `La versión ${info.disponible} ya está lista para descargar.`,
+      alClic: () => {
+        mostrarVentana();
+        enviar("actualizacion-disponible", info);
+      },
+    });
+  }, 45000).unref?.();
 }
 
 function infoAutomatica() {
@@ -728,6 +777,17 @@ if (bloqueo) {
       raiz: RAIZ,
       recursos: process.resourcesPath,
     })));
+    ipcMain.handle("motor-diagnostico", async () => {
+      try {
+        return { ok: true, ...(await diagnosticoMotor(datosDir, {
+          raiz: RAIZ,
+          recursos: process.resourcesPath,
+          probar: true,
+        })) };
+      } catch (error) {
+        return { ok: false, error: mensajeHumano(error) };
+      }
+    });
     ipcMain.handle("motor-instalar", async (evento) => {
       try {
         const estado = await instalarMotor(datosDir, {
@@ -999,11 +1059,51 @@ if (bloqueo) {
       salir();
       return { ok: true };
     });
+    ipcMain.handle("actualizacion-comprobar", async () => {
+      try {
+        return { ok: true, ...(await consultarVersion(app.getVersion())) };
+      } catch (error) {
+        return { ok: false, error: mensajeHumano(error) };
+      }
+    });
+    ipcMain.handle("actualizacion-omitir", (_evento, dato) => responder(() => {
+      guardarOmitida(String(dato?.version || ""));
+      return {};
+    }));
+    ipcMain.handle("actualizacion-descargar", async (evento, dato) => {
+      try {
+        const archivo = String(dato?.archivo || "");
+        if (!archivo || archivo.includes("/") || archivo.includes("\\") || archivo.includes("..")) {
+          return { ok: false, error: "No hay instalador para este computador." };
+        }
+        const destino = path.join(os.tmpdir(), archivo);
+        await descargarActualizacion(archivo, destino, (avance) => {
+          try {
+            evento.sender.send("actualizacion-progreso", avance);
+          } catch {
+            /* la ventana se cerró */
+          }
+        });
+        if (process.platform === "linux") {
+          shell.showItemInFolder(destino);
+          return { ok: true, ruta: destino, accion: "carpeta" };
+        }
+        const errorAbrir = await shell.openPath(destino);
+        if (errorAbrir) {
+          shell.showItemInFolder(destino);
+          return { ok: true, ruta: destino, accion: "carpeta" };
+        }
+        return { ok: true, ruta: destino, accion: process.platform === "darwin" ? "montar" : "instalar" };
+      } catch (error) {
+        return { ok: false, error: mensajeHumano(error) };
+      }
+    });
     crearBandeja();
     const oculta = Boolean(bandeja) && abiertaAlIniciarSesion({ argv: process.argv, plataforma: process.platform, app });
     crearVentana(!oculta);
     aplicarInicioSesion();
     iniciarProgramador();
+    programarRevisionActualizacion();
   });
 
   app.on("before-quit", () => {

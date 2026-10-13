@@ -60,6 +60,7 @@
               <button type="button" class="combo-opcion" id="abrir-modelos" role="menuitem" title="Modelos locales y claves de proveedores en la nube">Modelos de IA</button>
               <button type="button" class="combo-opcion" id="abrir-biblioteca" role="menuitem" title="Plantillas, ejemplos, normas y estilo para los escritos">Biblioteca del escrito</button>
               <button type="button" class="combo-opcion" id="abrir-ajustes" role="menuitem" title="Horas de la revisión automática">Revisión automática</button>
+              <button type="button" class="combo-opcion" id="buscar-actualizacion" role="menuitem" title="Revisa si hay una versión nueva para descargar">Buscar actualizaciones</button>
               <button type="button" class="combo-opcion" id="tema" role="menuitem" aria-pressed="false">Tema oscuro</button>
               <button type="button" class="combo-opcion" id="salir" role="menuitem" title="Cierra Vigencia del todo. Cerrar la ventana la deja en la bandeja">Salir</button>
             </div>
@@ -278,6 +279,11 @@
         <p class="ayuda" id="motor-estado">Revisando el motor…</p>
         <button type="button" class="boton-cobre" id="motor-instalar">Instalar motor</button>
       </div>
+      <div class="fila-modelo">
+        <button type="button" class="boton-linea" id="motor-diagnosticar" title="Revisa paso a paso por qué el motor no arranca">Diagnosticar</button>
+        <button type="button" class="boton-linea" id="motor-copiar" hidden>Copiar detalle</button>
+      </div>
+      <pre class="registro" id="motor-detalle" hidden></pre>
       <h3 class="modelos-sub">Modelos locales (en este computador)</h3>
       <p class="nota">Se descargan una sola vez de Hugging Face y después trabajan sin internet.</p>
       <p class="ayuda error" id="modelos-error" hidden></p>
@@ -287,6 +293,20 @@
       <div class="directorio" id="nubes-lista"></div>
       <div class="fila-fin">
         <button type="button" class="boton-cobre" id="modelos-cerrar">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="cortina" id="dialogo-actualizar" hidden>
+    <div class="dialogo" role="dialog" aria-modal="true" aria-labelledby="actualizar-titulo">
+      <h2 class="serif dialogo-titulo" id="actualizar-titulo">Actualización</h2>
+      <p class="nota" id="actualizar-texto">Revisando…</p>
+      <p class="ayuda" id="actualizar-progreso" hidden></p>
+      <p class="ayuda error" id="actualizar-error" hidden></p>
+      <div class="fila-fin">
+        <button type="button" class="boton-texto" id="actualizar-omitir">Omitir esta versión</button>
+        <button type="button" class="boton-linea" id="actualizar-cerrar">Después</button>
+        <button type="button" class="boton-cobre" id="actualizar-descargar">Descargar</button>
       </div>
     </div>
   </div>

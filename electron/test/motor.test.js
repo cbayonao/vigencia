@@ -18,6 +18,7 @@ import {
   plataformaDe,
   prepararReleaseMotor,
   repararCopiaMotor,
+  resolverPaquete,
   urlDelTarball,
   versionDelPaquete,
 } from "../src/motor.js";
@@ -190,6 +191,13 @@ test("reparar conserva los binarios descargados y repone el JS", () => {
   assert.equal(fs.existsSync(entrada2), true);
   assert.equal(fs.readFileSync(path.join(datos, "motor", "node_modules", "node-llama-cpp", "dist", "index.js"), "utf8"), "export const marca = 1;\n");
   assert.equal(fs.readFileSync(addon, "utf8"), "descargado");
+});
+
+test("resuelve el paquete sin pedir el package.json por subruta", () => {
+  const { ruta, error } = resolverPaquete();
+  assert.equal(error, "");
+  assert.match(ruta, /node-llama-cpp[\\/]package\.json$/);
+  assert.equal(JSON.parse(fs.readFileSync(ruta, "utf8")).name, "node-llama-cpp");
 });
 
 test("el diagnóstico reporta cada paso sin tocar nada fuera del instalador", async () => {

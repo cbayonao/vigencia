@@ -248,28 +248,26 @@ export function debeOmitir(relativo) {
 export function copiarArbol(origen, destino, raiz = origen, vistos = new Set()) {
   const rel = path.relative(raiz, origen);
   if (rel && debeOmitir(rel)) return;
-  let stat;
+  let stat = null;
   try {
-    stat = fs.lstatSync(origen);
+    stat = fs.statSync(origen);
   } catch {
-    return; // roto o sin permiso: se omite sin tumbar la copia
-  }
-  let fuente = origen;
-  if (stat.isSymbolicLink()) {
     try {
-      fuente = fs.realpathSync(origen);
+      if (fs.lstatSync(origen).isSymbolicLink()) return; // enlace roto: se omite
     } catch {
-      return; // enlace roto: se omite
+      /* ni lstat */
     }
-    if (vistos.has(fuente)) return; // ciclo: se omite
-    vistos.add(fuente);
-    try {
-      stat = fs.statSync(fuente);
-    } catch {
-      return;
-    }
+    return;
   }
+  const fuente = origen;
   if (stat.isDirectory()) {
+    try {
+      const real = fs.realpathSync(fuente);
+      if (vistos.has(real)) return; // ciclo: se omite
+      vistos.add(real);
+    } catch {
+      /* sin protección de ciclos en esta rama */
+    }
     fs.mkdirSync(destino, { recursive: true });
     for (const nombre of fs.readdirSync(fuente)) {
       try {
@@ -286,10 +284,29 @@ export function copiarArbol(origen, destino, raiz = origen, vistos = new Set()) 
 }
 
 function rutaPaqueteInstalado() {
+  return resolverPaquete().ruta;
+}
+
+// El package.json no se puede pedir por subruta: el mapa "exports" del
+// paquete no la define. Se resuelve la entrada y se sube hasta la raíz.
+export function resolverPaquete() {
   try {
-    return require.resolve("node-llama-cpp/package.json");
-  } catch {
-    return "";
+    const entrada = require.resolve("node-llama-cpp");
+    let dir = path.dirname(entrada);
+    for (let i = 0; i < 5; i++) {
+      try {
+        const dato = JSON.parse(fs.readFileSync(path.join(dir, "package.json"), "utf8"));
+        if (dato?.name === "node-llama-cpp") return { ruta: path.join(dir, "package.json"), error: "" };
+      } catch {
+        /* subir un nivel */
+      }
+      const sube = path.dirname(dir);
+      if (sube === dir) break;
+      dir = sube;
+    }
+    return { ruta: "", error: "node-llama-cpp sin package.json hacia arriba" };
+  } catch (error) {
+    return { ruta: "", error: recortarDetalle(error, 500) };
   }
 }
 
@@ -415,13 +432,7 @@ export async function diagnosticoMotor(datosDir = carpetaDatos, opciones = {}) {
     if (instalado) marcar("paquete instalado", true, instalado);
     else {
       // Se reintenta aquí para guardar el error exacto (la otra vía lo traga).
-      let causa = "";
-      try {
-        createRequire(import.meta.url).resolve("node-llama-cpp/package.json");
-      } catch (error) {
-        causa = recortarDetalle(error, 500);
-      }
-      marcar("paquete instalado", false, causa || "node-llama-cpp no resuelve");
+      marcar("paquete instalado", false, resolverPaquete().error || "node-llama-cpp no resuelve");
     }
     try {
       const nmAsar = path.join(recursos, "app.asar", "node_modules");

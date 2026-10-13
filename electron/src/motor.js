@@ -40,6 +40,13 @@ export function plataformaDe(platform = process.platform, arch = process.arch) {
   return { carpeta, paquete: `@node-llama-cpp/${carpeta}` };
 }
 
+// En Apple Silicon el binario precompilado solo existe con Metal; en el
+// resto se usa CPU. Pedir cpu en un M1-M4 termina en NoBinaryFoundError.
+export function gpuParaPlataforma(platform = process.platform, arch = process.arch) {
+  if (platform === "darwin" && arch === "arm64") return "metal";
+  return false;
+}
+
 export function esRutaRelease(ruta) {
   const normal = String(ruta || "").replaceAll("\\", "/");
   return normal.endsWith(`node-llama-cpp/llama/${NOMBRE_RELEASE}`);
@@ -126,18 +133,34 @@ export function archivoDePaquete(datosDir, specifier) {
 }
 
 // El motor busca @node-llama-cpp/<plataforma> junto a su propio código.
-// Lo descargado vive en la carpeta de datos: este gancho lo encuentra ahí.
+// Primero lo descargado en datos y después lo traído fuera del asar
+// (su dist/ no pide dependencias externas, así que es seguro); este gancho
+// lo encuentra ahí.
 export function usarDatosMotor(datosDir) {
   carpetaDatos = datosDir || "";
   if (ganchoListo || typeof moduloNodo.registerHooks !== "function") return;
   ganchoListo = true;
   moduloNodo.registerHooks({
     resolve(specifier, context, next) {
-      const local = archivoDePaquete(carpetaDatos, specifier);
+      const recursos = typeof process !== "undefined" ? process.resourcesPath : "";
+      const local = archivoDePaquete(carpetaDatos, specifier)
+        || paqueteDesempaquetado(recursos, specifier);
       if (!local) return next(specifier, context);
       return { url: pathToFileURL(local).href, shortCircuit: true };
     },
   });
+}
+
+// Espejo de archivoDePaquete sobre lo traído fuera del asar: el binario de
+// este computador sin descargar nada.
+export function paqueteDesempaquetado(recursos, specifier) {
+  if (!recursos || typeof specifier !== "string" || !specifier.startsWith("@node-llama-cpp/")) return null;
+  const carpeta = specifier.slice("@node-llama-cpp/".length);
+  if (!carpeta || carpeta.includes("/") || carpeta.includes("\\") || carpeta.includes("..")) return null;
+  const raiz = path.join(recursos, "app.asar.unpacked", "node_modules", "@node-llama-cpp", carpeta);
+  const indice = path.join(raiz, "dist", "index.js");
+  if (!fs.existsSync(indice) || !buscarAddon(raiz)) return null;
+  return indice;
 }
 
 function binarioEmpaquetado(plat, opciones) {
@@ -462,7 +485,7 @@ export async function diagnosticoMotor(datosDir = carpetaDatos, opciones = {}) {
     if (opciones.probar) {
       try {
         const copia = await import(pathToFileURL(entrada).href);
-        const llama = await copia.getLlama({ gpu: false });
+        const llama = await copia.getLlama({ gpu: gpuParaPlataforma(opciones.platform, opciones.arch) });
         try {
           await llama.dispose?.();
         } catch {

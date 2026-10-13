@@ -10,7 +10,7 @@ import { texto } from "../compartido/logica.js";
 import { fechaInforme } from "./informe.js";
 import { vistaMemorial } from "./memorial.js";
 import { Aviso } from "./db.js";
-import { AVISO_MOTOR, entradaDelMotor, esFalloDeMotor, prepararReleaseMotor, repararCopiaMotor } from "./motor.js";
+import { AVISO_MOTOR, entradaDelMotor, esFalloDeMotor, gpuParaPlataforma, prepararReleaseMotor, repararCopiaMotor } from "./motor.js";
 import { PROVEEDORES, chatNube } from "./nube.js";
 
 export const MODELO_SENCILLO = "sencillo";
@@ -388,7 +388,7 @@ export function tamanoDeContexto(meta) {
 async function intentarArrancar() {
   const entrada = entradaDelMotor();
   const llamaCpp = entrada ? await import(pathToFileURL(entrada).href) : await import("node-llama-cpp");
-  const llama = await llamaCpp.getLlama({ gpu: false });
+  const llama = await llamaCpp.getLlama({ gpu: gpuParaPlataforma() });
   return { llamaCpp, llama };
 }
 

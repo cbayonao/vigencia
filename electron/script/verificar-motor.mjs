@@ -63,6 +63,12 @@ const exigirAsar = [
 const exigirFuera = [
   `node_modules/@node-llama-cpp/${plataforma}`,
 ];
+// El gancho resuelve el binario desde lo desempaquetado: su dist/ y su
+// package.json (para la versión) tienen que estar fuera del asar.
+const exigirSuelto = [
+  `node_modules/@node-llama-cpp/${plataforma}/dist/index.js`,
+  `node_modules/@node-llama-cpp/${plataforma}/package.json`,
+];
 // El .node va en bins/<plataforma>/, pero el layout exacto cambia por SO:
 // basta con que el opcional desempaquetado traiga algún .node.
 function hayNodeEmpaquetado(base) {
@@ -85,6 +91,9 @@ function hayNodeEmpaquetado(base) {
 }
 const faltan = [
   ...exigirAsar.filter((rel) => !enAsar.has(`/${rel}`)).map((rel) => `asar: ${rel}`),
+  ...exigirSuelto
+    .filter((rel) => !fs.existsSync(path.join(recursos, "app.asar.unpacked", rel)))
+    .map((rel) => `unpacked: ${rel}`),
   ...exigirFuera
     .filter((rel) => !hayNodeEmpaquetado(path.join(recursos, "app.asar.unpacked", rel)))
     .map((rel) => `unpacked: sin .node en ${rel}`),

@@ -14,7 +14,9 @@ import {
   esRutaRelease,
   estadoMotor,
   extraerPaquete,
+  gpuParaPlataforma,
   instalarMotor,
+  paqueteDesempaquetado,
   plataformaDe,
   prepararReleaseMotor,
   repararCopiaMotor,
@@ -198,6 +200,29 @@ test("resuelve el paquete sin pedir el package.json por subruta", () => {
   assert.equal(error, "");
   assert.match(ruta, /node-llama-cpp[\\/]package\.json$/);
   assert.equal(JSON.parse(fs.readFileSync(ruta, "utf8")).name, "node-llama-cpp");
+});
+
+test("en Apple Silicon se pide metal y en el resto cpu", () => {
+  assert.equal(gpuParaPlataforma("darwin", "arm64"), "metal");
+  assert.equal(gpuParaPlataforma("darwin", "x64"), false);
+  assert.equal(gpuParaPlataforma("win32", "x64"), false);
+  assert.equal(gpuParaPlataforma("linux", "x64"), false);
+});
+
+test("el gancho encuentra el binario desempaquetado sin descargar", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "vigencia-unpacked-"));
+  const raiz = path.join(dir, "app.asar.unpacked", "node_modules", "@node-llama-cpp", "linux-x64");
+  fs.mkdirSync(path.join(raiz, "dist"), { recursive: true });
+  fs.mkdirSync(path.join(raiz, "bins", "linux-x64"), { recursive: true });
+  fs.writeFileSync(path.join(raiz, "dist", "index.js"), "export const marca = 1;\n");
+  fs.writeFileSync(path.join(raiz, "bins", "linux-x64", "llama-addon.node"), "bin");
+  assert.equal(
+    paqueteDesempaquetado(dir, "@node-llama-cpp/linux-x64"),
+    path.join(raiz, "dist", "index.js"),
+  );
+  assert.equal(paqueteDesempaquetado(dir, "@node-llama-cpp/win-x64"), null);
+  assert.equal(paqueteDesempaquetado(dir, "../fuera"), null);
+  assert.equal(paqueteDesempaquetado("", "@node-llama-cpp/linux-x64"), null);
 });
 
 test("el diagnóstico reporta cada paso sin tocar nada fuera del instalador", async () => {

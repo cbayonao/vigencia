@@ -9,6 +9,6 @@ npm run build
 BUCKET=$(terraform -chdir=terraform output -raw bucket)
 DIST=$(terraform -chdir=terraform output -raw distribution_id)
 
-aws s3 sync dist/ "s3://$BUCKET" --delete
+aws s3 sync dist/ "s3://$BUCKET" --delete --exclude 'Vigencia*'
 aws cloudfront create-invalidation --distribution-id "$DIST" --paths "/*" \
   --query Invalidation.Id --output text

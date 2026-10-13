@@ -8,6 +8,7 @@ on:
   push:
     branches: [main]
     paths: ["licencia/**"]
+  workflow_dispatch:
 
 permissions:
   contents: read

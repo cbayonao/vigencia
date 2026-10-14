@@ -15,6 +15,15 @@ import {
 } from "../compartido/logica.js";
 import { validarHorarios } from "../compartido/horario.js";
 import { CAMPOS_INICIALES, TIPOS_INICIALES } from "../compartido/iniciales.js";
+import {
+  SISTEMAS,
+  SISTEMA_INICIAL,
+  guardarOcultos,
+  leerOcultos,
+  sistemaDe,
+  sistemaElegible,
+  sistemasVisibles,
+} from "../compartido/sistemas.js";
 
 const $ = (id) => document.getElementById(id);
 const estado = {
@@ -44,6 +53,8 @@ const estado = {
   relojPausa: 0,
   soloIds: null,
   automatica: null,
+  sistema: SISTEMA_INICIAL,
+  ocultos: new Set(),
 };
 
 function nodo(tag, clase, contenido) {
@@ -298,6 +309,7 @@ const CAPAS = [
   "dialogo-biblioteca",
   "dialogo-pieza",
   "dialogo-actualizar",
+  "dialogo-sistemas",
 ];
 
 function cerrarMenuOpciones() {
@@ -1522,11 +1534,11 @@ document.addEventListener("keydown", (evento) => {
   }
   if (evento.key === "Escape") {
     if (cima === "dialogo-cliente") cerrarFormulario();
-    else if (cima === "dialogo-ajustes" || cima === "dialogo-csv" || cima === "dialogo-borrar" || cima === "dialogo-eliminar" || cima === "dialogo-escrito" || cima === "dialogo-modelos" || cima === "dialogo-iniciar" || cima === "dialogo-informe" || cima === "dialogo-asignar" || cima === "dialogo-directorio" || cima === "dialogo-biblioteca" || cima === "dialogo-pieza" || cima === "dialogo-actualizar") ocultarDialogo(cima);
+    else if (cima === "dialogo-ajustes" || cima === "dialogo-csv" || cima === "dialogo-borrar" || cima === "dialogo-eliminar" || cima === "dialogo-escrito" || cima === "dialogo-modelos" || cima === "dialogo-iniciar" || cima === "dialogo-informe" || cima === "dialogo-asignar" || cima === "dialogo-directorio" || cima === "dialogo-biblioteca" || cima === "dialogo-pieza" || cima === "dialogo-actualizar" || cima === "dialogo-sistemas") ocultarDialogo(cima);
     else if (cima === "dialogo-busqueda" && !$("dialogo-cerrar").hidden) ocultarDialogo(cima);
     return;
   }
-  if (cima || escribiendo(evento)) return;
+  if (cima || escribiendo(evento) || estado.sistema !== SISTEMA_INICIAL) return;
   if (evento.key === "/") {
     evento.preventDefault();
     document.querySelector("#busqueda")?.focus();
@@ -2775,6 +2787,116 @@ $("tema").addEventListener("click", cambiarTema);
 $("licencia-tema").addEventListener("click", cambiarTema);
 pintarTema();
 
+const CLAVE_OCULTOS = "vigencia-sistemas-ocultos";
+const CLAVE_PLEGADA = "vigencia-sistemas-plegada";
+
+function leerGuardado(clave) {
+  try {
+    return localStorage.getItem(clave);
+  } catch {
+    return null;
+  }
+}
+
+function guardarLocal(clave, valor) {
+  try {
+    localStorage.setItem(clave, valor);
+  } catch {
+    /* el cambio vale para esta ventana */
+  }
+}
+
+function pintarSistemas() {
+  const lista = $("sistemas-lista");
+  lista.replaceChildren();
+  for (const sistema of sistemasVisibles(estado.ocultos)) {
+    const boton = nodo("button", "sistema");
+    boton.type = "button";
+    boton.title = sistema.fuente ? `${sistema.nombre} · ${sistema.fuente}` : sistema.nombre;
+    if (sistema.id === estado.sistema) {
+      boton.classList.add("activo");
+      boton.setAttribute("aria-current", "page");
+    }
+    boton.append(nodo("span", "sistema-sigla", sistema.sigla));
+    const textos = nodo("span", "sistema-textos sistemas-texto");
+    textos.append(nodo("span", "sistema-nombre", sistema.nombre));
+    if (sistema.fuente) textos.append(nodo("span", "sistema-fuente", sistema.fuente));
+    boton.append(textos);
+    if (!sistema.listo) boton.append(nodo("span", "sistema-pronto sistemas-texto", "Pronto"));
+    boton.addEventListener("click", () => elegirSistema(sistema.id));
+    lista.append(boton);
+  }
+}
+
+function elegirSistema(id) {
+  const sistema = sistemaDe(sistemaElegible(id, estado.ocultos));
+  estado.sistema = sistema.id;
+  cerrarCombos();
+  const propia = sistema.id === SISTEMA_INICIAL;
+  $("pantalla-consulta").hidden = !propia;
+  $("pantalla-construccion").hidden = propia;
+  if (!propia) {
+    $("obra-sistema").textContent = sistema.fuente ? `${sistema.nombre} · ${sistema.fuente}` : sistema.nombre;
+    $("obra-texto").textContent = `Estamos construyendo la consulta de ${sistema.nombre}. Mientras tanto, sus expedientes siguen en la consulta nacional unificada.`;
+  }
+  document.title = `${propia ? "Procesos" : sistema.nombre} · Vigencia`;
+  pintarSistemas();
+}
+
+function plegarSistemas(plegada) {
+  $("sistemas").classList.toggle("plegada", plegada);
+  const boton = $("sistemas-plegar");
+  boton.setAttribute("aria-expanded", plegada ? "false" : "true");
+  boton.title = plegada ? "Desplegar la barra" : "Plegar la barra";
+  boton.querySelector(".sistemas-flecha").textContent = plegada ? "»" : "«";
+}
+
+function abrirSistemas() {
+  const caja = $("sistemas-opciones");
+  caja.replaceChildren();
+  for (const sistema of SISTEMAS) {
+    const etiqueta = nodo("label", "casilla");
+    const casilla = document.createElement("input");
+    casilla.type = "checkbox";
+    casilla.value = sistema.id;
+    casilla.checked = sistema.fijo || !estado.ocultos.has(sistema.id);
+    casilla.disabled = Boolean(sistema.fijo);
+    const textos = nodo("span");
+    textos.append(nodo("strong", "", sistema.fuente ? `${sistema.nombre} · ${sistema.fuente}` : sistema.nombre));
+    if (sistema.fijo) textos.append(nodo("small", "", "Siempre a la vista: aquí están los expedientes y la revisión automática."));
+    else if (!sistema.listo) textos.append(nodo("small", "", "Próximamente."));
+    etiqueta.append(casilla, textos);
+    caja.append(etiqueta);
+  }
+  mostrarDialogo("dialogo-sistemas");
+  caja.querySelector("input:not(:disabled)")?.focus();
+}
+
+$("form-sistemas").addEventListener("submit", (evento) => {
+  evento.preventDefault();
+  const ocultos = new Set();
+  for (const casilla of $("sistemas-opciones").querySelectorAll("input[type=checkbox]")) {
+    if (!casilla.disabled && !casilla.checked) ocultos.add(casilla.value);
+  }
+  estado.ocultos = leerOcultos(guardarOcultos(ocultos));
+  guardarLocal(CLAVE_OCULTOS, guardarOcultos(estado.ocultos));
+  ocultarDialogo("dialogo-sistemas");
+  elegirSistema(estado.sistema);
+});
+$("sistemas-cancelar").addEventListener("click", () => ocultarDialogo("dialogo-sistemas"));
+$("abrir-sistemas").addEventListener("click", abrirSistemas);
+$("sistemas-ajustar").addEventListener("click", abrirSistemas);
+$("obra-volver").addEventListener("click", () => elegirSistema(SISTEMA_INICIAL));
+$("sistemas-plegar").addEventListener("click", () => {
+  const plegada = !$("sistemas").classList.contains("plegada");
+  plegarSistemas(plegada);
+  guardarLocal(CLAVE_PLEGADA, plegada ? "1" : "0");
+});
+
+estado.ocultos = leerOcultos(leerGuardado(CLAVE_OCULTOS));
+plegarSistemas(leerGuardado(CLAVE_PLEGADA) === "1");
+elegirSistema(SISTEMA_INICIAL);
+
 function textoMarca(marca) {
   return marca ? `${fechaCorta(marca)} ${String(marca).slice(11, 16)}` : "";
 }
@@ -2840,6 +2962,7 @@ async function guardarAjustesForm(evento) {
 async function verCambios(ids) {
   const lista = (ids || []).map(Number).filter((id) => Number.isInteger(id) && id > 0);
   if (!lista.length) return;
+  elegirSistema(SISTEMA_INICIAL);
   await cargar();
   estado.consulta = "";
   $("busqueda").value = "";

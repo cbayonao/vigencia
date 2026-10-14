@@ -32,6 +32,19 @@
     </div>
   </section>
   <div class="marco" id="aplicacion" hidden>
+    <nav class="sistemas" id="sistemas" aria-label="Sistemas de consulta">
+      <button type="button" class="sistemas-plegar" id="sistemas-plegar" aria-expanded="true" title="Plegar la barra">
+        <span class="sistemas-flecha" aria-hidden="true">«</span>
+        <span class="sistemas-texto sistemas-encabezado">Sistemas</span>
+      </button>
+      <div class="sistemas-lista" id="sistemas-lista"></div>
+      <button type="button" class="sistemas-ajustar" id="sistemas-ajustar" title="Elegir qué sistemas aparecen">
+        <span class="sistemas-engrane" aria-hidden="true">⚙</span>
+        <span class="sistemas-texto">Elegir sistemas</span>
+      </button>
+    </nav>
+    <div class="escenario">
+    <div class="pantalla" id="pantalla-consulta">
     <header class="barra">
       <div>
         <p class="marca">Vigencia</p>
@@ -57,6 +70,7 @@
               <div class="combo-separador"></div>
               <p class="combo-titulo">Aplicación</p>
               <button type="button" class="combo-opcion" id="abrir-clientes" role="menuitem" title="Abogados de esta aplicación, solo en este computador">Abogados</button>
+              <button type="button" class="combo-opcion" id="abrir-sistemas" role="menuitem" title="Elegir qué sistemas aparecen en la barra lateral">Sistemas</button>
               <button type="button" class="combo-opcion" id="abrir-modelos" role="menuitem" title="Modelos locales y claves de proveedores en la nube">Modelos de IA</button>
               <button type="button" class="combo-opcion" id="abrir-biblioteca" role="menuitem" title="Plantillas, ejemplos, normas y estilo para los escritos">Biblioteca del escrito</button>
               <button type="button" class="combo-opcion" id="abrir-ajustes" role="menuitem" title="Horas de la revisión automática">Revisión automática</button>
@@ -100,6 +114,65 @@
         </div>
       </aside>
       <main class="derecha" id="detalle"></main>
+    </div>
+    </div>
+    <section class="pantalla construccion" id="pantalla-construccion" aria-labelledby="obra-titulo" hidden>
+      <div class="obra">
+        <svg class="obra-escena" viewBox="0 0 320 220" role="img" aria-label="Una grúa sube los bloques de una obra">
+          <g class="obra-nube">
+            <ellipse cx="236" cy="34" rx="22" ry="9"></ellipse>
+            <ellipse cx="252" cy="28" rx="15" ry="10"></ellipse>
+            <ellipse cx="222" cy="30" rx="11" ry="8"></ellipse>
+          </g>
+          <rect class="obra-suelo" x="16" y="196" width="288" height="3" rx="1.5"></rect>
+          <g class="obra-grua">
+            <rect class="obra-metal" x="58" y="44" width="8" height="152" rx="2"></rect>
+            <polyline class="obra-celosia" points="58,190 66,176 58,162 66,148 58,134 66,120 58,106 66,92 58,78 66,64 58,50"></polyline>
+            <rect class="obra-metal" x="40" y="186" width="44" height="10" rx="2"></rect>
+            <g class="obra-brazo">
+              <rect class="obra-metal" x="30" y="38" width="226" height="7" rx="2"></rect>
+              <polyline class="obra-celosia" points="70,45 82,38 94,45 106,38 118,45 130,38 142,45 154,38 166,45 178,38 190,45 202,38 214,45 226,38 238,45 250,38"></polyline>
+              <rect class="obra-contrapeso" x="30" y="45" width="22" height="16" rx="2"></rect>
+              <line class="obra-tirante" x1="62" y1="18" x2="252" y2="40"></line>
+              <line class="obra-tirante" x1="62" y1="18" x2="36" y2="40"></line>
+              <rect class="obra-metal" x="58" y="16" width="8" height="24" rx="2"></rect>
+              <rect class="obra-carro" x="212" y="44" width="16" height="6" rx="1.5"></rect>
+              <line class="obra-cable" x1="220" y1="50" x2="220" y2="86"></line>
+              <g class="obra-gancho">
+                <rect class="obra-bloque" x="206" y="86" width="28" height="16" rx="2"></rect>
+              </g>
+            </g>
+          </g>
+          <g class="obra-edificio">
+            <g class="obra-fila fila-1">
+              <rect class="ladrillo" x="150" y="178" width="34" height="16" rx="2"></rect>
+              <rect class="ladrillo tono" x="186" y="178" width="34" height="16" rx="2"></rect>
+              <rect class="ladrillo" x="222" y="178" width="34" height="16" rx="2"></rect>
+              <rect class="ladrillo tono" x="258" y="178" width="34" height="16" rx="2"></rect>
+            </g>
+            <g class="obra-fila fila-2">
+              <rect class="ladrillo tono" x="168" y="160" width="34" height="16" rx="2"></rect>
+              <rect class="ladrillo" x="204" y="160" width="34" height="16" rx="2"></rect>
+              <rect class="ladrillo tono" x="240" y="160" width="34" height="16" rx="2"></rect>
+            </g>
+            <g class="obra-fila fila-3">
+              <rect class="ladrillo" x="186" y="142" width="34" height="16" rx="2"></rect>
+              <rect class="ladrillo tono" x="222" y="142" width="34" height="16" rx="2"></rect>
+            </g>
+            <g class="obra-fila fila-4">
+              <rect class="ladrillo bandera-asta" x="219" y="112" width="2" height="30"></rect>
+              <polygon class="ladrillo bandera" points="221,112 240,118 221,124"></polygon>
+            </g>
+          </g>
+        </svg>
+        <p class="kicker">En construcción</p>
+        <h1 class="serif obra-titulo" id="obra-titulo">Próximamente</h1>
+        <p class="obra-sistema" id="obra-sistema"></p>
+        <p class="obra-texto" id="obra-texto"></p>
+        <p class="obra-puntos" aria-hidden="true"><span></span><span></span><span></span></p>
+        <button type="button" class="boton-linea" id="obra-volver">Ir a la consulta nacional unificada</button>
+      </div>
+    </section>
     </div>
   </div>
 
@@ -386,6 +459,17 @@
       <p class="ayuda error" id="aj-error" hidden></p>
       <div class="fila-fin">
         <button type="button" class="boton-texto" id="aj-cancelar">Cancelar</button>
+        <button type="submit" class="boton-cobre">Guardar</button>
+      </div>
+    </form>
+  </div>
+  <div class="cortina" id="dialogo-sistemas" hidden>
+    <form class="dialogo" id="form-sistemas" role="dialog" aria-modal="true" aria-labelledby="sistemas-titulo">
+      <h2 class="serif dialogo-titulo" id="sistemas-titulo">Sistemas</h2>
+      <p class="nota">Elija los sistemas que aparecen en la barra lateral. Quitar uno solo lo esconde en este computador; se puede volver a poner cuando quiera.</p>
+      <div class="sistemas-opciones" id="sistemas-opciones"></div>
+      <div class="fila-fin">
+        <button type="button" class="boton-texto" id="sistemas-cancelar">Cancelar</button>
         <button type="submit" class="boton-cobre">Guardar</button>
       </div>
     </form>

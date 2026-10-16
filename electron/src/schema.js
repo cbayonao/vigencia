@@ -635,4 +635,42 @@ export const MIGRACIONES = [
       `);
     },
   },
+  {
+    version: 16,
+    nombre: "memoria del documento y bloques",
+    up(db) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS doc_memoria (
+          proyecto_id INTEGER PRIMARY KEY REFERENCES doc_proyecto(id) ON DELETE CASCADE,
+          datos TEXT NOT NULL DEFAULT '{}',
+          actualizado_en TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS doc_bloque (
+          id TEXT PRIMARY KEY,
+          proyecto_id INTEGER NOT NULL REFERENCES doc_proyecto(id) ON DELETE CASCADE,
+          orden INTEGER NOT NULL,
+          seccion TEXT NOT NULL DEFAULT '',
+          texto TEXT NOT NULL,
+          version_id INTEGER,
+          actualizado_en TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS doc_bloque_proyecto ON doc_bloque(proyecto_id, orden);
+        CREATE TABLE IF NOT EXISTS doc_bloque_cambio (
+          id INTEGER PRIMARY KEY,
+          proyecto_id INTEGER NOT NULL REFERENCES doc_proyecto(id) ON DELETE CASCADE,
+          bloque_id TEXT NOT NULL,
+          antes TEXT NOT NULL,
+          despues TEXT NOT NULL,
+          pedido TEXT NOT NULL DEFAULT '',
+          estado TEXT NOT NULL DEFAULT 'propuesto' CHECK (estado IN ('propuesto','aceptado','rechazado')),
+          modelo TEXT NOT NULL DEFAULT '',
+          origen TEXT NOT NULL DEFAULT 'local',
+          version_id INTEGER,
+          creado_en TEXT NOT NULL,
+          resuelto_en TEXT NOT NULL DEFAULT ''
+        );
+        CREATE INDEX IF NOT EXISTS doc_bloque_cambio_bloque ON doc_bloque_cambio(bloque_id, id);
+      `);
+    },
+  },
 ];

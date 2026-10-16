@@ -908,3 +908,7 @@ html[data-tema="oscuro"] .doc-pasaje-ref { background: var(--cobre); }
 .ctx-archivo { display: flex; gap: 8px; align-items: center; padding: 4px 0; }
 .ctx-archivo .nombre { flex: 1; }
 .conv-cuerpo { display: block; overflow: auto; padding: 16px; }
+
+.bloque-diff { border: 1px solid var(--linea, #ccc); padding: 10px; margin: 8px 0; line-height: 1.6; max-height: 40vh; overflow: auto; }
+.bloque-diff .quitado { text-decoration: line-through; background: #f6dcdc; }
+.bloque-diff .agregado { background: #dcefdc; }

@@ -14,6 +14,8 @@ import { Aviso, detalleProceso, filas, guardarUso, run, transaccion, uno } from 
 import { listarPiezas } from "./biblioteca.js";
 import { contextoExpediente, modeloParaDocumento, textoParaDocumento } from "./ia.js";
 import { fechaInforme } from "./informe.js";
+import { bloqueMemoria } from "../compartido/memoria.js";
+import { anotarVuelta, bloquesDelProyecto, guardarPropuesta, historialBloque, leerMemoria, prepararCambioBloque, resolverCambio, sincronizar } from "./memoria.js";
 import { agentesParaContexto, archivosDelProyecto, candidatosFts, leerAgentes, trozosDeArchivos } from "./conversiones.js";
 
 const TIPOS = new Set(TIPOS_DOCUMENTO.map((t) => t.id));
@@ -287,6 +289,8 @@ export function leerProyecto(db, id) {
     mensajes: mensajes(db, proyecto.id),
     versiones: filas(db, "SELECT * FROM doc_version WHERE proyecto_id = ? ORDER BY numero DESC", [proyecto.id]).map((v) => versionDe(v, false)),
     actual: ultimaVersion(db, proyecto.id),
+    memoria: leerMemoria(db, proyecto.id),
+    bloques: bloquesDelProyecto(db, proyecto.id).map((b) => ({ id: b.id, orden: b.orden, seccion: b.seccion, texto: b.texto })),
     fuentes: fuentesDelProyecto(db, proyecto.id).map((p) => p.id),
     archivos: archivosDelProyecto(db, proyecto.id).map((a) => ({
       id: a.id, nombre: a.nombre, extension: a.extension, estado: a.estado, paginas: a.paginas, paginas_ocr: a.paginas_ocr,
@@ -350,6 +354,7 @@ export function prepararVuelta({ db, datosDir, proyectoId, mensaje, modeloId, pa
   const { fragmentos: archivosFrag, recortados } = fragmentosDeTrozos(candidatos, consulta, { presupuesto: reparto.archivos });
   const agentes = recortarAgentes(agentesParaContexto(leerAgentes(datosDir, proyecto.id)), elegido.origen);
   const bloqueArchivos = bloqueDeArchivos(archivosFrag);
+  const memoria = bloqueMemoria(leerMemoria(db, proyecto.id), elegido.origen);
   let encargo;
   if (pasaje && actual) {
     encargo = armarEncargoPasaje({ tipo: proyecto.tipo, perfil, documento: actual.cuerpo, pasaje, pedido, fragmentos: [...fragmentos, ...archivosFrag.map((f) => ({ ...f, fuente: { nombre: f.nombre } }))], origen: elegido.origen });
@@ -359,7 +364,7 @@ export function prepararVuelta({ db, datosDir, proyectoId, mensaje, modeloId, pa
       hoy: hoyLargo, origen: elegido.origen,
       aclaracion: preguntas ? { preguntas, respuesta: pedido } : null,
       cerrar: Boolean(preguntas),
-      agentes: agentes.texto, archivos: bloqueArchivos,
+      agentes: agentes.texto, archivos: bloqueArchivos, memoria,
     });
   }
   const informe = {
@@ -373,6 +378,7 @@ export function prepararVuelta({ db, datosDir, proyectoId, mensaje, modeloId, pa
     archivosRecortados: recortados,
     fuentes: [...new Set(fragmentos.map((f) => f.fuente?.nombre).filter(Boolean))],
     agentes: Boolean(agentes.texto),
+    memoria: Boolean(memoria),
     agentesRecortado: agentes.recortado,
     expediente: Boolean(contexto),
     hash: hashEncargo(encargo),
@@ -425,6 +431,8 @@ export async function conversar({ db, datosDir, proyectoId, mensaje, modeloId, p
     }
     const base = plantillaBasica({ tipo: proyecto.tipo, ficha, pedido });
     const v = guardarVersion(db, proyecto.id, { cuerpo: textoDeEscrito(base), autor: "plantilla", modelo: "Plantilla básica", nota: "Plantilla básica" });
+    sincronizar(db, proyecto.id, { id: v.id, cuerpo: textoDeEscrito(base) });
+    anotarVuelta(db, proyecto.id, { pedido, cuerpo: textoDeEscrito(base), modelo: "Plantilla básica" });
     agregarMensaje(db, proyecto.id, { rol: "asistente", texto: `Armé la versión ${v.numero} con la plantilla básica de ${nombreTipo(proyecto.tipo).toLowerCase()}. Los datos que faltan quedan como [Dato pendiente]. Para redactar y revisar por conversación elija un modelo en Modelos de IA.`, versionId: v.id });
     return { ...leerProyecto(db, proyecto.id), modelo: elegido };
   }
@@ -466,6 +474,8 @@ export async function conversar({ db, datosDir, proyectoId, mensaje, modeloId, p
       return { ...leerProyecto(db, proyecto.id), modelo: elegido };
     }
     const v = guardarVersion(db, proyecto.id, { cuerpo: nuevo, modelo: nombreModelo, origen, nota: `Pasaje: ${pedido}` });
+    sincronizar(db, proyecto.id, { id: v.id, cuerpo: nuevo });
+    anotarVuelta(db, proyecto.id, { pedido, cuerpo: nuevo, modelo: nombreModelo, fuentes: usadas(previa) });
     agregarMensaje(db, proyecto.id, { rol: "asistente", texto: `Reescribí el pasaje. Quedó la versión ${v.numero}.${resumenAvisos(v.avisos)}`, versionId: v.id, origen });
     return { ...leerProyecto(db, proyecto.id), modelo: elegido };
   }
@@ -481,10 +491,61 @@ export async function conversar({ db, datosDir, proyectoId, mensaje, modeloId, p
   }
   const cuerpo = textoDeEscrito({ asunto: leido.asunto, secciones: leido.secciones });
   const v = guardarVersion(db, proyecto.id, { cuerpo, modelo: nombreModelo, origen, nota: pedido.slice(0, 120) });
+  sincronizar(db, proyecto.id, { id: v.id, cuerpo });
+  anotarVuelta(db, proyecto.id, { pedido, cuerpo, modelo: nombreModelo, fuentes: usadas(previa) });
   const verbo = actual ? "Revisé el documento" : "Redacté el documento";
   agregarMensaje(db, proyecto.id, { rol: "asistente", texto: `${verbo}. Quedó la versión ${v.numero}.${resumenAvisos(v.avisos)}`, versionId: v.id, origen });
   return { ...leerProyecto(db, proyecto.id), modelo: elegido };
 }
+
+function usadas(previa) {
+  return [...new Set([...(previa.fragmentos || []).map((f) => f.fuente?.nombre), ...(previa.archivosFrag || []).map((f) => f.nombre)].filter(Boolean))];
+}
+
+// ---------- Edición por bloque: el modelo reescribe solo ese párrafo ----------
+
+export function prepararBloque({ db, datosDir, proyectoId, bloqueId, mensaje, modeloId, resolverModelo = modeloDelProyecto }) {
+  const previa = prepararVuelta({ db, datosDir, proyectoId, mensaje, modeloId, pasaje: "x", resolverModelo });
+  if (!previa.elegido.usa) throw new Aviso("Para cambiar un párrafo elija un modelo local o de nube en Modelos de IA.");
+  if (!previa.actual) throw new Aviso("Todavía no hay documento.");
+  if (!bloquesDelProyecto(db, previa.proyecto.id).length) sincronizar(db, previa.proyecto.id, previa.actual);
+  const { bloque, encargo, hash } = prepararCambioBloque({
+    db, proyectoId: previa.proyecto.id, bloqueId, pedido: previa.pedido, tipo: previa.proyecto.tipo, perfil: previa.perfil,
+    cuerpo: previa.actual.cuerpo, fragmentos: [...previa.fragmentos, ...previa.archivosFrag.map((f) => ({ ...f, fuente: { nombre: f.nombre } }))],
+    origen: previa.elegido.origen, memoriaTexto: bloqueMemoria(leerMemoria(db, previa.proyecto.id), previa.elegido.origen),
+  });
+  const informe = { ...previa.informe, caracteres: encargo.length, tokens: Math.ceil(encargo.length / 4), hash };
+  return { previa, bloque, encargo, informe };
+}
+
+export async function proponerBloque({ db, datosDir, proyectoId, bloqueId, mensaje, modeloId, confirmado = "", onProgreso, pedirTexto = textoParaDocumento, resolverModelo = modeloDelProyecto }) {
+  const { previa, bloque, encargo, informe } = prepararBloque({ db, datosDir, proyectoId, bloqueId, mensaje, modeloId, resolverModelo });
+  const { elegido, proyecto } = previa;
+  if (elegido.origen === "nube") {
+    if (proyecto.solo_local) throw new Aviso(AVISO_SOLO_LOCAL);
+    if (!confirmado || confirmado !== informe.hash) {
+      const error = new Aviso("Revise el envío antes de mandarlo a la nube.");
+      error.codigo = "revisar-envio";
+      throw error;
+    }
+    registrarEnvio(db, { proyectoId: proyecto.id, informe, motivo: "parrafo" });
+  }
+  const r = await pedirTexto({
+    datosDir, modeloId: elegido.id, encargo,
+    onProgreso: (d) => onProgreso?.({ proyectoId: proyecto.id, texto: d?.texto || "", pasaje: true }),
+    onUso: (uso) => guardarUso(db, { ...uso, motivo: "parrafo", proyectoId: proyecto.id }),
+  });
+  const despues = String(r?.texto || "").trim();
+  if (!despues) throw new Aviso("El modelo no devolvió el párrafo. El documento quedó como estaba.");
+  const citables = fuentesDeCitas({ expediente: previa.contexto, fragmentos: [...previa.fragmentos, ...previa.archivosFrag], historia: previa.historia, documentoPrevio: previa.actual.cuerpo, pedido: previa.pedido });
+  return { cambio: guardarPropuesta(db, { proyectoId: proyecto.id, bloque, despues, pedido: previa.pedido, modelo: r?.nombre || elegido.nombre, origen: r?.origen || elegido.origen, fuentesTexto: citables }) };
+}
+
+export function resolverBloque(db, id, aceptar) {
+  return resolverCambio(db, { id, aceptar, guardarVersion, ultimaVersion });
+}
+
+export { historialBloque };
 
 function resumenAvisos(avisos) {
   const partes = [];

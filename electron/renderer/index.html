@@ -394,6 +394,7 @@
             <button type="button" class="boton-linea" id="doc-editar">Editar</button>
             <button type="button" class="boton-linea" id="doc-word">Word</button>
             <button type="button" class="boton-linea" id="doc-pdf">PDF</button>
+            <button type="button" class="boton-linea" id="doc-parrafo" title="El modelo reescribe solo el párrafo que elija">Cambiar un párrafo</button>
             <button type="button" class="boton-linea" id="doc-odt" title="OpenDocument para LibreOffice">ODT</button>
             <label class="ayuda" title="Pie de página que se puede borrar en Word o LibreOffice"><input type="checkbox" id="doc-pie-ia" checked> Pie: Generado con IA. Favor revisar.</label>
           </div>
@@ -957,6 +958,25 @@
         <button type="button" class="boton-texto" id="doc-ctx-plantilla">Usar la plantilla</button>
         <button type="button" class="boton-linea" id="doc-ctx-guardar">Guardar instrucciones</button>
         <button type="button" class="boton-cobre" id="doc-ctx-cerrar">Cerrar</button>
+      </div>
+    </div>
+  </div>
+  <div class="cortina" id="dialogo-bloque" hidden>
+    <div class="dialogo dialogo-ancho" role="dialog" aria-modal="true" aria-labelledby="bloque-titulo">
+      <h2 class="serif dialogo-titulo" id="bloque-titulo">Cambiar un párrafo</h2>
+      <p class="nota">Elija el párrafo. El modelo devuelve solo ese párrafo; usted ve antes y después y decide.</p>
+      <label class="etiqueta" for="bloque-lista">Párrafo</label>
+      <select id="bloque-lista"></select>
+      <label class="etiqueta" for="bloque-pedido">Qué quiere cambiar</label>
+      <input id="bloque-pedido" maxlength="500" autocomplete="off">
+      <div class="fila-fin"><button type="button" class="boton-cobre" id="bloque-pedir">Pedir cambio</button></div>
+      <p class="nota" id="bloque-estado"></p>
+      <div class="bloque-diff" id="bloque-diff" hidden></div>
+      <div id="bloque-historial"></div>
+      <div class="fila-fin">
+        <button type="button" class="boton-texto" id="bloque-cerrar">Cerrar</button>
+        <button type="button" class="boton-texto" id="bloque-rechazar" hidden>Rechazar</button>
+        <button type="button" class="boton-cobre" id="bloque-aceptar" hidden>Aceptar</button>
       </div>
     </div>
   </div>

@@ -1176,6 +1176,93 @@ export async function abrirDocumentos() {
   else pintarProyecto();
 }
 
+// ---------- Cambiar un párrafo ----------
+
+function abrirParrafo() {
+  const bloques = doc.datos?.bloques || [];
+  if (!bloques.length) {
+    estadoChat("Todavía no hay párrafos para cambiar.", true);
+    return;
+  }
+  const lista = $("bloque-lista");
+  lista.replaceChildren();
+  for (const b of bloques) {
+    const op = document.createElement("option");
+    op.value = b.id;
+    op.textContent = `${b.seccion ? `${b.seccion}: ` : ""}${b.texto.slice(0, 90)}`;
+    lista.append(op);
+  }
+  $("bloque-pedido").value = "";
+  $("bloque-estado").textContent = "";
+  $("bloque-diff").hidden = true;
+  $("bloque-aceptar").hidden = true;
+  $("bloque-rechazar").hidden = true;
+  doc.cambio = null;
+  pintarHistorialBloque();
+  ui.mostrarDialogo("dialogo-bloque");
+}
+
+async function pintarHistorialBloque() {
+  const caja = $("bloque-historial");
+  caja.replaceChildren();
+  const r = await window.vigencia.bloqueHistorial($("bloque-lista").value);
+  for (const c of (r?.ok ? r.cambios : []).slice(0, 5)) {
+    caja.append(nodo("p", "ayuda", `${c.estado === "aceptado" ? "Aceptado" : c.estado === "rechazado" ? "Rechazado" : "Pendiente"}: ${c.pedido}`));
+  }
+}
+
+async function pedirParrafo() {
+  const mensaje = String($("bloque-pedido").value || "").trim();
+  if (!mensaje) {
+    $("bloque-estado").textContent = "Escriba qué quiere cambiar.";
+    return;
+  }
+  const datos = { id: doc.abierto, bloque: $("bloque-lista").value, mensaje, modelo: doc.modelo };
+  let confirmado = "";
+  if (String(doc.modelo).startsWith("nube:")) {
+    const previa = await window.vigencia.bloqueRevisar(datos);
+    if (!previa?.ok) {
+      $("bloque-estado").textContent = previa?.error || "No pude preparar el envío.";
+      return;
+    }
+    ui.ocultarDialogo("dialogo-bloque");
+    confirmado = await revisarEnvio(previa);
+    ui.mostrarDialogo("dialogo-bloque");
+    if (!confirmado) {
+      $("bloque-estado").textContent = "No se envió nada.";
+      return;
+    }
+  }
+  $("bloque-estado").textContent = "Pidiendo el párrafo nuevo";
+  $("bloque-pedir").disabled = true;
+  const r = await window.vigencia.bloqueProponer({ ...datos, confirmado });
+  $("bloque-pedir").disabled = false;
+  if (!r?.ok) {
+    $("bloque-estado").textContent = r?.error || "No pude pedir el cambio.";
+    return;
+  }
+  doc.cambio = r.cambio;
+  const caja = $("bloque-diff");
+  caja.replaceChildren();
+  for (const p of r.cambio.diff || []) caja.append(nodo("span", p.op === "igual" ? "" : p.op, p.texto));
+  caja.hidden = false;
+  $("bloque-estado").textContent = "Tachado lo que sale, resaltado lo que entra.";
+  $("bloque-aceptar").hidden = false;
+  $("bloque-rechazar").hidden = false;
+}
+
+async function resolverParrafo(aceptar) {
+  if (!doc.cambio) return;
+  const r = await window.vigencia.bloqueResolver({ cambio: doc.cambio.id, aceptar });
+  doc.cambio = null;
+  $("bloque-aceptar").hidden = true;
+  $("bloque-rechazar").hidden = true;
+  $("bloque-diff").hidden = true;
+  $("bloque-estado").textContent = r?.ok ? (aceptar ? "Cambio aplicado. Quedó una versión nueva." : "Se conservó el párrafo anterior.") : r?.error || "No pude guardar.";
+  await abrirProyecto(doc.abierto, { conservarVista: true });
+  pintarHistorialBloque();
+}
+
 // ---------- Revisar envío ----------
 
 function revisarEnvio(previa) {
@@ -1349,6 +1436,12 @@ export function iniciarDocumentos(herramientas) {
   $("doc-word").addEventListener("click", () => exportar("docx"));
   $("doc-pdf").addEventListener("click", () => exportar("pdf"));
   $("doc-odt").addEventListener("click", () => exportar("odt"));
+  $("doc-parrafo").addEventListener("click", abrirParrafo);
+  $("bloque-lista").addEventListener("change", pintarHistorialBloque);
+  $("bloque-pedir").addEventListener("click", pedirParrafo);
+  $("bloque-aceptar").addEventListener("click", () => resolverParrafo(true));
+  $("bloque-rechazar").addEventListener("click", () => resolverParrafo(false));
+  $("bloque-cerrar").addEventListener("click", () => ui.ocultarDialogo("dialogo-bloque"));
   $("doc-hoja-caja").addEventListener("mouseup", tomarPasaje);
   $("doc-texto").addEventListener("mouseup", tomarPasaje);
   $("doc-texto").addEventListener("keyup", (e) => { if (e.shiftKey) tomarPasaje(); });

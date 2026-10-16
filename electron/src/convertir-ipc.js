@@ -13,7 +13,7 @@ import { guardarPieza } from "./biblioteca.js";
 import { run } from "./db.js";
 import { estadoOcr, instalarOcr, quitarOcr } from "./convertir/ocr.js";
 import { descargarJuris } from "./juris.js";
-import { enviosDelProyecto, prepararVuelta } from "./documentos.js";
+import { enviosDelProyecto, historialBloque, prepararBloque, prepararVuelta, proponerBloque, resolverBloque } from "./documentos.js";
 
 const aqui = path.dirname(fileURLToPath(import.meta.url));
 
@@ -223,6 +223,21 @@ export function registrarConvertir({ ipcMain, dialog, utilityProcess, db, datosD
     });
     return { informe: previa.informe, texto: previa.encargo, soloLocal: previa.proyecto.solo_local };
   }));
+
+  // Edición por bloque: revisar, proponer, aceptar o rechazar, historial.
+  ipcMain.handle("bloque-revisar", (_e, d) => responder(() => {
+    const r = prepararBloque({ db: base(), datosDir: datosDir(), proyectoId: d?.id, bloqueId: d?.bloque, mensaje: d?.mensaje, modeloId: d?.modelo });
+    return { informe: r.informe, texto: r.encargo, nube: r.previa.elegido.origen === "nube" };
+  }));
+  ipcMain.handle("bloque-proponer", async (_e, d) => {
+    try {
+      return { ok: true, ...(await proponerBloque({ db: base(), datosDir: datosDir(), proyectoId: d?.id, bloqueId: d?.bloque, mensaje: d?.mensaje, modeloId: d?.modelo, confirmado: String(d?.confirmado || "") })) };
+    } catch (error) {
+      return { ok: false, error: error?.message || "No pude pedir el cambio." };
+    }
+  });
+  ipcMain.handle("bloque-resolver", (_e, d) => responder(() => resolverBloque(base(), Number(d?.cambio), Boolean(d?.aceptar))));
+  ipcMain.handle("bloque-historial", (_e, id) => responder(() => ({ cambios: historialBloque(base(), String(id || "")) })));
 
   // Jurisprudencia: bajar el documento, convertirlo y dejarlo listo.
   ipcMain.handle("juris-convertir", async (_e, dato) => {

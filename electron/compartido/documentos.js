@@ -381,7 +381,7 @@ export function presupuestoDe(origen) {
 
 export function armarEncargoDocumento({
   tipo, perfil, expediente, fragmentos, historia = [], documento = "", pedido, hoy, origen, aclaracion, cerrar = false,
-  agentes = "", archivos = "",
+  agentes = "", archivos = "", memoria = "",
 } = {}) {
   const lim = presupuestoDe(origen);
   const nombre = nombreTipo(tipo);
@@ -397,6 +397,7 @@ export function armarEncargoDocumento({
   if (perfil?.instrucciones) lineas.push("", `Perfil ${perfil.nombre || ""}:`.trim(), String(perfil.instrucciones).trim());
   if (perfil?.estilo) lineas.push("", "Estilo:", String(perfil.estilo).trim());
   if (String(agentes || "").trim()) lineas.push("", "Instrucciones de este proyecto (AGENTS.md; en lo particular del caso ganan sobre el perfil):", String(agentes).trim());
+  if (String(memoria || "").trim()) lineas.push("", "Memoria del documento (lo decidido en vueltas anteriores, con cualquier modelo; respétalo salvo que el usuario pida otra cosa):", String(memoria).trim());
   lineas.push("");
   const actual = String(documento || "").trim();
   if (cerrar || actual) {

@@ -69,12 +69,26 @@ test("Markdown, editor y Markdown otra vez dan lo mismo, con ids por párrafo", 
   assert.equal(leerParrafo(e.secciones[0].parrafos.at(-1)).tipo, "tabla");
 });
 
+test("una tabla metida en una lista o una cita no se pierde al guardar", () => {
+  const json = { type: "doc", content: [
+    { type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "Hechos" }] },
+    { type: "orderedList", attrs: { start: 1 }, content: [{ type: "listItem", content: [
+      { type: "paragraph", content: [{ type: "text", text: "Uno" }] },
+      { type: "table", content: [{ type: "tableRow", content: [{ type: "tableHeader", content: [{ type: "paragraph", content: [{ type: "text", text: "A" }] }] }] }] },
+    ] }] },
+    { type: "blockquote", content: [{ type: "bulletList", content: [{ type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "Dentro" }] }] }] }] },
+  ] };
+  const { escrito } = jsonAEscrito(json);
+  assert.deepEqual(escrito.secciones[0].parrafos, ["1. Uno", "| A |\n| --- |", "- Dentro"]);
+});
+
 test("exportar Word, ODT y PDF con formato y pie de IA", () => {
   const e = escritoDeTexto(MD);
   const docx = docxDeEscrito(e);
   const d = parte(docx, "word/document.xml");
   for (const x of ['<w:u w:val="single"/>', "<w:tbl>", '<w:jc w:val="center"/>', 'w:val="Cita"', 'w:val="Subtitulo"', "Radicó | tutela"]) assert.ok(d.includes(x), x);
   assert.ok(parte(docx, "word/footer1.xml").includes("Generado con IA. Favor revisar."));
+  assert.ok(parte(docxDeEscrito(e, { titulo: true }), "word/document.xml").includes('<w:pStyle w:val="Titulo"/></w:pPr><w:r><w:t xml:space="preserve">Acción de tutela'));
   assert.ok(!parte(docxDeEscrito(e, { pie: false }), "word/document.xml").includes("footerReference"));
   const odt = odtDeEscrito(e);
   const c = parte(odt, "content.xml");
@@ -111,4 +125,13 @@ test("guardar desde el editor conserva el id aunque el párrafo cambie entero y 
   assert.equal(historialBloque(db, d.bloques[0].id)[0].origen, "manual");
   assert.match(JSON.stringify(despues.memoria), /Editado a mano/);
   assert.equal(Number(uno(db, "SELECT COUNT(*) n FROM doc_bloque WHERE proyecto_id = ?", [p.id]).n), 10);
+});
+
+test("el editor empaquetado existe y es local", () => {
+  const ruta = new URL("../renderer/vendor/editor.js", import.meta.url);
+  const js = fs.readFileSync(ruta, "utf8");
+  assert.ok(js.includes("data-bloque"), "corra npm run editor");
+  assert.doesNotMatch(js, /https?:\/\/(?!prosemirror|tiptap|github|www\.w3)[a-z0-9.-]+\/[^"'\s]*\.(js|css)/i);
+  const html = fs.readFileSync(new URL("../renderer/index.html", import.meta.url), "utf8");
+  assert.match(html, /script-src 'self'/);
 });

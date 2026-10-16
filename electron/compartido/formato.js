@@ -212,7 +212,23 @@ export function jsonAEscrito(json) {
     sec().parrafos.push(texto);
     ids.push(bloque || null);
   };
-  for (const n of json?.content || []) {
+  const tabla = (n) => {
+    const filas = (n.content || []).map((fila) => (fila.content || []).map((celda) => (celda.content || []).map((p) => inlineMd(p.content)).join(" ").trim()));
+    if (filas.length) poner(escribirParrafo({ tipo: "tabla", filas }), n.attrs?.bloque);
+  };
+  // Lo que va dentro de una lista o una cita que no es párrafo (una tabla,
+  // otra lista, un título) se guarda como bloque propio, sin perderse.
+  const lista = (n, tipo, cuenta) => {
+    for (const item of n.content || []) {
+      for (const h of item.content || []) {
+        if (h.type === "paragraph") poner(escribirParrafo({ tipo, numero: cuenta.n++, alineacion: alinear(h.attrs), texto: inlineMd(h.content) }), h.attrs?.bloque);
+        else if (h.type === "bulletList") lista(h, "vineta", { n: 1 });
+        else if (h.type === "orderedList") lista(h, "numeral", { n: h.attrs?.start || 1 });
+        else nodo(h);
+      }
+    }
+  };
+  const nodo = (n) => {
     const a = n.attrs || {};
     if (n.type === "heading" && a.level === 1 && !asunto) asunto = inlineMd(n.content).replace(/[*+]/g, "").trim();
     else if (n.type === "heading" && a.level <= 2) {
@@ -224,22 +240,14 @@ export function jsonAEscrito(json) {
       const firma = /_{3,}/.test(texto) && a.textAlign === "center";
       poner(escribirParrafo({ tipo: "parrafo", alineacion: firma ? "" : alinear(a), texto }), a.bloque);
     } else if (n.type === "blockquote") {
-      for (const h of n.content || []) poner(escribirParrafo({ tipo: "cita", alineacion: alinear(h.attrs), texto: inlineMd(h.type === "paragraph" ? h.content : h.content?.flatMap((x) => x.content || [])) }), h.attrs?.bloque);
-    } else if (n.type === "bulletList" || n.type === "orderedList") {
-      let numero = n.attrs?.start || 1;
-      const recorrer = (lista, tipo) => {
-        for (const item of lista.content || []) {
-          for (const h of item.content || []) {
-            if (h.type === "paragraph") poner(escribirParrafo({ tipo, numero: numero++, alineacion: alinear(h.attrs), texto: inlineMd(h.content) }), h.attrs?.bloque);
-            else if (h.type === "bulletList" || h.type === "orderedList") recorrer(h, h.type === "bulletList" ? "vineta" : "numeral");
-          }
-        }
-      };
-      recorrer(n, n.type === "bulletList" ? "vineta" : "numeral");
-    } else if (n.type === "table") {
-      const filas = (n.content || []).map((fila) => (fila.content || []).map((celda) => (celda.content || []).map((p) => inlineMd(p.content)).join(" ").trim()));
-      if (filas.length) poner(escribirParrafo({ tipo: "tabla", filas }), a.bloque);
-    }
-  }
+      for (const h of n.content || []) {
+        if (h.type === "paragraph") poner(escribirParrafo({ tipo: "cita", alineacion: alinear(h.attrs), texto: inlineMd(h.content) }), h.attrs?.bloque);
+        else nodo(h);
+      }
+    } else if (n.type === "bulletList") lista(n, "vineta", { n: 1 });
+    else if (n.type === "orderedList") lista(n, "numeral", { n: n.attrs?.start || 1 });
+    else if (n.type === "table") tabla(n);
+  };
+  for (const n of json?.content || []) nodo(n);
   return { escrito: { asunto: asunto || secciones.find((s) => s.titulo !== "Texto")?.titulo || "Documento", secciones: secciones.filter((s) => s.parrafos.length) }, ids };
 }

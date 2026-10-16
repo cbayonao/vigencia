@@ -803,7 +803,8 @@ function comandoEditor(nombre) {
 
 function parrafoConIa() {
   const actual = modEditor.bloqueActual(editor);
-  if (doc.sucio) {
+  // Sucio de verdad: lo que se ve no es lo guardado.
+  if (cuerpoEditado().trim() !== String(doc.datos?.actual?.cuerpo || "").trim()) {
     $("ed-estado").textContent = "Guarde los cambios primero; así el modelo trabaja sobre lo que usted ve.";
     return;
   }

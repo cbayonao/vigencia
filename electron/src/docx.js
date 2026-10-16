@@ -110,8 +110,10 @@ const TITULOS_DE_CARTA = new Set([
   "Cuerpo", "Cierre", "Escrito",
 ]);
 
-function documentoXml(escrito, { pie = true } = {}) {
+function documentoXml(escrito, { pie = true, titulo = false } = {}) {
   const bloques = [];
+  // Documentos lleva su título arriba, como en ODT y PDF; el memorial no.
+  if (titulo && escrito.asunto) bloques.push(parrafo(escrito.asunto, "Titulo"));
   for (const seccion of escrito.secciones || []) {
     if (seccion.titulo && !TITULOS_DE_CARTA.has(seccion.titulo)) bloques.push(parrafo(seccion.titulo, "Seccion"));
     for (const linea of seccion.parrafos || []) bloques.push(parrafo(linea));
@@ -310,13 +312,13 @@ function unzipLocal(buffer) {
   return archivos;
 }
 
-export function docxDeEscrito(escrito, { pie = true } = {}) {
+export function docxDeEscrito(escrito, { pie = true, titulo = false } = {}) {
   const partes = {
     "[Content_Types].xml": pie ? TIPOS : TIPOS.replace(/\n  <Override PartName="\/word\/footer1.xml"[^\n]*/, ""),
     "_rels/.rels": RELS,
     "word/_rels/document.xml.rels": pie ? DOC_RELS : DOC_RELS_SIN_PIE,
     "word/styles.xml": ESTILOS,
-    "word/document.xml": documentoXml(escrito, { pie }),
+    "word/document.xml": documentoXml(escrito, { pie, titulo }),
   };
   if (pie) partes["word/footer1.xml"] = PIE_XML;
   return zip(partes);

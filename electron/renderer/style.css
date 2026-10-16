@@ -910,8 +910,8 @@ html[data-tema="oscuro"] .doc-pasaje-ref { background: var(--cobre); }
 .conv-cuerpo { display: block; overflow: auto; padding: 16px; }
 
 .bloque-diff { border: 1px solid var(--linea, #ccc); padding: 10px; margin: 8px 0; line-height: 1.6; max-height: 40vh; overflow: auto; }
-.bloque-diff .quitado { text-decoration: line-through; background: #f6dcdc; }
-.bloque-diff .agregado { background: #dcefdc; }
+.bloque-diff .quitado { text-decoration: line-through; background: #f6dcdc; color: #6b1d1d; }
+.bloque-diff .agregado { background: #dcefdc; color: #154d15; }
 
 /* ---------- Editor del documento ---------- */
 .doc-edicion { display: flex; flex-direction: column; gap: 10px; }

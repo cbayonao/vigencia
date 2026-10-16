@@ -164,7 +164,7 @@ export function registrarDocumentos({ ipcMain, dialog, db, datosDir, ventana, re
         return await guardarComo("Descargar el documento en PDF", escrito.asunto, "pdf", pdf);
       }
       if (dato?.formato === "odt") return await guardarComo("Guardar el documento para LibreOffice", escrito.asunto, "odt", odtDeEscrito(escrito, { pie }));
-      return await guardarComo("Guardar el documento en Word", escrito.asunto, "docx", docxDeEscrito(escrito, { pie }));
+      return await guardarComo("Guardar el documento en Word", escrito.asunto, "docx", docxDeEscrito(escrito, { pie, titulo: true }));
     } catch (error) {
       return { ok: false, error: mensajeHumano(error) };
     }

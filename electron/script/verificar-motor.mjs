@@ -144,3 +144,14 @@ if (ocrColado.length) {
   console.warn(`Aviso: el OCR se coló en el instalador (${ocrColado.length} archivos). Debe bajarse desde Modelos de IA.`);
 }
 console.log(`Conversor verificado en ${dir}.`);
+
+// Editor del documento: TipTap va empaquetado en renderer/vendor/editor.js
+// (npm run editor). Sin ese archivo, Editar cae al modo Markdown.
+const exigirEditor = ["renderer/vendor/editor.js", "compartido/formato.js", "compartido/memoria.js"];
+const faltanEditor = exigirEditor.filter((rel) => !enAsar.has(`/${rel}`));
+if (faltanEditor.length) {
+  console.error(`Falta el editor del documento en ${dir}: ${faltanEditor.join(", ")}`);
+  console.error("Corra npm run editor antes de empaquetar.");
+  process.exit(1);
+}
+console.log(`Editor verificado en ${dir}.`);

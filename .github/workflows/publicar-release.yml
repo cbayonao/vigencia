@@ -14,7 +14,17 @@ permissions:
   id-token: write
 
 jobs:
+  crear:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --draft --title "$TAG" --generate-notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+
   armar:
+    needs: crear
     strategy:
       fail-fast: true
       matrix:
@@ -37,31 +47,14 @@ jobs:
         working-directory: electron
       - run: npm run ${{ matrix.comando }}
         working-directory: electron
-      - uses: actions/upload-artifact@v4
-        with:
-          name: instaladores-${{ runner.os }}
-          path: electron/dist/Vigencia*
-          if-no-files-found: error
-          retention-days: 30
-
-  publicar:
-    needs: armar
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: instaladores-*
-          merge-multiple: true
-          path: instaladores
-      - run: ls -la instaladores/
-      - run: gh release create "$TAG" --title "$TAG" --generate-notes instaladores/Vigencia*
+      # Subida directa al release (borrador): no usa la cuota de artefactos.
+      - run: gh release upload "$TAG" electron/dist/Vigencia* --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
 
   espejar:
-    needs: publicar
+    needs: armar
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -70,6 +63,10 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: us-east-1
       - run: ./electron/script/publicar-descargas.sh "$TAG"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+      - run: gh release edit "$TAG" --draft=false
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}

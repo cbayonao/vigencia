@@ -37,8 +37,10 @@ jobs:
       - run: npm run ${{ matrix.comando }}
         working-directory: electron
       - uses: actions/upload-artifact@v4
+        # No tumba el semáforo si la cuota de artefactos está llena.
+        continue-on-error: true
         with:
           name: instaladores-${{ runner.os }}
           path: electron/dist/Vigencia*
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 2

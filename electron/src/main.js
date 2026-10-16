@@ -1,4 +1,5 @@
 import { estadoMotor, instalarMotor, usarDatosMotor, diagnosticoMotor } from "./motor.js";
+import { crearCargaPp } from "./pp.js";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -45,6 +46,15 @@ import {
   leerPausaActualizar,
   listarClientes,
   listarProcesos,
+  ppCatalogoVacio,
+  ppCargados,
+  ppDeptos,
+  ppDespachos,
+  ppDocumentos,
+  ppMunicipios,
+  ppOlvidar,
+  ppPublicaciones,
+  sembrarPpCatalogo,
   avisosDesde,
   cerrarRevisionesColgadas,
   guardarHorarios,
@@ -97,6 +107,8 @@ let ventana = null;
 let db = null;
 let datosDir = "";
 let cargaPendiente = null;
+let cargaPp = null;
+let catalogoPp = null;
 let bandeja = null;
 let saliendo = false;
 let avisoBandejaMostrado = false;
@@ -273,13 +285,20 @@ function abrirCambios(ids) {
 function rutaOmitida() {
   return path.join(datosDir, "actualizacion-omitida.txt");
 }
-
 function leerOmitida() {
   try {
     return fs.readFileSync(rutaOmitida(), "utf8").trim();
   } catch {
     return "";
   }
+}
+
+function sembrarPpSiFalta() {
+  if (!ppCatalogoVacio(db)) return;
+  if (!catalogoPp) {
+    catalogoPp = JSON.parse(fs.readFileSync(path.join(RAIZ, "compartido", "pp_catalogo.json"), "utf8"));
+  }
+  sembrarPpCatalogo(db, catalogoPp);
 }
 
 function guardarOmitida(version) {
@@ -773,6 +792,58 @@ if (bloqueo) {
       }
     });
     ipcMain.handle("modelos-recomendados", () => responder(() => ({ modelos: modelosRecomendados(datosDir) })));
+    ipcMain.handle("pp-deptos", () => responder(() => {
+      sembrarPpSiFalta();
+      return { deptos: ppDeptos(db) };
+    }));
+    ipcMain.handle("pp-municipios", (_evento, dato) => responder(() => {
+      sembrarPpSiFalta();
+      return { municipios: ppMunicipios(db, String(dato?.depto || "")) };
+    }));
+    ipcMain.handle("pp-despachos", (_evento, dato) => responder(() => ({
+      despachos: ppDespachos(db, String(dato?.depto || ""), String(dato?.muni || ""), String(dato?.texto || "")),
+    })));
+    ipcMain.handle("pp-cargados", () => responder(() => ({ cargados: ppCargados(db) })));
+    ipcMain.handle("pp-publicaciones", (_evento, dato) => responder(() => ({
+      publicaciones: ppPublicaciones(db, String(dato?.despacho || "")),
+    })));
+    ipcMain.handle("pp-documentos", (_evento, dato) => responder(() => ({
+      documentos: ppDocumentos(db, Number(dato?.publicacion || 0)),
+    })));
+    ipcMain.handle("pp-cargar", (_evento, dato) => {
+      if (cargaPp?.estado.corriendo) return { ok: false, error: "Ya hay una carga en curso." };
+      const depto = String(dato?.depto || "");
+      const despacho = String(dato?.despacho || "");
+      if (!/^\d{2}$/.test(depto) || !/^\d{12}$/.test(despacho)) {
+        return { ok: false, error: "Falta el despacho." };
+      }
+      cargaPp = crearCargaPp(db, { depto, despacho });
+      cargaPp.correr((estado) => enviar("pp-progreso", estado)).then(
+        (final) => enviar("pp-progreso", { ...final, terminado: true }),
+        (error) => enviar("pp-progreso", { corriendo: false, terminado: true, error: mensajeHumano(error) }),
+      );
+      return { ok: true };
+    });
+    ipcMain.handle("pp-cancelar", () => {
+      cargaPp?.cancelar();
+      return { ok: true };
+    });
+    ipcMain.handle("pp-olvidar", (_evento, dato) => responder(() => {
+      ppOlvidar(db, String(dato?.despacho || ""));
+      return {};
+    }));
+    ipcMain.handle("pp-abrir", (_evento, dato) => {
+      try {
+        const url = new URL(String(dato?.url || ""));
+        if (url.protocol !== "https:" || url.hostname !== "publicacionesprocesales.ramajudicial.gov.co") {
+          return { ok: false };
+        }
+        shell.openExternal(url.toString());
+        return { ok: true };
+      } catch {
+        return { ok: false };
+      }
+    });
     ipcMain.handle("motor-estado", () => responder(() => estadoMotor(datosDir, {
       raiz: RAIZ,
       recursos: process.resourcesPath,

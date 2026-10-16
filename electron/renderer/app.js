@@ -2833,12 +2833,15 @@ function elegirSistema(id) {
   estado.sistema = sistema.id;
   cerrarCombos();
   const propia = sistema.id === SISTEMA_INICIAL;
+  const pp = sistema.id === "micrositio";
   $("pantalla-consulta").hidden = !propia;
-  $("pantalla-construccion").hidden = propia;
-  if (!propia) {
+  $("pantalla-pp").hidden = !pp;
+  $("pantalla-construccion").hidden = propia || pp;
+  if (!propia && !pp) {
     $("obra-sistema").textContent = sistema.fuente ? `${sistema.nombre} · ${sistema.fuente}` : sistema.nombre;
     $("obra-texto").textContent = `Estamos construyendo la consulta de ${sistema.nombre}. Mientras tanto, sus expedientes siguen en la consulta nacional unificada.`;
   }
+  if (pp) abrirPp();
   document.title = `${propia ? "Procesos" : sistema.nombre} · Vigencia`;
   pintarSistemas();
 }
@@ -3124,3 +3127,148 @@ window.vigencia.alPago(() => {
   $("ya-pague").click();
 });
 await refrescarLicencia();
+
+const ppPantalla = { deptos: false, despacho: "" };
+
+function llenarOpciones(select, opciones) {
+  select.replaceChildren();
+  for (const [valor, texto] of opciones) select.append(new Option(texto, valor));
+}
+
+async function abrirPp() {
+  if (!ppPantalla.deptos) {
+    const respuesta = await window.vigencia.ppDeptos();
+    if (!respuesta?.ok) {
+      $("pp-estado").textContent = respuesta?.error || "No pude leer el catálogo.";
+      return;
+    }
+    ppPantalla.deptos = true;
+    llenarOpciones($("pp-depto"), respuesta.deptos.map((d) => [d.codigo, `${d.codigo} · ${d.nombre}`]));
+    $("pp-depto").dispatchEvent(new Event("change"));
+  }
+  await pintarPpCargados();
+}
+
+async function pintarPpDespachos() {
+  const respuesta = await window.vigencia.ppDespachos($("pp-depto").value, $("pp-muni").value, $("pp-texto").value.trim());
+  const lista = respuesta?.ok ? respuesta.despachos : [];
+  const select = $("pp-despacho");
+  select.replaceChildren();
+  for (const d of lista) {
+    const marca = d.estado === "lista" ? ` ✓ ${d.avisos}` : d.estado === "cancelada" ? " (incompleta)" : "";
+    select.append(new Option(`${d.codigo} · ${d.nombre}${marca}`, d.codigo));
+  }
+}
+
+$("pp-depto").addEventListener("change", async () => {
+  const respuesta = await window.vigencia.ppMunicipios($("pp-depto").value);
+  const munis = respuesta?.ok ? respuesta.municipios : [];
+  llenarOpciones($("pp-muni"), munis.map((m) => [m.codigo, `${m.nombre} (${m.despachos})`]));
+  await pintarPpDespachos();
+});
+$("pp-muni").addEventListener("change", pintarPpDespachos);
+$("pp-texto").addEventListener("input", pintarPpDespachos);
+
+$("pp-cargar").addEventListener("click", async () => {
+  const despacho = $("pp-despacho").value;
+  if (!despacho) {
+    $("pp-estado").textContent = "Elija un despacho.";
+    return;
+  }
+  const respuesta = await window.vigencia.ppCargar($("pp-depto").value, despacho);
+  if (!respuesta?.ok) {
+    $("pp-estado").textContent = respuesta?.error || "No pude empezar.";
+    return;
+  }
+  $("pp-cancelar").hidden = false;
+  $("pp-barra").hidden = false;
+  $("pp-cargar").disabled = true;
+  $("pp-estado").textContent = "Empezando la carga en segundo plano…";
+});
+$("pp-cancelar").addEventListener("click", () => window.vigencia.ppCancelar());
+window.vigencia.alPp((estado) => {
+  if (estado.terminado) {
+    $("pp-cancelar").hidden = true;
+    $("pp-barra").hidden = true;
+    $("pp-cargar").disabled = false;
+    $("pp-estado").textContent = estado.error && !estado.avisos
+      ? `Terminó con error: ${estado.error}`
+      : `${estado.avisos} avisos y ${estado.docs} documentos en ${estado.pagina} páginas.`;
+    pintarPpCargados();
+    if (estado.despacho) verPpDespacho(estado.despacho);
+    return;
+  }
+  $("pp-estado").textContent = `Página ${estado.pagina} de ${estado.paginas}: ${estado.avisos} avisos, ${estado.docs} documentos…`;
+});
+
+async function pintarPpCargados() {
+  const respuesta = await window.vigencia.ppCargados();
+  const caja = $("pp-cargados");
+  caja.replaceChildren();
+  for (const c of respuesta?.ok ? respuesta.cargados : []) {
+    const tarjeta = nodo("article", "persona");
+    const info = nodo("div");
+    info.append(nodo("h3", "", c.codigo));
+    info.append(nodo("p", "", String(c.nombre || "").slice(0, 80)));
+    info.append(nodo("p", "modelo-estado", `${c.avisos} avisos · ${c.docs} documentos · ${c.actualizada || ""}`));
+    tarjeta.append(info);
+    const acciones = nodo("div", "hermanos");
+    const ver = nodo("button", "boton-linea", "Ver");
+    ver.type = "button";
+    ver.addEventListener("click", () => verPpDespacho(c.codigo));
+    const olvidar = nodo("button", "boton-texto", "Olvidar");
+    olvidar.type = "button";
+    olvidar.addEventListener("click", async () => {
+      await window.vigencia.ppOlvidar(c.codigo);
+      await pintarPpCargados();
+      if (ppPantalla.despacho === c.codigo) {
+        $("pp-lista").replaceChildren();
+        $("pp-vacio").hidden = false;
+      }
+    });
+    acciones.append(ver, olvidar);
+    tarjeta.append(acciones);
+    caja.append(tarjeta);
+  }
+}
+
+async function verPpDespacho(codigo) {
+  ppPantalla.despacho = codigo;
+  $("pp-vacio").hidden = true;
+  const caja = $("pp-lista");
+  caja.replaceChildren();
+  const respuesta = await window.vigencia.ppPublicaciones(codigo);
+  for (const p of respuesta?.ok ? respuesta.publicaciones : []) {
+    const tarjeta = nodo("article", "persona");
+    const info = nodo("div");
+    info.append(nodo("h3", "", p.titulo || "(sin título)"));
+    info.append(nodo("p", "modelo-estado", `${p.fecha || ""} · ${p.tipo || ""} · ${p.docs} documento(s)`));
+    const docs = nodo("div");
+    docs.hidden = true;
+    info.append(docs);
+    tarjeta.append(info);
+    const acciones = nodo("div", "hermanos");
+    const boton = nodo("button", "boton-linea", "Documentos");
+    boton.type = "button";
+    boton.addEventListener("click", async () => {
+      if (!docs.hidden) {
+        docs.hidden = true;
+        boton.textContent = "Documentos";
+        return;
+      }
+      const r = await window.vigencia.ppDocumentos(p.id);
+      docs.replaceChildren();
+      for (const d of r?.ok ? r.documentos : []) {
+        const b = nodo("button", "boton-texto", `${d.nombre || "Documento"}${d.fecha ? ` · ${d.fecha}` : ""}`);
+        b.type = "button";
+        b.addEventListener("click", () => window.vigencia.ppAbrir(d.url));
+        docs.append(b);
+      }
+      docs.hidden = false;
+      boton.textContent = "Ocultar";
+    });
+    acciones.append(boton);
+    tarjeta.append(acciones);
+    caja.append(tarjeta);
+  }
+}

@@ -519,3 +519,77 @@ export function avisosDesde(db, idBase) {
     ORDER BY a.id
   `, [idBase]);
 }
+
+export function ppCatalogoVacio(db) {
+  return Number(uno(db, "SELECT COUNT(*) AS n FROM pp_despacho").n) === 0;
+}
+
+export function sembrarPpCatalogo(db, catalogo) {
+  transaccion(db, () => {
+    for (const d of catalogo?.deptos || []) {
+      run(db, "INSERT OR IGNORE INTO pp_departamento (codigo, nombre) VALUES (?, ?)", [d.codigo, d.nombre]);
+    }
+    for (const m of catalogo?.munis || []) {
+      run(db, "INSERT OR IGNORE INTO pp_municipio (codigo, nombre, depto) VALUES (?, ?, ?)", [
+        m.codigo, m.nombre, String(m.codigo).slice(0, 2),
+      ]);
+    }
+    for (const d of catalogo?.despachos || []) {
+      run(db, "INSERT OR IGNORE INTO pp_despacho (codigo, nombre, depto, muni) VALUES (?, ?, ?, ?)", [
+        d.codigo, d.nombre, d.depto, d.muni,
+      ]);
+    }
+  });
+}
+
+export function ppDeptos(db) {
+  return filas(db, "SELECT codigo, nombre FROM pp_departamento ORDER BY nombre");
+}
+
+export function ppMunicipios(db, depto) {
+  return filas(db, `SELECT m.codigo, m.nombre, COUNT(d.codigo) AS despachos
+    FROM pp_municipio m LEFT JOIN pp_despacho d ON d.muni = m.codigo AND d.depto = ?
+    WHERE m.codigo LIKE ? GROUP BY m.codigo HAVING despachos > 0 ORDER BY m.nombre`, [depto, `${depto}%`]);
+}
+
+export function ppDespachos(db, depto, muni, texto = "", limite = 2000) {
+  const params = [depto, muni];
+  let filtro = "";
+  if (String(texto || "").trim()) {
+    filtro = "AND (d.codigo LIKE ? OR d.nombre LIKE ?)";
+    params.push(`%${texto.trim()}%`, `%${texto.trim()}%`);
+  }
+  params.push(limite);
+  return filas(db, `SELECT d.codigo, d.nombre,
+      COALESCE(c.estado, '') AS estado, COALESCE(c.avisos, 0) AS avisos
+    FROM pp_despacho d LEFT JOIN pp_carga c ON c.despacho = d.codigo
+    WHERE d.depto = ? AND d.muni = ? ${filtro} ORDER BY d.nombre LIMIT ?`, params);
+}
+
+export function ppCargados(db) {
+  return filas(db, `SELECT c.despacho AS codigo, d.nombre,
+      COALESCE(d2.nombre, '') AS depto, c.total, c.avisos,
+      (SELECT COUNT(*) FROM pp_documento doc JOIN pp_publicacion p ON p.id = doc.publicacion WHERE p.despacho = c.despacho) AS docs,
+      c.actualizada, c.estado
+    FROM pp_carga c JOIN pp_despacho d ON d.codigo = c.despacho
+    LEFT JOIN pp_departamento d2 ON d2.codigo = d.depto
+    ORDER BY c.actualizada DESC`);
+}
+
+export function ppPublicaciones(db, despacho) {
+  return filas(db, `SELECT p.id, p.titulo, p.fecha, p.url, p.detalle_url, p.tipo,
+      (SELECT COUNT(*) FROM pp_documento WHERE publicacion = p.id) AS docs
+    FROM pp_publicacion p WHERE p.despacho = ? ORDER BY p.fecha DESC, p.id DESC`, [despacho]);
+}
+
+export function ppDocumentos(db, publicacion) {
+  return filas(db, "SELECT nombre, url, fecha FROM pp_documento WHERE publicacion = ? ORDER BY id", [publicacion]);
+}
+
+export function ppOlvidar(db, despacho) {
+  transaccion(db, () => {
+    run(db, "DELETE FROM pp_documento WHERE publicacion IN (SELECT id FROM pp_publicacion WHERE despacho = ?)", [despacho]);
+    run(db, "DELETE FROM pp_publicacion WHERE despacho = ?", [despacho]);
+    run(db, "DELETE FROM pp_carga WHERE despacho = ?", [despacho]);
+  });
+}

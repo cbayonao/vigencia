@@ -61,6 +61,21 @@ contextBridge.exposeInMainWorld("vigencia", {
   ajustes: () => ipcRenderer.invoke("ajustes"),
   guardarAjustes: (datos) => ipcRenderer.invoke("guardar-ajustes", datos),
   salir: () => ipcRenderer.invoke("salir"),
+  ppDeptos: () => ipcRenderer.invoke("pp-deptos"),
+  ppMunicipios: (depto) => ipcRenderer.invoke("pp-municipios", { depto }),
+  ppDespachos: (depto, muni, texto) => ipcRenderer.invoke("pp-despachos", { depto, muni, texto }),
+  ppCargados: () => ipcRenderer.invoke("pp-cargados"),
+  ppPublicaciones: (despacho) => ipcRenderer.invoke("pp-publicaciones", { despacho }),
+  ppDocumentos: (publicacion) => ipcRenderer.invoke("pp-documentos", { publicacion }),
+  ppCargar: (depto, despacho) => ipcRenderer.invoke("pp-cargar", { depto, despacho }),
+  ppCancelar: () => ipcRenderer.invoke("pp-cancelar"),
+  ppOlvidar: (despacho) => ipcRenderer.invoke("pp-olvidar", { despacho }),
+  ppAbrir: (url) => ipcRenderer.invoke("pp-abrir", { url }),
+  alPp: (fn) => {
+    const canal = (_evento, dato) => fn(dato);
+    ipcRenderer.on("pp-progreso", canal);
+    return () => ipcRenderer.removeListener("pp-progreso", canal);
+  },
   actualizacionComprobar: () => ipcRenderer.invoke("actualizacion-comprobar"),
   actualizacionOmitir: (version) => ipcRenderer.invoke("actualizacion-omitir", { version }),
   actualizacionDescargar: (archivo) => ipcRenderer.invoke("actualizacion-descargar", { archivo }),

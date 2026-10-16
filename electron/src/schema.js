@@ -309,4 +309,58 @@ export const MIGRACIONES = [
       `);
     },
   },
+  {
+    version: 8,
+    nombre: "publicaciones procesales",
+    up(db) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS pp_departamento (
+          codigo TEXT PRIMARY KEY,
+          nombre TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS pp_municipio (
+          codigo TEXT PRIMARY KEY,
+          nombre TEXT NOT NULL,
+          depto TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS pp_despacho (
+          codigo TEXT PRIMARY KEY,
+          nombre TEXT NOT NULL,
+          depto TEXT NOT NULL,
+          muni TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS pp_despacho_lugar ON pp_despacho(depto, muni);
+        CREATE TABLE IF NOT EXISTS pp_carga (
+          despacho TEXT PRIMARY KEY,
+          total INTEGER NOT NULL DEFAULT 0,
+          paginas INTEGER NOT NULL DEFAULT 0,
+          avisos INTEGER NOT NULL DEFAULT 0,
+          actualizada TEXT NOT NULL DEFAULT '',
+          estado TEXT NOT NULL DEFAULT ''
+        );
+        CREATE TABLE IF NOT EXISTS pp_publicacion (
+          id INTEGER PRIMARY KEY,
+          despacho TEXT NOT NULL,
+          article_id TEXT NOT NULL UNIQUE,
+          titulo TEXT NOT NULL DEFAULT '',
+          fecha TEXT NOT NULL DEFAULT '',
+          url TEXT NOT NULL DEFAULT '',
+          detalle_url TEXT NOT NULL DEFAULT '',
+          tipo TEXT NOT NULL DEFAULT '',
+          entidad TEXT NOT NULL DEFAULT '',
+          especialidad TEXT NOT NULL DEFAULT ''
+        );
+        CREATE INDEX IF NOT EXISTS pp_pub_despacho ON pp_publicacion(despacho);
+        CREATE TABLE IF NOT EXISTS pp_documento (
+          id INTEGER PRIMARY KEY,
+          publicacion INTEGER NOT NULL REFERENCES pp_publicacion(id) ON DELETE CASCADE,
+          nombre TEXT NOT NULL DEFAULT '',
+          url TEXT NOT NULL DEFAULT '',
+          fecha TEXT NOT NULL DEFAULT '',
+          origen TEXT NOT NULL DEFAULT '',
+          UNIQUE(publicacion, url)
+        );
+      `);
+    },
+  },
 ];

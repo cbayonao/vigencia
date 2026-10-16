@@ -116,6 +116,37 @@
       <main class="derecha" id="detalle"></main>
     </div>
     </div>
+    <div class="pantalla" id="pantalla-pp" hidden>
+      <header class="barra">
+        <div>
+          <p class="marca">Vigencia</p>
+          <h1 class="nombre serif">Publicaciones procesales</h1>
+        </div>
+      </header>
+      <div class="cuerpo">
+        <aside class="izquierda">
+          <p class="etiqueta primera">Departamento</p>
+          <select id="pp-depto" aria-label="Departamento"></select>
+          <p class="etiqueta">Municipio</p>
+          <select id="pp-muni" aria-label="Municipio"></select>
+          <p class="etiqueta">Despacho</p>
+          <input id="pp-texto" placeholder="Filtrar por nombre o código" aria-label="Filtrar despachos" autocomplete="off" spellcheck="false">
+          <select id="pp-despacho" size="8" aria-label="Despacho"></select>
+          <div class="fila-fin">
+            <button type="button" class="boton-cobre" id="pp-cargar">Cargar</button>
+            <button type="button" class="boton-linea" id="pp-cancelar" hidden>Cancelar</button>
+          </div>
+          <div class="barra-progreso" id="pp-barra" hidden><span></span></div>
+          <p class="ayuda" id="pp-estado">Elija un despacho para traer sus publicaciones. La carga corre en segundo plano.</p>
+          <p class="etiqueta">Despachos cargados</p>
+          <div class="lista" id="pp-cargados"></div>
+        </aside>
+        <main class="derecha" id="pp-detalle">
+          <p class="ayuda" id="pp-vacio">Aquí se ven las publicaciones del despacho elegido, con sus documentos.</p>
+          <div class="lista" id="pp-lista"></div>
+        </main>
+      </div>
+    </div>
     <section class="pantalla construccion" id="pantalla-construccion" aria-labelledby="obra-titulo" hidden>
       <div class="obra">
         <svg class="obra-escena" viewBox="0 0 320 220" role="img" aria-label="Una grúa sube los bloques de una obra">

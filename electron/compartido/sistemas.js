@@ -1,10 +1,11 @@
-// Sistemas de consulta de la barra lateral. Solo la consulta nacional
-// unificada tiene pantalla propia; los demás muestran la obra.
+// Sistemas de consulta de la barra lateral. La consulta nacional unificada
+// y las publicaciones procesales tienen pantalla propia; los demás muestran
+// la obra.
 export const SISTEMA_INICIAL = "consulta";
 
 export const SISTEMAS = [
   { id: "consulta", nombre: "Consulta nacional unificada", fuente: "Rama Judicial", sigla: "CN", listo: true, fijo: true },
-  { id: "micrositio", nombre: "Publicaciones procesales", fuente: "Micrositio", sigla: "PP", listo: false },
+  { id: "micrositio", nombre: "Publicaciones procesales", fuente: "Micrositio", sigla: "PP", listo: true },
   { id: "spoa", nombre: "SPOA", fuente: "Fiscalía General de la Nación", sigla: "SP", listo: false },
   { id: "samai", nombre: "SAMAI", fuente: "Consejo de Estado", sigla: "SA", listo: false },
   { id: "externa", nombre: "Consulta externa", fuente: "", sigla: "CE", listo: false },

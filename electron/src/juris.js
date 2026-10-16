@@ -17,7 +17,7 @@ import {
 } from "../compartido/juris.js";
 import { Aviso } from "./db.js";
 import { guardarPieza } from "./biblioteca.js";
-import { textoDePdf } from "./pdftexto.js";
+import { textoDePdfCompleto } from "./pdftexto.js";
 
 const UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36";
 const CSJ_BASE = "https://consultajurisprudencial.ramajudicial.gov.co/WebRelatoria/csj/index.xhtml";
@@ -280,7 +280,7 @@ export async function leerCE(token) {
       continue;
     }
     if (!respuesta.ok) continue;
-    const leido = textoDePdf(Buffer.from(await respuesta.arrayBuffer()));
+    const leido = await textoDePdfCompleto(Buffer.from(await respuesta.arrayBuffer()));
     if (leido.ok && leido.texto.trim()) partes.push(leido.texto.trim());
   }
   const texto = partes.join("\n\n===== Siguiente documento =====\n\n").trim().slice(0, 600000);

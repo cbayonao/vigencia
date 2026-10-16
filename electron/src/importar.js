@@ -2,9 +2,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { textoDeDocx } from "./docx.js";
-import { textoDePdf } from "./pdftexto.js";
+import { textoDePdfCompleto } from "./pdftexto.js";
 
-export function leerArchivoFuente(ruta) {
+export async function leerArchivoFuente(ruta, { datosDir = "" } = {}) {
   const extension = path.extname(ruta).toLowerCase();
   if (![".txt", ".md", ".docx", ".pdf"].includes(extension)) return { ok: false, error: "Use un archivo .txt, .docx o .pdf." };
   const datos = fs.readFileSync(ruta);
@@ -15,7 +15,7 @@ export function leerArchivoFuente(ruta) {
     return leido.ok ? { ok: true, nombre, texto: leido.texto } : { ok: false, error: leido.error };
   }
   if (extension === ".pdf") {
-    const leido = textoDePdf(datos);
+    const leido = await textoDePdfCompleto(datos, { datosDir });
     return leido.ok ? { ok: true, nombre, texto: leido.texto } : { ok: false, error: leido.error };
   }
   return { ok: false, error: "Use un archivo .txt, .docx o .pdf." };

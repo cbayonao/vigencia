@@ -290,7 +290,7 @@ function pdfDePrueba(contenido) {
   ]);
 }
 
-test("el PDF con texto simple se lee y uno sin texto avisa", () => {
+test("el PDF con texto simple se lee y uno sin texto avisa", async () => {
   const pdf = pdfDePrueba("BT /F1 12 Tf 72 720 Td (Art\\355culo 1. La salud es un derecho.) Tj 0 -14 Td [(Segunda ) -300 (l\\355nea)] TJ ET");
   const leido = textoDePdf(pdf);
   assert.equal(leido.ok, true);
@@ -302,9 +302,9 @@ test("el PDF con texto simple se lee y uno sin texto avisa", () => {
   try {
     fs.writeFileSync(path.join(dir, "ley.pdf"), pdf);
     fs.writeFileSync(path.join(dir, "nota.txt"), "\uFEFFHola");
-    assert.equal(leerArchivoFuente(path.join(dir, "ley.pdf")).nombre, "ley");
-    assert.equal(leerArchivoFuente(path.join(dir, "nota.txt")).texto, "Hola");
-    assert.equal(leerArchivoFuente(path.join(dir, "x.odt")).ok, false);
+    assert.equal((await leerArchivoFuente(path.join(dir, "ley.pdf"))).nombre, "ley");
+    assert.equal((await leerArchivoFuente(path.join(dir, "nota.txt"))).texto, "Hola");
+    assert.equal((await leerArchivoFuente(path.join(dir, "x.odt"))).ok, false);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

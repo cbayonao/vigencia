@@ -105,7 +105,7 @@ export function registrarDocumentos({ ipcMain, dialog, db, datosDir, ventana, re
         filters: [{ name: "Texto, Word o PDF", extensions: ["txt", "md", "docx", "pdf"] }],
       });
       if (elegido.canceled || !elegido.filePaths[0]) return { ok: false, cancelado: true };
-      return { ...leerArchivoFuente(elegido.filePaths[0]), archivo: path.basename(elegido.filePaths[0]) };
+      return { ...(await leerArchivoFuente(elegido.filePaths[0], { datosDir: datosDir() })), archivo: path.basename(elegido.filePaths[0]) };
     } catch (error) {
       return { ok: false, error: mensajeHumano(error) };
     }
@@ -113,29 +113,33 @@ export function registrarDocumentos({ ipcMain, dialog, db, datosDir, ventana, re
   // Arrastrar y soltar: recibe rutas del renderer (File.path) y guarda cada
   // archivo como fuente de la biblioteca. No asocia al proyecto: el renderer
   // marca los ids devueltos y el usuario pulsa Usar las marcadas.
-  ipcMain.handle("documentos-fuentes-importar-rutas", (_e, dato) => responder(() => {
+  ipcMain.handle("documentos-fuentes-importar-rutas", async (_e, dato) => {
+    try {
     const rutas = Array.isArray(dato?.rutas) ? dato.rutas.slice(0, 20) : [];
-    if (!rutas.length) return { fuentes: [], errores: [] };
+    if (!rutas.length) return { ok: true, fuentes: [], errores: [] };
     const fuentes = [];
     const errores = [];
     for (const ruta of rutas) {
-      const base = path.basename(String(ruta || ""));
+      const archivoBase = path.basename(String(ruta || ""));
       try {
-        const leido = leerArchivoFuente(String(ruta || ""));
+        const leido = await leerArchivoFuente(String(ruta || ""), { datosDir: datosDir() });
         if (!leido.ok) {
-          errores.push({ archivo: base || String(ruta || ""), error: leido.error });
+          errores.push({ archivo: archivoBase || String(ruta || ""), error: leido.error });
           continue;
         }
-        const nombre = String(leido.nombre || base).slice(0, 120);
+        const nombre = String(leido.nombre || archivoBase).slice(0, 120);
         const clase = /sentencia|t-\d|c-\d|su-\d/i.test(nombre) ? "jurisprudencia" : (/ley|decreto|c[oó]digo/i.test(nombre) ? "ley" : "nota");
-        const guardada = guardarPieza(base(), { nombre, clase, etiquetas: [], texto: leido.texto, origen: base });
+        const guardada = guardarPieza(base(), { nombre, clase, etiquetas: [], texto: leido.texto, origen: archivoBase });
         fuentes.push({ id: guardada.id, nombre: guardada.nombre });
       } catch (error) {
-        errores.push({ archivo: base || String(ruta || ""), error: mensajeHumano(error) });
+        errores.push({ archivo: archivoBase || String(ruta || ""), error: mensajeHumano(error) });
       }
     }
-    return { fuentes, errores };
-  }));
+    return { ok: true, fuentes, errores };
+    } catch (error) {
+      return { ok: false, error: mensajeHumano(error) };
+    }
+  });
   async function guardarComo(titulo, nombre, extension, bytes) {
     const elegido = await dialog.showSaveDialog(ventana(), {
       title: titulo,

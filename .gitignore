@@ -13,7 +13,7 @@ licencia/terraform/licencia.zip
 # Datos de este computador
 grokvig.sqlite
 grokvig.sqlite-*
-procesos.csv
+/procesos.csv
 avisos.log
 ejecucion.log
 tree.txt

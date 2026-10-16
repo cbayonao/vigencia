@@ -3,111 +3,97 @@
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-serif: "Fraunces", ui-serif, Georgia, serif;
-  --color-papel: #eef3f8;
+  --color-papel: #e9edf1;
+  --color-papel-2: #f4f7fa;
   --color-tinta: #1b2735;
-  --color-cobre: #17456e;
-  --color-cobre-claro: #0284c7;
+  --color-suave: #5b6b7c;
+  --color-marino: #17456e;
+  --color-celeste: #dce8f4;
+  --color-noche: #131a22;
+  --color-hielo: #e9eff5;
+  --color-cielo: #9cc3e6;
+  --color-azul: #2e6da8;
+  --color-linea: #d3dce4;
 }
 
-html {
-  scroll-behavior: smooth;
-}
+html { scroll-behavior: smooth; }
 body {
-  background: #eef3f8;
-  color: #1b2735;
+  background: var(--color-papel);
+  color: var(--color-tinta);
   overflow-x: hidden;
 }
 
-/* ---------- animaciones ---------- */
-@keyframes flotar {
-  0%, 100% { transform: translateY(0) rotate(-1deg); }
-  50% { transform: translateY(-14px) rotate(1deg); }
-}
-@keyframes flotar2 {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-8px); }
-}
-@keyframes gradiente {
-  0%, 100% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
-}
-@keyframes pulso-suave {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(180, 83, 9, 0.35); }
-  50% { box-shadow: 0 0 0 14px rgba(180, 83, 9, 0); }
-}
-@keyframes marquesina {
-  from { transform: translateX(0); }
-  to { transform: translateX(-50%); }
-}
-@keyframes cursor {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0; }
-}
-@keyframes brillo {
-  from { transform: translateX(-100%) skewX(-15deg); }
-  to { transform: translateX(250%) skewX(-15deg); }
-}
-
-.anim-flotar { animation: flotar 6s ease-in-out infinite; }
-.anim-flotar2 { animation: flotar2 5s ease-in-out infinite; }
-.anim-pulso { animation: pulso-suave 2.4s ease-in-out infinite; }
-.fondo-animado {
-  background-size: 200% 200%;
-  animation: gradiente 12s ease infinite;
-}
-.marquesina-pista {
-  animation: marquesina 32s linear infinite;
-}
-.marquesina-pista:hover { animation-play-state: paused; }
-.cursor-vivo::after {
-  content: "▍";
-  animation: cursor 1s steps(1) infinite;
-  color: #17456e;
-}
-.btn-brillo { position: relative; overflow: hidden; }
-.btn-brillo::before {
-  content: "";
-  position: absolute;
-  top: 0; bottom: 0;
-  width: 40%;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,.45), transparent);
-  animation: brillo 3.2s ease-in-out infinite;
-}
-
-/* reveal on scroll */
-.revelar {
+/* Aparecer al hacer scroll. Sin JS (html sin la clase js) todo queda visible. */
+.js .revelar {
   opacity: 0;
-  transform: translateY(34px);
-  transition: opacity .8s cubic-bezier(.22,1,.36,1), transform .8s cubic-bezier(.22,1,.36,1);
+  transform: translateY(28px);
+  transition: opacity .7s cubic-bezier(.22,1,.36,1), transform .7s cubic-bezier(.22,1,.36,1);
 }
-.revelar.visible {
-  opacity: 1;
-  transform: none;
-}
-.revelar-izq { transform: translateX(-40px); }
-.revelar-der { transform: translateX(40px); }
-.revelar-izq.visible, .revelar-der.visible { transform: none; }
+.js .revelar.visible { opacity: 1; transform: none; }
 
-/* timeline */
-.linea-tiempo::before {
-  content: "";
+/* Captura de la app */
+.marco-app {
+  border: 1px solid var(--color-linea);
+  border-radius: 16px;
+  overflow: hidden;
+  background: #fff;
+  box-shadow: 0 30px 70px -28px rgba(27, 39, 53, .45);
+}
+.marco-app img { display: block; width: 100%; height: auto; }
+
+/* Aviso que entra desde la derecha */
+@keyframes aviso-entra {
+  0% { opacity: 0; transform: translateX(60px); }
+  100% { opacity: 1; transform: none; }
+}
+.aviso {
   position: absolute;
-  left: 19px;
-  top: 8px;
-  bottom: 8px;
-  width: 2px;
-  background: linear-gradient(#0284c7, #17456e, #0284c7);
-  opacity: .5;
+  right: -12px;
+  bottom: -28px;
+  width: min(330px, 72%);
+  filter: drop-shadow(0 18px 30px rgba(19, 26, 34, .35));
 }
+.js .aviso { opacity: 0; }
+.js .visible .aviso { animation: aviso-entra .7s cubic-bezier(.22,1,.36,1) 1s both; }
 
-/* tarjeta cristal app */
-.mock-ventana {
-  box-shadow: 0 30px 80px -20px rgba(28,25,23,.35), 0 2px 0 rgba(255,255,255,.6) inset;
+/* Fila de la lista que recibe una actuación nueva */
+.fila {
+  position: relative;
+  background: #fff;
+  border: 1px solid var(--color-linea);
+  border-radius: 14px;
+  padding: 12px 14px 11px;
 }
+.fila p { margin: 0; }
+.fila .cuando { color: var(--color-marino); font-size: 12px; font-weight: 700; }
+.fila .acto { color: var(--color-suave); font-size: 13px; margin-top: 2px; }
+.fila .titulo { font-size: 14.5px; font-weight: 650; line-height: 1.3; margin-top: 6px; }
+.fila .rad { font-family: "Liberation Mono", ui-monospace, monospace; color: var(--color-suave); font-size: 12.5px; margin-top: 4px; letter-spacing: .02em; }
+.cambia { display: grid; }
+.cambia > span { grid-area: 1 / 1; }
+.antes { opacity: 1; }
+.despues { opacity: 0; }
+@keyframes sale { 0%, 18% { opacity: 1; } 24%, 92% { opacity: 0; } 100% { opacity: 1; } }
+@keyframes entra { 0%, 18% { opacity: 0; transform: translateY(6px); } 26%, 92% { opacity: 1; transform: none; } 100% { opacity: 0; } }
+@keyframes resalta {
+  0%, 18% { background: #fff; border-color: var(--color-linea); box-shadow: none; }
+  26%, 92% { background: var(--color-celeste); border-color: var(--color-marino); box-shadow: inset 3px 0 0 var(--color-marino); }
+  100% { background: #fff; border-color: var(--color-linea); box-shadow: none; }
+}
+.js .visible .fila-viva { animation: resalta 9s ease infinite .4s; }
+.js .visible .fila-viva .antes { animation: sale 9s ease infinite .4s; }
+.js .visible .fila-viva .despues { animation: entra 9s ease infinite .4s; }
 
 @media (prefers-reduced-motion: reduce) {
-  .anim-flotar, .anim-flotar2, .anim-pulso, .fondo-animado, .marquesina-pista, .btn-brillo::before {
-    animation: none !important;
-  }
-  .revelar { opacity: 1; transform: none; transition: none; }
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+  .js .revelar { opacity: 1; transform: none; }
+  .js .aviso { opacity: 1; }
+  .fila-viva { background: var(--color-celeste); border-color: var(--color-marino); box-shadow: inset 3px 0 0 var(--color-marino); }
+  .fila-viva .antes { opacity: 0; }
+  .fila-viva .despues { opacity: 1; }
+}
+
+@media (max-width: 640px) {
+  .aviso { right: -6px; bottom: -36px; width: 78%; }
 }

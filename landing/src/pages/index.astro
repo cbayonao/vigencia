@@ -1,11 +1,13 @@
 ---
 import "../styles/global.css";
-import { VERSION, PRECIO, BASE_DESCARGAS, ARCHIVOS } from "../data.ts";
+import { VERSION, PRECIO, DIAS_PRUEBA, WHATSAPP, MENSAJE_WHATSAPP, BASE_DESCARGAS, ARCHIVOS } from "../data.ts";
 import { existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+const enlaceWhatsapp = `https://wa.me/${WHATSAPP}?text=${encodeURIComponent(MENSAJE_WHATSAPP)}`;
+const numeroVisible = `+${WHATSAPP.slice(0,2)} ${WHATSAPP.slice(2,5)} ${WHATSAPP.slice(5,8)} ${WHATSAPP.slice(8)}`;
 
-const titulo = "VigencIA — Tus procesos de la Rama, vigilados solos";
+const titulo = "VigencIA, seguimiento de tus procesos en la Rama Judicial";
 // La tarjeta de Mac activa sola la descarga cuando el último release de
 // GitHub ya trae el .dmg. Sin red o sin permiso, mira el archivo local.
 async function macEnRelease() {
@@ -40,438 +42,273 @@ const macLista = (await macEnRelease()) ?? existsSync(join(raizRepo, ARCHIVOS.ma
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>{titulo}</title>
-  <meta name="description" content="Vigencia consulta la Rama Judicial por ti, te avisa de cada actuación y redacta memoriales con IA local sin que tus datos salgan del computador. Descarga la versión 3.1.0." />
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚖️</text></svg>" />
+  <meta name="description" content="VigencIA revisa tus radicados en la Rama Judicial hasta dos veces al día y te avisa cuando sale una actuación nueva." />
+  <meta name="theme-color" content="#17456e" />
+  <link rel="icon" type="image/svg+xml" href="/marca/vigencia-favicon.svg" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/marca/vigencia-32.png" />
+  <link rel="apple-touch-icon" href="/marca/apple-touch-icon.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <script is:inline>document.documentElement.classList.add('js');</script>
 </head>
-<body class="antialiased">
+<body class="antialiased font-sans">
 
-<!-- ============ NAV ============ -->
-<header class="fixed top-0 inset-x-0 z-50 backdrop-blur-md bg-[#eef3f8]/85 border-b border-slate-200/70">
-  <nav class="max-w-7xl mx-auto px-5 h-16 flex items-center justify-between gap-4">
-    <a href="#inicio" class="flex items-center gap-2.5 font-extrabold tracking-tight text-lg">
-      <span class="grid place-items-center w-9 h-9 rounded-xl bg-gradient-to-br from-sky-600 to-sky-800 text-white text-xl shadow-lg">⚖</span>
-      <span>Vigenc<span class="text-sky-700">IA</span></span>
-      <span class="hidden sm:inline text-[11px] font-semibold bg-sky-100 text-sky-800 px-2 py-0.5 rounded-full border border-sky-200">v{VERSION}</span>
+<header class="fixed top-0 inset-x-0 z-50 backdrop-blur-md bg-papel/85 border-b border-linea">
+  <nav class="max-w-6xl mx-auto px-5 h-16 flex items-center justify-between gap-4">
+    <a href="#inicio" class="flex items-center gap-2.5">
+      <img src="/marca/vigencia-lockup-onlight.svg" alt="VigencIA" width="111" height="37" class="h-9 w-auto" />
+      <span class="hidden sm:inline text-[11px] font-semibold bg-celeste text-marino px-2 py-0.5 rounded-full">v{VERSION}</span>
     </a>
-    <div class="hidden md:flex items-center gap-7 text-sm font-medium text-slate-600">
-      <a href="#funciones" class="hover:text-sky-700 transition">Funciones</a>
-      <a href="#ia" class="hover:text-sky-700 transition">Memorial con IA</a>
-      <a href="#privacidad" class="hover:text-sky-700 transition">Privacidad</a>
-      <a href="#precio" class="hover:text-sky-700 transition">Plan</a>
-      <a href="#faq" class="hover:text-sky-700 transition">Dudas</a>
+    <div class="hidden md:flex items-center gap-7 text-sm font-medium text-suave">
+      <a href="#funciones" class="hover:text-marino">Qué hace</a>
+      <a href="#ia" class="hover:text-marino">Escritos con IA</a>
+      <a href="#precio" class="hover:text-marino">Precio</a>
+      <a href="#faq" class="hover:text-marino">Preguntas</a>
     </div>
-    <div class="flex items-center gap-2">
-      <a href="#descargar" class="btn-brillo bg-slate-900 hover:bg-slate-800 text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition shadow-lg">Descargar gratis</a>
-    </div>
+    <a href="#descargar" class="bg-marino hover:bg-azul text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition">Descargar</a>
   </nav>
 </header>
 
-<!-- ============ HERO ============ -->
-<section id="inicio" class="relative pt-32 pb-16 md:pt-40 md:pb-24 px-5 overflow-hidden">
-  <div class="absolute inset-0 -z-10 fondo-animado" style="background-image: radial-gradient(60rem 30rem at 15% 10%, #bae6fd55, transparent), radial-gradient(50rem 28rem at 90% 20%, #0284c733, transparent), radial-gradient(40rem 30rem at 50% 110%, #17456e22, transparent);"></div>
-  <div class="absolute -top-10 right-[8%] w-72 h-72 rounded-full bg-sky-300/30 blur-3xl -z-10 anim-flotar"></div>
-  <div class="absolute top-64 left-[4%] w-40 h-40 rounded-full bg-sky-600/15 blur-2xl -z-10 anim-flotar2"></div>
-
-  <div class="max-w-7xl mx-auto grid lg:grid-cols-2 gap-12 items-center">
-    <div>
-      <div class="revelar visible inline-flex items-center gap-2 bg-white border border-sky-200 rounded-full pl-1.5 pr-4 py-1.5 text-xs font-semibold text-sky-900 shadow-sm mb-6">
-        <span class="bg-sky-600 text-white text-[11px] px-2.5 py-1 rounded-full">NUEVO · v{VERSION}</span>
-        Revisión automática 2 veces al día + memorial con IA local
+<!-- HERO -->
+<section id="inicio" class="pt-28 pb-20 md:pt-36 md:pb-28 px-5">
+  <div class="max-w-6xl mx-auto grid lg:grid-cols-[5fr_7fr] gap-12 items-center">
+    <div class="revelar visible">
+      <p class="inline-block text-xs font-semibold bg-white text-marino border border-linea rounded-full px-3 py-1 mb-6">{DIAS_PRUEBA} días gratis. Versión {VERSION}</p>
+      <h1 class="font-serif text-4xl md:text-[3.4rem] leading-[1.06] tracking-tight">Sabes qué se movió en tus procesos <span class="text-marino">sin abrirlos uno por uno.</span></h1>
+      <p class="mt-5 text-lg text-suave leading-relaxed">VigencIA consulta tus radicados en la Rama Judicial y te avisa cuando sale una actuación nueva.</p>
+      <div class="mt-8 flex flex-wrap gap-3">
+        <a id="cta-hero" href="#descargar" class="bg-marino hover:bg-azul text-white font-bold px-6 py-3.5 rounded-xl transition"><span id="cta-hero-texto">Descargar para Windows</span></a>
+        <a href="#precio" class="bg-white border border-linea hover:border-marino font-semibold px-6 py-3.5 rounded-xl transition">Ver precio</a>
       </div>
-      <h1 class="revelar visible font-serif text-4xl md:text-6xl leading-[1.05] tracking-tight">
-        Ninguna actuación de tus procesos <em class="not-italic text-transparent bg-clip-text bg-gradient-to-r from-sky-600 to-sky-800">se te vuelve a pasar.</em>
-      </h1>
-      <p class="revelar visible mt-6 text-lg text-slate-600 leading-relaxed max-w-xl">
-        Vigencia consulta la <strong class="text-slate-900">Rama Judicial</strong> por ti, ordena todo por última actuación,
-        te avisa solo cuando hay cambios y <strong class="text-slate-900">redacta el memorial en tu computador</strong> —
-        sin subir tus expedientes a internet.
-      </p>
-      <div class="revelar visible mt-8 flex flex-wrap gap-3">
-        <a id="cta-hero" href="#descargar" class="anim-pulso btn-brillo inline-flex items-center gap-2 bg-gradient-to-r from-sky-600 to-sky-700 hover:from-sky-500 hover:to-sky-700 text-white font-bold px-7 py-4 rounded-2xl text-base shadow-xl transition hover:-translate-y-0.5">
-          <span id="cta-hero-icon">⬇</span> <span id="cta-hero-texto">Descargar para Windows</span>
-        </a>
-        <a href="#funciones" class="inline-flex items-center gap-2 bg-white border border-slate-300 hover:border-sky-500 font-semibold px-7 py-4 rounded-2xl transition hover:-translate-y-0.5 shadow-sm">
-          Ver qué hace ↓
-        </a>
-      </div>
-      <div class="revelar visible mt-6 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-slate-500">
-        <span>🔒 <strong>100% local</strong> · tus casos no salen del PC</span>
-        <span>⚡ Instalación en 2 minutos</span>
-        <span>💳 Plan {PRECIO}/año</span>
-      </div>
-      <div class="revelar visible mt-8 grid grid-cols-3 max-w-md gap-4">
-        <div><p class="text-3xl font-extrabold"><span class="contador" data-meta="2">0</span>×<span class="text-base font-bold text-slate-500">/día</span></p><p class="text-xs text-slate-500 font-medium">revisiones automáticas sin abrir nada</p></div>
-        <div><p class="text-3xl font-extrabold"><span class="contador" data-meta="1">0</span> clic</p><p class="text-xs text-slate-500 font-medium">para revisar todos tus procesos</p></div>
-        <div><p class="text-3xl font-extrabold"><span class="contador" data-meta="0">0</span></p><p class="text-xs text-slate-500 font-medium">datos tuyos en la nube. Cero.</p></div>
-      </div>
+      <p class="mt-5 text-sm text-suave">Pruébala {DIAS_PRUEBA} días gratis, sin tarjeta. Luego el plan anual cuesta {PRECIO} COP. Tu base de procesos se guarda en tu computador.</p>
     </div>
-
-    <!-- Mock ventana app -->
     <div class="revelar visible relative">
-      <div class="mock-ventana anim-flotar bg-white rounded-2xl border border-slate-200 overflow-hidden">
-        <div class="flex items-center gap-1.5 px-4 py-3 bg-slate-100 border-b border-slate-200">
-          <span class="w-3 h-3 rounded-full bg-red-400"></span><span class="w-3 h-3 rounded-full bg-sky-400"></span><span class="w-3 h-3 rounded-full bg-green-400"></span>
-          <span class="ml-3 text-xs font-semibold text-slate-500">Vigencia · Tus procesos al día</span>
-          <span class="ml-auto text-[11px] font-bold bg-green-100 text-green-800 px-2 py-0.5 rounded-full">● revisado hoy</span>
-        </div>
-        <div class="p-4 space-y-3 text-sm">
-          <div class="flex gap-2">
-            <span class="flex-1 bg-slate-100 rounded-lg px-3 py-2 text-slate-400 text-xs">🔍 Busca por radicado, despacho, abogado…</span>
-            <span class="bg-sky-600 text-white text-xs font-bold px-3 py-2 rounded-lg">Actualizar todo</span>
-          </div>
-          <div class="border border-sky-300 bg-sky-50 rounded-xl p-3 flex gap-3 items-start shadow-sm">
-            <span class="grid place-items-center w-8 h-8 rounded-lg bg-sky-600 text-white font-bold shrink-0">!</span>
-            <div class="min-w-0">
-              <p class="font-bold text-[13px]">11001 ••• 47400 <span class="ml-1 text-[10px] bg-sky-600 text-white px-1.5 py-0.5 rounded-full">Nuevo</span></p>
-              <p class="text-xs text-slate-600">Auto admite demanda · hoy</p>
-              <p class="text-[11px] text-sky-800 font-semibold mt-1">✎ Crear documento →</p>
-            </div>
-          </div>
-          <div class="border border-slate-200 rounded-xl p-3 flex gap-3 opacity-80">
-            <span class="w-2 self-stretch rounded bg-slate-300"></span>
-            <div><p class="font-semibold text-[13px]">11001 ••• 03800</p><p class="text-xs text-slate-500">Traslado · ayer</p></div>
-          </div>
-          <div class="border border-slate-200 rounded-xl p-3 flex gap-3 opacity-60">
-            <span class="w-2 self-stretch rounded bg-slate-300"></span>
-            <div><p class="font-semibold text-[13px]">11001 ••• 65501</p><p class="text-xs text-slate-500">Sentencia · hace 3 días</p></div>
-          </div>
-          <div class="rounded-xl bg-slate-900 text-slate-100 p-3 text-xs font-mono">
-            <span class="text-sky-400">✎ Memorial generándose en este equipo…</span>
-            <span id="demo-escrito" class="cursor-vivo"></span>
-          </div>
-        </div>
+      <div class="marco-app">
+        <picture>
+          <source media="(max-width: 640px)" srcset="/img/app-lista-movil.webp" width="680" height="1000" />
+          <img src="/img/app-lista.webp" srcset="/img/app-lista-800.webp 800w, /img/app-lista.webp 1600w" sizes="(min-width: 1024px) 640px, 100vw" width="1600" height="1000" fetchpriority="high" alt="VigencIA con la lista de expedientes ordenada por última actuación. Arriba está Inversiones Andina S.A.S., abierto, con dos actuaciones del 16 de octubre. Datos de prueba." />
+        </picture>
       </div>
-      <div class="anim-flotar2 absolute -left-4 md:-left-8 top-16 bg-white rounded-xl shadow-xl border border-slate-200 px-4 py-3 text-xs font-semibold flex items-center gap-2">
-        <span class="text-xl">🔔</span><span>Aviso automático:<br /><span class="text-sky-700">hay cambios en 2 procesos</span></span>
-      </div>
-      <div class="anim-flotar absolute -right-3 md:-right-6 bottom-10 bg-slate-900 text-white rounded-xl shadow-xl px-4 py-3 text-xs font-semibold" style="animation-delay:1.2s">
-        📄 Informe del día.PDF <span class="text-sky-400">listo por cliente</span>
-      </div>
+      <img class="aviso" src="/img/app-aviso.webp" width="414" height="190" alt="Aviso de escritorio de VigencIA: 3 expedientes con cambios, con el radicado, el cliente y cuántas actuaciones nuevas tiene cada uno." />
     </div>
   </div>
 </section>
 
-<!-- ============ MARQUESINA ============ -->
-<div class="bg-slate-900 text-slate-200 py-3.5 overflow-hidden border-y border-slate-800">
-  <div class="marquesina-pista flex gap-10 whitespace-nowrap text-sm font-medium w-max">
-    <span>⚖️ Consulta por radicado de 23 dígitos</span><span class="text-sky-500">●</span>
-    <span>📥 Carga masiva de procesos</span><span class="text-sky-500">●</span>
-    <span>🔁 Revisión automática dos veces al día</span><span class="text-sky-500">●</span>
-    <span>✎ Memorial con IA local, sin internet</span><span class="text-sky-500">●</span>
-    <span>📚 Biblioteca de plantillas, normas y estilo</span><span class="text-sky-500">●</span>
-    <span>📄 Informe del día en PDF por cliente</span><span class="text-sky-500">●</span>
-    <span>🏛️ Fiscalía (SPOA) y Consejo de Estado (SAMAI)</span><span class="text-sky-500">●</span>
-    <span>📑 Publicaciones procesales por juzgado</span><span class="text-sky-500">●</span>
-    <span>⬆️ Se actualiza sola</span><span class="text-sky-500">●</span>
-    <span>🔒 Nada sale de tu computador</span><span class="text-sky-500">●</span>
-    <span>⚖️ Consulta por radicado de 23 dígitos</span><span class="text-sky-500">●</span>
-    <span>📥 Carga masiva de procesos</span><span class="text-sky-500">●</span>
-    <span>🔁 Revisión automática dos veces al día</span><span class="text-sky-500">●</span>
-    <span>✎ Memorial con IA local, sin internet</span><span class="text-sky-500">●</span>
-    <span>📚 Biblioteca de plantillas, normas y estilo</span><span class="text-sky-500">●</span>
-    <span>📄 Informe del día en PDF por cliente</span><span class="text-sky-500">●</span>
-    <span>🏛️ Fiscalía (SPOA) y Consejo de Estado (SAMAI)</span><span class="text-sky-500">●</span>
-    <span>📑 Publicaciones procesales por juzgado</span><span class="text-sky-500">●</span>
-    <span>⬆️ Se actualiza sola</span><span class="text-sky-500">●</span>
-    <span>🔒 Nada sale de tu computador</span><span class="text-sky-500">●</span>
-  </div>
-</div>
-
-<!-- ============ DOLOR ============ -->
-<section class="max-w-7xl mx-auto px-5 py-16 md:py-24">
-  <div class="grid md:grid-cols-2 gap-10 items-center">
+<!-- LO NUEVO ARRIBA -->
+<section id="funciones" class="bg-white border-y border-linea py-20 md:py-28 px-5">
+  <div class="max-w-6xl mx-auto grid lg:grid-cols-2 gap-12 items-center">
     <div class="revelar">
-      <p class="text-sky-700 font-bold text-sm tracking-widest uppercase mb-3">El problema</p>
-      <h2 class="font-serif text-3xl md:text-5xl tracking-tight">Revisar la Rama a mano <span class="text-slate-400">es perder plata y dormir mal.</span></h2>
-      <ul class="mt-8 space-y-4 text-slate-600">
-        <li class="flex gap-3"><span class="text-red-500 font-bold">✕</span> Abrir proceso por proceso, todos los días, antes de que venza un término.</li>
-        <li class="flex gap-3"><span class="text-red-500 font-bold">✕</span> Enterarse tarde de un auto y correr a redactar el memorial a las 11 p.m.</li>
-        <li class="flex gap-3"><span class="text-red-500 font-bold">✕</span> Subir expedientes a IAs en la nube que entrenan con tus casos.</li>
-        <li class="flex gap-3"><span class="text-red-500 font-bold">✕</span> Hojas de cálculo sueltas que nadie actualiza.</li>
-      </ul>
+      <h2 class="font-serif text-3xl md:text-5xl tracking-tight">Lo que salió hoy queda de primero.</h2>
+      <p class="mt-4 text-suave text-lg">Entra un auto y el proceso sube con la fecha de hoy. No tienes que buscarlo.</p>
+      <div class="mt-8 space-y-3 max-w-md" aria-hidden="true">
+        <div class="fila fila-viva">
+          <p class="cuando cambia"><span class="antes">14 ago 2026</span><span class="despues">16 oct 2026</span></p>
+          <p class="acto cambia"><span class="antes">Al Despacho</span><span class="despues">Auto fija fecha audiencia</span></p>
+          <p class="titulo">INVERSIONES ANDINA S.A.S. contra CONSTRUCTORA ALTOS DEL RETIRO S.A.S.</p>
+          <p class="rad">11001310300820230999100</p>
+        </div>
+        <div class="fila opacity-70">
+          <p class="cuando">7 oct 2026</p>
+          <p class="acto">Recepción memorial</p>
+          <p class="titulo">INMOBILIARIA PACÍFICO LTDA. contra CARLOS ANDRÉS MEJÍA TORRES</p>
+          <p class="rad">76001400302120250999400</p>
+        </div>
+      </div>
     </div>
-    <div class="revelar revelar-der bg-gradient-to-br from-sky-600 to-sky-800 rounded-3xl p-8 md:p-10 text-white shadow-2xl relative overflow-hidden">
-      <div class="absolute -right-10 -top-10 w-48 h-48 bg-white/10 rounded-full blur-2xl"></div>
-      <p class="text-sky-200 font-bold text-sm tracking-widest uppercase">La solución</p>
-      <h3 class="font-serif text-2xl md:text-4xl mt-2 leading-tight">Vigencia vigila. Tú litigas.</h3>
-      <p class="mt-4 text-sky-50/90 leading-relaxed">Agregas el radicado una vez. Desde ahí la app revisa actuaciones sola, te muestra solo lo que cambió y te deja el memorial medio escrito.</p>
-      <a href="#descargar" class="mt-6 inline-block bg-white text-sky-800 font-bold px-6 py-3.5 rounded-xl shadow-lg hover:-translate-y-0.5 transition">Instalar y probar →</a>
+    <div class="revelar marco-app">
+      <picture>
+        <source media="(max-width: 640px)" srcset="/img/app-actuacion-nueva-movil.webp" width="910" height="470" />
+      <img src="/img/app-actuacion-nueva.webp" srcset="/img/app-actuacion-nueva-670.webp 670w, /img/app-actuacion-nueva.webp 1339w" sizes="(min-width: 1024px) 560px, 100vw" width="1339" height="610" loading="lazy" alt="Expediente de Inversiones Andina S.A.S. marcado en la lista. A la derecha, las actuaciones del 16 de octubre: auto que fija fecha de audiencia y fijación en estado." />
+      </picture>
     </div>
   </div>
 </section>
 
-<!-- ============ FUNCIONES ============ -->
-<section id="funciones" class="bg-white border-y border-slate-200/80 py-16 md:py-24 px-5">
-  <div class="max-w-7xl mx-auto">
-    <div class="revelar text-center max-w-2xl mx-auto">
-      <p class="text-sky-700 font-bold text-sm tracking-widest uppercase">Todo lo que hace</p>
-      <h2 class="font-serif text-3xl md:text-5xl tracking-tight mt-2">Tu despacho completo, <span class="text-transparent bg-clip-text bg-gradient-to-r from-sky-600 to-sky-800">en una ventana</span></h2>
-      <p class="text-slate-500 mt-4">Todo en español claro, con modo claro y oscuro.</p>
+<!-- REVISION AUTOMATICA -->
+<section class="py-20 md:py-28 px-5">
+  <div class="max-w-6xl mx-auto grid lg:grid-cols-2 gap-12 items-center">
+    <div class="revelar lg:order-2">
+      <h2 class="font-serif text-3xl md:text-5xl tracking-tight">Revisa sola hasta dos veces al día.</h2>
+      <p class="mt-4 text-suave text-lg">Tú pones las horas. Si algo cambió, te llega el aviso. Si no, no te molesta.</p>
     </div>
-    <div class="mt-12 grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
+    <div class="revelar marco-app lg:order-1 max-w-xl">
+      <img src="/img/app-horario.webp" width="689" height="462" loading="lazy" alt="Ventana de revisión automática de VigencIA con dos horas elegidas: 7:00 a. m. y 1:00 p. m." />
+    </div>
+  </div>
+</section>
+
+<!-- LO DEMAS -->
+<section class="bg-white border-y border-linea py-20 md:py-24 px-5">
+  <div class="max-w-6xl mx-auto">
+    <h2 class="revelar font-serif text-3xl md:text-4xl tracking-tight">Lo demás que hace</h2>
+    <ul class="revelar mt-8 grid sm:grid-cols-2 lg:grid-cols-3 gap-3 text-[15px]">
       {[
-        ["🔍", "Consulta por radicado", "Pegas el número del proceso y ves toda su información en un solo lugar."],
-        ["📥", "Carga masiva de procesos", "Subes tu listado de procesos y la app los consulta uno por uno, sin que hagas nada."],
-        ["🔁", "Actualizar todo en 1 clic", "Revisa todos tus procesos de una vez y al final te muestra un informe claro de lo que cambió."],
-        ["⏰", "Revisión automática", "Se revisa sola dos veces al día, en el horario que tú elijas, y solo te avisa si algo cambió."],
-        ["🗂️", "Todo ordenado por día", "Tus actuaciones más recientes siempre primero, con buscador para encontrar todo rápido."],
-        ["👔", "Abogados y representados", "Asigna el abogado de cada caso, indica a quién representa y filtra tu lista por abogado."],
-        ["✎", "Memoriales con IA", "Redacta memoriales en tu computador, incluso sin internet. Adjunta un documento como base y ve el resultado antes de guardarlo."],
-        ["📚", "Tu biblioteca de escritos", "Guarda tus plantillas y textos de apoyo y elige cuáles usar en cada documento."],
-        ["⚖️", "Iniciar procesos nuevos", "Arma demandas, tutelas o derechos de petición paso a paso, con guía de lo que no puede faltar."],
-        ["📄", "Informe del día en PDF", "Un informe por cliente con lo nuevo del día, listo para enviar. Tú eliges la carpeta."],
-        ["📊", "Lleva todo a Excel", "Descarga a Excel la lista que estás viendo en pantalla, con sus actuaciones del día."],
-        ["🏛️", "Fiscalía y Consejo de Estado", "Consulta procesos de la Fiscalía (SPOA) y del Consejo de Estado (SAMAI) sin salir de la app."],
-        ["📑", "Publicaciones por juzgado", "Elige departamento, municipio y despacho, y guarda sus publicaciones con documentos."],
-        ["⬆️", "Se actualiza sola", "Te avisa cuando hay versión nueva y la descargas con un clic."],
-        ["🔔", "Novedades automáticas", "Revisa tus juzgados y casos guardados y solo te avisa si algo se movió."],
-        ["👁️", "Vista previa sin descargar", "Lee cada documento dentro de la app y descárgalo a tu PC solo si lo quieres."],
-        ["🕰️", "Revisión a tu ritmo", "Elige cada cuánto se revisan tus novedades: cada 12 horas, a diario, cada 2 días o apagada."],
-        ["🔒", "Privado de verdad", "Todo queda guardado en tu computador. Si desinstalas, tus casos se conservan."],
-      ].map(([icono, titulo, desc]) => (
-        <article class="revelar group bg-[#eef3f8] hover:bg-white border border-slate-200 hover:border-sky-400 rounded-2xl p-6 transition-all hover:-translate-y-1.5 hover:shadow-xl">
-          <div class="text-3xl mb-4 group-hover:scale-110 transition-transform origin-left">{icono}</div>
-          <h3 class="font-bold text-[17px]">{titulo}</h3>
-          <p class="text-sm text-slate-600 mt-2 leading-relaxed">{desc}</p>
-        </article>
+        "Busca por radicado de 23 dígitos",
+        "Carga tu lista de procesos de una vez",
+        "Actualiza todo con un clic y te da el informe",
+        "Abogado y cliente de cada proceso, con filtro",
+        "Informe del día en PDF, uno por cliente",
+        "Exporta a Excel la lista que ves",
+        "Fiscalía (SPOA) y Consejo de Estado (SAMAI)",
+        "Publicaciones de cada juzgado, con documentos",
+        "Novedades cada 12 horas, a diario o cada 2 días",
+        "Lees los documentos sin descargarlos",
+        "Te avisa cuando hay versión nueva",
+        "Modo claro y oscuro",
+        `${DIAS_PRUEBA} días gratis para probar`,
+      ].map((item) => (
+        <li class="bg-papel-2 border border-linea rounded-xl px-4 py-3">{item}</li>
       ))}
-    </div>
+    </ul>
   </div>
 </section>
 
-<!-- ============ IA ============ -->
-<section id="ia" class="max-w-7xl mx-auto px-5 py-16 md:py-24">
-  <div class="revelar text-center max-w-2xl mx-auto">
-    <p class="text-sky-700 font-bold text-sm tracking-widest uppercase">El diferencial</p>
-    <h2 class="font-serif text-3xl md:text-5xl tracking-tight mt-2">Del auto al memorial, <span class="text-transparent bg-clip-text bg-gradient-to-r from-sky-600 to-sky-800">en minutos</span></h2>
-    <p class="text-slate-500 mt-4">Lees la última actuación y ahí mismo está el botón ✎ Crear documento. El memorial se decide al leer, no en otra app.</p>
-  </div>
-  <div class="mt-12 grid md:grid-cols-3 gap-5">
-    <div class="revelar bg-slate-900 text-white rounded-3xl p-8 relative overflow-hidden">
-      <p class="text-xs font-bold text-sky-400 tracking-widest">MODO SENCILLO</p>
-      <h3 class="font-serif text-2xl mt-2">Carta lista al despacho</h3>
-      <p class="text-sm text-slate-300 mt-3 leading-relaxed">Cartas listas con los datos del caso y quien firma. Sin complicaciones, ideal para trámites rápidos.</p>
-      <p class="mt-6 text-4xl font-extrabold">Incluido</p>
-    </div>
-    <div class="revelar bg-gradient-to-b from-sky-500 to-sky-700 text-white rounded-3xl p-8 relative overflow-hidden shadow-2xl md:-translate-y-3">
-      <span class="absolute top-5 right-5 text-[11px] font-extrabold bg-white text-sky-800 px-3 py-1 rounded-full">RECOMENDADO</span>
-      <p class="text-xs font-bold text-sky-100 tracking-widest">IA EN TU COMPUTADOR · SIN INTERNET</p>
-      <h3 class="font-serif text-2xl mt-2">Redacta en tu equipo</h3>
-      <p class="text-sm text-sky-50 mt-3 leading-relaxed">El memorial se redacta en tu computador y lo ves escribirse en vivo. Tú siempre tienes la última palabra.</p>
-      <ul class="mt-5 text-sm space-y-2 text-sky-50">
-        <li>✓ Te hace preguntas si falta un dato importante</li>
-        <li>✓ Señala las citas que debes verificar</li>
-        <li>✓ Guarda en Word y PDF</li>
-      </ul>
-    </div>
-    <div class="revelar revelar-der bg-white border border-slate-200 rounded-3xl p-8">
-      <p class="text-xs font-bold text-slate-500 tracking-widest">NUBE · OPCIONAL</p>
-      <h3 class="font-serif text-2xl mt-2">Usa tu IA favorita</h3>
-      <p class="text-sm text-slate-600 mt-3 leading-relaxed">Conecta servicios de IA en la nube con tu propia cuenta. La app siempre te avisa cuando el texto sale a internet.</p>
-    </div>
-  </div>
-</section>
-
-<!-- ============ PRIVACIDAD ============ -->
-<section id="privacidad" class="bg-slate-950 text-slate-200 py-16 md:py-24 px-5 relative overflow-hidden">
-  <div class="absolute inset-0 opacity-20" style="background-image: radial-gradient(#0284c7 1px, transparent 1px); background-size: 26px 26px;"></div>
-  <div class="max-w-6xl mx-auto grid md:grid-cols-2 gap-10 items-center relative">
+<!-- IA -->
+<section id="ia" class="py-20 md:py-28 px-5">
+  <div class="max-w-6xl mx-auto grid md:grid-cols-2 gap-10 items-start">
     <div class="revelar">
-      <p class="text-sky-400 font-bold text-sm tracking-widest uppercase">Privacidad</p>
-      <h2 class="font-serif text-3xl md:text-5xl text-white tracking-tight mt-2">Tus casos no son el producto.</h2>
-      <p class="mt-5 text-slate-300 leading-relaxed">Todo se guarda en tu computador, nada más. Ni tus casos ni tus documentos salen del equipo. Y si algún día desinstalas, <strong class="text-white">tus casos se conservan.</strong></p>
-      <div class="mt-7 flex flex-wrap gap-3 text-sm">
-        <span class="bg-white/10 border border-white/15 px-4 py-2 rounded-full">🖥️ Funciona sin internet</span>
-        <span class="bg-white/10 border border-white/15 px-4 py-2 rounded-full">🗝️ Tu plan, solo en tu equipo</span>
-        <span class="bg-white/10 border border-white/15 px-4 py-2 rounded-full">🌓 Tema claro y oscuro</span>
-      </div>
+      <h2 class="font-serif text-3xl md:text-5xl tracking-tight">Del auto al borrador sin copiar datos.</h2>
+      <p class="mt-4 text-suave text-lg">Con la IA que conectas con tu propia clave sacas memoriales, demandas, tutelas y derechos de petición. Tú revisas antes de radicar.</p>
     </div>
-    <div class="revelar revelar-der bg-white/5 border border-white/10 rounded-3xl p-7 backdrop-blur">
-      <p class="text-lg font-bold text-white">Promesa simple</p>
-      <div class="mt-4 space-y-3 text-sm">
-        <p class="bg-black/40 rounded-2xl px-5 py-4">✓ Tus procesos se guardan <strong class="text-white">en tu equipo</strong></p>
-        <p class="bg-black/40 rounded-2xl px-5 py-4">✓ Tus documentos <strong class="text-white">no salen a internet</strong></p>
-        <p class="bg-black/40 rounded-2xl px-5 py-4">✓ Sin pago, <strong class="text-white">nada se borra</strong></p>
-      </div>
-    </div>
+    <ul class="revelar grid gap-3 text-[15px]">
+      <li class="bg-white border border-linea rounded-xl px-4 py-3">Te pregunta si falta un dato</li>
+      <li class="bg-white border border-linea rounded-xl px-4 py-3">Marca las citas que debes verificar</li>
+      <li class="bg-white border border-linea rounded-xl px-4 py-3">Usa tus plantillas y guarda en Word o PDF</li>
+      <li class="bg-white border border-linea rounded-xl px-4 py-3">Cartas cortas al despacho sin IA</li>
+      <li class="bg-white border border-linea rounded-xl px-4 py-3">Te avisa cuando el texto va al servicio de IA</li>
+    </ul>
   </div>
 </section>
 
-<!-- ============ DESCARGAR ============ -->
-<section id="descargar" class="max-w-7xl mx-auto px-5 py-16 md:py-24">
-  <div class="revelar text-center max-w-2xl mx-auto">
-    <p class="text-sky-700 font-bold text-sm tracking-widest uppercase">Descarga · versión {VERSION}</p>
-    <h2 class="font-serif text-3xl md:text-5xl tracking-tight mt-2">Instala en 2 minutos</h2>
-    <p class="text-slate-500 mt-4">Detectamos tu sistema y te dejamos el instalador correcto. Tus casos se conservan aunque desinstales.</p>
+<!-- TUS DATOS -->
+<section id="privacidad" class="bg-noche text-hielo py-16 md:py-20 px-5">
+  <div class="revelar max-w-3xl mx-auto text-center">
+    <h2 class="font-serif text-3xl md:text-4xl tracking-tight">Tu base de procesos se guarda en tu computador.</h2>
+    <p class="mt-4 text-cielo">Consultar la Rama y usar la IA sí requiere internet. Si desinstalas o no pagas, no se borra nada.</p>
   </div>
-  <p id="aviso-so" class="revelar text-center mt-6 inline-block mx-auto w-full text-sm font-semibold text-sky-800 bg-sky-100 border border-sky-200 rounded-full px-5 py-2 max-w-md"></p>
-  <div class="mt-8 grid sm:grid-cols-2 xl:grid-cols-4 gap-5 max-w-6xl mx-auto">
-    <a href={`${BASE_DESCARGAS}/${ARCHIVOS.win}`} class="revelar group bg-slate-900 text-white rounded-3xl p-8 hover:-translate-y-1.5 hover:shadow-2xl transition-all relative overflow-hidden">
-      <div class="text-4xl">🪟</div>
-      <h3 class="font-bold text-xl mt-4">Windows</h3>
-      <p class="text-sm text-slate-400 mt-1 font-mono">{ARCHIVOS.win}</p>
-      <span class="mt-6 inline-block bg-white text-slate-900 font-bold px-5 py-3 rounded-xl group-hover:bg-sky-400 transition">Descargar .exe →</span>
-      <p class="text-[11px] text-slate-500 mt-4">Instalador guiado, paso a paso</p>
+</section>
+
+<!-- DESCARGAR -->
+<section id="descargar" class="max-w-6xl mx-auto px-5 py-20 md:py-28">
+  <div class="revelar text-center">
+    <p class="text-marino font-bold text-sm tracking-widest uppercase">Versión {VERSION}</p>
+    <h2 class="font-serif text-3xl md:text-5xl tracking-tight mt-2">Descarga el instalador</h2>
+  </div>
+  <p id="aviso-so" class="revelar text-center mt-6 mx-auto w-fit max-w-full text-sm font-semibold text-marino bg-celeste rounded-full px-5 py-2"></p>
+  <div class="mt-8 grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+    <a href={`${BASE_DESCARGAS}/${ARCHIVOS.win}`} class="revelar group bg-white border border-linea hover:border-marino rounded-2xl p-6 transition">
+      <h3 class="font-bold text-lg">Windows</h3>
+      <p class="text-sm text-suave mt-1 font-mono">{ARCHIVOS.win}</p>
+      <span class="mt-5 inline-block bg-marino group-hover:bg-azul text-white font-bold px-4 py-2.5 rounded-xl">Descargar .exe</span>
     </a>
-    <a href={`${BASE_DESCARGAS}/${ARCHIVOS.appimage}`} class="revelar group bg-gradient-to-b from-sky-500 to-sky-700 text-white rounded-3xl p-8 hover:-translate-y-1.5 hover:shadow-2xl transition-all md:-translate-y-2">
-      <div class="text-4xl">🐧</div>
-      <h3 class="font-bold text-xl mt-4">Linux · AppImage</h3>
-      <p class="text-sm text-sky-100 mt-1 font-mono">{ARCHIVOS.appimage}</p>
-      <span class="mt-6 inline-block bg-white text-sky-800 font-bold px-5 py-3 rounded-xl">Descargar .AppImage →</span>
-      <p class="text-[11px] text-sky-100 mt-4">Doble clic y a trabajar</p>
+    <a href={`${BASE_DESCARGAS}/${ARCHIVOS.appimage}`} class="revelar group bg-white border border-linea hover:border-marino rounded-2xl p-6 transition">
+      <h3 class="font-bold text-lg">Linux, AppImage</h3>
+      <p class="text-sm text-suave mt-1 font-mono">{ARCHIVOS.appimage}</p>
+      <span class="mt-5 inline-block bg-marino group-hover:bg-azul text-white font-bold px-4 py-2.5 rounded-xl">Descargar .AppImage</span>
     </a>
-    <a href={`${BASE_DESCARGAS}/${ARCHIVOS.deb}`} class="revelar revelar-der group bg-white border-2 border-slate-200 hover:border-sky-500 rounded-3xl p-8 hover:-translate-y-1.5 hover:shadow-2xl transition-all">
-      <div class="text-4xl">📦</div>
-      <h3 class="font-bold text-xl mt-4">Linux · .deb</h3>
-      <p class="text-sm text-slate-500 mt-1 font-mono">{ARCHIVOS.deb}</p>
-      <span class="mt-6 inline-block bg-slate-900 text-white font-bold px-5 py-3 rounded-xl">Descargar .deb →</span>
-      <p class="text-[11px] text-slate-500 mt-4">Para Debian, Ubuntu y derivados</p>
+    <a href={`${BASE_DESCARGAS}/${ARCHIVOS.deb}`} class="revelar group bg-white border border-linea hover:border-marino rounded-2xl p-6 transition">
+      <h3 class="font-bold text-lg">Linux, .deb</h3>
+      <p class="text-sm text-suave mt-1 font-mono">{ARCHIVOS.deb}</p>
+      <span class="mt-5 inline-block bg-marino group-hover:bg-azul text-white font-bold px-4 py-2.5 rounded-xl">Descargar .deb</span>
     </a>
     {macLista ? (
-      <a href={`${BASE_DESCARGAS}/${ARCHIVOS.mac}`} class="revelar group bg-white border-2 border-slate-900 rounded-3xl p-8 hover:-translate-y-1.5 hover:shadow-2xl transition-all relative overflow-hidden">
-        <span class="absolute top-5 right-5 text-[11px] font-extrabold bg-green-600 text-white px-3 py-1 rounded-full">NUEVO</span>
-        <div class="text-4xl">🍎</div>
-        <h3 class="font-bold text-xl mt-4">Mac</h3>
-        <p class="text-sm text-slate-500 mt-1 font-mono">{ARCHIVOS.mac}</p>
-        <span class="mt-6 inline-block bg-slate-900 text-white font-bold px-5 py-3 rounded-xl">Descargar .dmg →</span>
-        <p class="text-[11px] text-slate-500 mt-4">Apple Silicon e Intel</p>
+      <a href={`${BASE_DESCARGAS}/${ARCHIVOS.mac}`} class="revelar group bg-white border border-linea hover:border-marino rounded-2xl p-6 transition">
+        <h3 class="font-bold text-lg">Mac</h3>
+        <p class="text-sm text-suave mt-1 font-mono">{ARCHIVOS.mac}</p>
+        <span class="mt-5 inline-block bg-marino group-hover:bg-azul text-white font-bold px-4 py-2.5 rounded-xl">Descargar .dmg</span>
       </a>
     ) : (
-      <div class="revelar group bg-white border-2 border-dashed border-slate-300 rounded-3xl p-8 relative overflow-hidden">
-        <span class="absolute top-5 right-5 text-[11px] font-extrabold bg-sky-100 text-sky-800 border border-sky-200 px-3 py-1 rounded-full">PRONTO</span>
-        <div class="text-4xl">🍎</div>
-        <h3 class="font-bold text-xl mt-4">Mac</h3>
-        <p class="text-sm text-slate-500 mt-1">Apple Silicon e Intel · .dmg</p>
-        <span class="mt-6 inline-block bg-slate-200 text-slate-500 font-bold px-5 py-3 rounded-xl cursor-default">En camino →</span>
-        <p class="text-[11px] text-slate-500 mt-4">La estamos preparando. Mientras tanto, usa Windows o Linux.</p>
+      <div class="revelar bg-papel-2 border border-dashed border-linea rounded-2xl p-6">
+        <h3 class="font-bold text-lg">Mac</h3>
+        <p class="text-sm text-suave mt-1">Apple Silicon e Intel</p>
+        <span class="mt-5 inline-block bg-celeste text-marino font-bold px-4 py-2.5 rounded-xl cursor-default">Pronto</span>
       </div>
     )}
   </div>
-  <p class="text-center text-xs text-slate-400 mt-6">Vigencia {VERSION} · Windows, Linux y pronto Mac</p>
 </section>
 
-<!-- ============ PRECIO ============ -->
-<section id="precio" class="px-5 pb-16 md:pb-24">
-  <div class="revelar max-w-5xl mx-auto bg-gradient-to-br from-slate-900 via-slate-900 to-sky-900 text-white rounded-[2rem] p-8 md:p-14 relative overflow-hidden shadow-2xl">
-    <div class="absolute -top-20 -right-20 w-72 h-72 bg-sky-500/25 rounded-full blur-3xl anim-flotar"></div>
-    <div class="grid md:grid-cols-2 gap-10 items-center relative">
-      <div>
-        <p class="text-sky-400 font-bold text-sm tracking-widest uppercase">Plan anual</p>
-        <h2 class="font-serif text-3xl md:text-5xl mt-2">Un año entero por <span class="text-sky-400">{PRECIO}</span></h2>
-        <p class="text-slate-300 mt-4 leading-relaxed">El año empieza cuando Wompi confirma el pago, no al instalar. Renovar antes de vencer suma el año al vencimiento que ya corre.</p>
-        <ul class="mt-6 space-y-2.5 text-sm text-slate-200">
-          <li>✓ Revisiones automáticas ilimitadas</li>
-          <li>✓ Memoriales y biblioteca sin límite</li>
-          <li>✓ Informes en PDF y Excel + carga masiva</li>
-          <li>✓ Sin pago: solo ves la página del plan, nada se borra</li>
-        </ul>
-      </div>
-      <div class="bg-white text-slate-900 rounded-3xl p-8 shadow-xl">
-        <p class="text-sm font-bold text-slate-500 uppercase tracking-widest">Pagar</p>
-        <p class="font-serif text-5xl mt-1">{PRECIO}<span class="text-lg text-slate-500 font-sans">/año</span></p>
-        <ol class="mt-6 space-y-3 text-sm text-slate-600">
-          <li><strong>1.</strong> Instala y pulsa <strong>Iniciar el plan</strong>.</li>
-          <li><strong>2.</strong> Paga en Wompi y vuelve con <strong>Ya pagué</strong>.</li>
-          <li><strong>3.</strong> O activa con tu <strong>código personal</strong>, válido solo en tu equipo.</li>
-        </ol>
-        <a href="#descargar" class="btn-brillo mt-7 block text-center bg-gradient-to-r from-sky-600 to-sky-700 text-white font-bold px-6 py-4 rounded-2xl shadow-lg hover:-translate-y-0.5 transition">Descargar e iniciar el plan →</a>
-        <p class="text-[11px] text-slate-400 text-center mt-3">Sin tarjeta para instalar · pagas dentro de la app</p>
-      </div>
+<!-- PRECIO -->
+<section id="precio" class="px-5 pb-20 md:pb-28">
+  <div class="revelar max-w-5xl mx-auto bg-noche text-hielo rounded-[2rem] p-8 md:p-12 grid md:grid-cols-2 gap-10 items-center">
+    <div>
+      <p class="text-cielo font-bold text-sm tracking-widest uppercase">Plan anual. {DIAS_PRUEBA} días gratis</p>
+      <h2 class="font-serif text-3xl md:text-5xl mt-2">{PRECIO} COP <span class="text-cielo text-2xl">al año</span></h2>
+      <p class="mt-4 text-cielo">Instalas y usas todo {DIAS_PRUEBA} días sin pagar y sin tarjeta. Si se acaban y no pagas, la app se cierra pero no se borra nada. El año cuenta desde que se confirma el pago. Si renuevas antes, se suma a tu fecha.</p>
+      <ul class="mt-6 space-y-2 text-sm">
+        <li>{DIAS_PRUEBA} días gratis con todo incluido</li>
+        <li>Procesos ilimitados</li>
+        <li>Revisiones, memoriales, informes y Excel sin límite</li>
+        <li>Las actualizaciones del año vienen incluidas</li>
+      </ul>
+    </div>
+    <div class="bg-white text-tinta rounded-3xl p-7">
+      <p class="text-sm font-bold text-suave uppercase tracking-widest">Cómo comprar</p>
+      <ol class="mt-4 space-y-3 text-sm text-suave">
+        <li><strong class="text-tinta">1.</strong> Descarga VigencIA y pruébala {DIAS_PRUEBA} días gratis.</li>
+        <li><strong class="text-tinta">2.</strong> Escríbenos por WhatsApp al <strong class="text-tinta">{numeroVisible}</strong>.</li>
+        <li><strong class="text-tinta">3.</strong> Activas con tu <strong class="text-tinta">código personal</strong>, que sirve solo en tu equipo.</li>
+      </ol>
+      <a href={enlaceWhatsapp} target="_blank" rel="noopener" class="mt-6 block text-center bg-marino hover:bg-azul text-white font-bold px-6 py-3.5 rounded-xl transition">Comprar por WhatsApp</a>
+      <p class="text-xs text-suave text-center mt-3">Descargar no cuesta nada. Los primeros {DIAS_PRUEBA} días tampoco.</p>
     </div>
   </div>
 </section>
 
-<!-- ============ FAQ ============ -->
-<section id="faq" class="max-w-3xl mx-auto px-5 pb-16 md:pb-24">
-  <h2 class="revelar font-serif text-3xl md:text-4xl text-center tracking-tight">Preguntas de pasillo</h2>
+<!-- FAQ -->
+<section id="faq" class="max-w-3xl mx-auto px-5 pb-20 md:pb-28">
+  <h2 class="revelar font-serif text-3xl md:text-4xl text-center tracking-tight">Preguntas</h2>
   <div class="mt-8 space-y-3">
     {[
-      ["¿Necesito internet para redactar?", "No. Puedes redactar en tu computador sin conexión. Solo la opción de nube envía texto, y la app siempre te avisa."],
-      ["¿Mis casos se suben a algún servidor?", "No. Todo se guarda en tu computador y nada sale del equipo."],
-      ["¿Qué pasa si no pago o se vence el año?", "La app muestra solo la página del plan (Iniciar el plan / Pagar el otro año). Tus casos siguen intactos en el computador."],
-      ["¿Funciona en Mac?", "La versión para Mac está en camino y llegará como descarga directa aquí mismo. Por ahora Vigencia funciona en Windows y Linux."],
-      ["¿La revisión automática me llena de avisos?", "No: solo te avisa cuando hay cambios. Sin cambios, silencio."],
-      ["¿El memorial cita leyes inventadas?", "La app señala las citas que debes revisar. Como siempre, verifica los hechos y las citas antes de radicar."],
+      [`¿Cómo son los ${DIAS_PRUEBA} días gratis?`, "Instalas y usas todo, sin tarjeta y sin registrarte. Los días cuentan desde que abres la app por primera vez. Cuando se acaban, pagas el año o la app solo muestra la página del plan. Tus casos siguen guardados."],
+      ["¿Necesito internet para redactar con IA?", "Sí. El texto va al servicio de IA que conectaste, y la app te avisa."],
+      ["¿Mis casos se suben a algún servidor?", "Tu base de procesos queda en tu computador. Salen los radicados que se consultan en la Rama y el texto que le mandas a la IA."],
+      ["¿Qué pasa si no pago o se vence el año?", "La app solo muestra la página del plan. Tus casos siguen guardados."],
+      ["¿Funciona en Mac?", macLista ? "Sí. Hay instalador .dmg para Apple Silicon e Intel." : "Todavía no. Por ahora funciona en Windows y Linux."],
+      ["¿Me va a llenar de avisos?", "No. Solo avisa cuando un proceso tiene algo nuevo."],
+      ["¿El borrador puede citar normas que no existen?", "Puede pasar. Por eso marca las citas que debes revisar antes de radicar."],
     ].map(([q, a]) => (
-      <details class="revelar group bg-white border border-slate-200 rounded-2xl px-6 py-4 open:shadow-lg transition">
-        <summary class="font-semibold cursor-pointer list-none flex justify-between items-center gap-4">{q}<span class="text-sky-600 group-open:rotate-45 transition text-xl leading-none">+</span></summary>
-        <p class="text-sm text-slate-600 mt-3 leading-relaxed">{a}</p>
+      <details class="revelar group bg-white border border-linea rounded-2xl px-6 py-4">
+        <summary class="font-semibold cursor-pointer list-none flex justify-between items-center gap-4">{q}<span class="text-marino group-open:rotate-45 transition text-xl leading-none">+</span></summary>
+        <p class="text-sm text-suave mt-3 leading-relaxed">{a}</p>
       </details>
     ))}
   </div>
-  <div class="revelar text-center mt-12 bg-sky-50 border border-sky-200 rounded-3xl p-8">
-    <p class="font-serif text-2xl">¿Listo para no volver a trasnochar por un auto?</p>
-    <a href="#descargar" class="mt-5 inline-block bg-slate-900 text-white font-bold px-8 py-4 rounded-2xl shadow-xl hover:-translate-y-0.5 transition">⬇ Descargar Vigencia v{VERSION}</a>
-  </div>
+  <p class="revelar text-center mt-10 text-suave">¿Otra duda? Escríbenos por WhatsApp al <a class="text-marino font-semibold underline" href={enlaceWhatsapp} target="_blank" rel="noopener">{numeroVisible}</a>.</p>
 </section>
 
-<footer class="bg-slate-950 text-slate-400 px-5 py-10 text-sm">
-  <div class="max-w-7xl mx-auto flex flex-col md:flex-row gap-4 items-center justify-between">
-    <p><strong class="text-white">⚖ VigencIA</strong> · Consulta local de procesos · v{VERSION} · Hecho con papel, tinta y cobre.</p>
-    <p class="font-mono text-xs">Plan {PRECIO}/año · Windows, Linux y pronto Mac · tus datos nunca salen</p>
+<footer class="bg-noche text-cielo px-5 py-10 text-sm">
+  <div class="max-w-6xl mx-auto flex flex-col md:flex-row gap-4 items-center justify-between">
+    <img src="/marca/vigencia-lockup-ondark.svg" alt="VigencIA" width="111" height="37" class="h-8 w-auto" />
+    <p class="text-center md:text-right">Versión {VERSION}. Seguimiento de procesos para abogados en Colombia. {DIAS_PRUEBA} días gratis.</p>
   </div>
 </footer>
 
+<a id="wa-flotante" href={enlaceWhatsapp} target="_blank" rel="noopener" aria-label="Hablar por WhatsApp" class="fixed bottom-5 right-5 z-50 grid place-items-center w-14 h-14 rounded-full bg-[#25D366] shadow-2xl hover:scale-105 transition-transform">
+  <svg viewBox="0 0 32 32" class="w-8 h-8 fill-white" aria-hidden="true"><path d="M16 3C9.4 3 4 8.4 4 15c0 2.4.7 4.6 2 6.5L4 29l7.7-2c1.8 1 3.9 1.6 6.1 1.6h.2c6.6 0 12-5.4 12-12S22.6 3 16 3zm0 21.9h-.2c-1.9 0-3.7-.5-5.3-1.5l-.4-.2-4.6 1.2 1.2-4.4-.3-.4c-1.1-1.7-1.6-3.6-1.6-5.6C4.9 9.6 9.6 4.9 16 4.9S27.1 9.6 27.1 16 22.4 24.9 16 24.9z"/></svg>
+</a>
+
 <script>
-  // reveal on scroll
-  const obs = new IntersectionObserver((es) => {
-    es.forEach(e => { if (e.isIntersecting) { e.target.classList.add('visible'); obs.unobserve(e.target); } });
-  }, { threshold: 0.12 });
-  document.querySelectorAll('.revelar:not(.visible)').forEach(el => obs.observe(el));
+  // Aparecer al hacer scroll
+  const piezas = document.querySelectorAll('.revelar:not(.visible)');
+  if ('IntersectionObserver' in window) {
+    const obs = new IntersectionObserver((es) => {
+      es.forEach((e) => { if (e.isIntersecting) { e.target.classList.add('visible'); obs.unobserve(e.target); } });
+    }, { threshold: 0.15 });
+    piezas.forEach((el) => obs.observe(el));
+  } else {
+    piezas.forEach((el) => el.classList.add('visible'));
+  }
 
-  // contadores
-  const cObs = new IntersectionObserver((es) => {
-    es.forEach(e => {
-      if (!e.isIntersecting) return;
-      const el = e.target; cObs.unobserve(el);
-      const meta = parseInt(el.dataset.meta || '0', 10);
-      const t0 = performance.now(), dur = 1400;
-      const paso = (t) => {
-        const p = Math.min(1, (t - t0) / dur);
-        el.textContent = String(Math.round(meta * (1 - Math.pow(1 - p, 3))));
-        if (p < 1) requestAnimationFrame(paso);
-      };
-      requestAnimationFrame(paso);
-    });
-  }, { threshold: 0.5 });
-  document.querySelectorAll('.contador').forEach(el => cObs.observe(el));
-
-  // detectar SO para el CTA del hero
+  // Detectar el sistema para el botón principal
   const ua = navigator.userAgent;
   const txt = document.getElementById('cta-hero-texto');
   const aviso = document.getElementById('aviso-so');
-  let so = 'tu equipo';
-  if (/Windows/i.test(ua)) { txt.textContent = 'Descargar para Windows (.exe)'; so = 'Windows — te recomendamos el .exe'; }
-  else if (/Linux/i.test(ua)) { txt.textContent = 'Descargar AppImage para Linux'; so = 'Linux — te recomendamos el AppImage o el .deb'; }
-  else if (/Mac/i.test(ua)) { txt.textContent = 'Descargar (Mac en camino)'; so = 'Mac — la tuya está en camino; mientras tanto usa Windows o Linux'; }
-  aviso.textContent = '📍 Estás en ' + so;
-
-  // memorial demo escribiéndose solo
-  const frases = [
-    'Señor Juez Segundo Civil del Circuito… ',
-    'ref: contestación de la demanda… ',
-    'PRIMERO: me opongo a las pretensiones… ',
-    'SEGUNDO: adjunto poder y certificado… ✓ listo para Word y PDF.',
-  ];
-  const demo = document.getElementById('demo-escrito');
-  let fi = 0, ci = 0, actual = '';
-  function escribirDemo() {
-    if (!demo) return;
-    const f = frases[fi];
-    actual += f[ci++];
-    demo.textContent = actual.slice(-110);
-    if (ci >= f.length) {
-      ci = 0; fi = (fi + 1) % frases.length;
-      if (fi === 0) actual = '';
-      setTimeout(escribirDemo, 1400);
-    } else {
-      setTimeout(escribirDemo, 34);
-    }
-  }
-  escribirDemo();
+  let so = 'un sistema que no reconocimos. Escoge abajo el instalador';
+  if (/Windows/i.test(ua)) { txt.textContent = 'Descargar para Windows'; so = 'Windows. Te sirve el .exe'; }
+  else if (/Linux/i.test(ua)) { txt.textContent = 'Descargar para Linux'; so = 'Linux. Puedes usar el AppImage o el .deb'; }
+  else if (/Mac/i.test(ua)) { txt.textContent = 'Ver la descarga para Mac'; so = 'Mac. Mira abajo la tarjeta de Mac'; }
+  aviso.textContent = 'Estás en ' + so;
 </script>
 </body>
 </html>

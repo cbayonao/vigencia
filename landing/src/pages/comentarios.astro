@@ -1,0 +1,99 @@
+---
+import "../styles/global.css";
+import { API_COMENTARIOS } from "../data.ts";
+
+const titulo = "Comentarios. Administración VigencIA";
+---
+
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>{titulo}</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>V</text></svg>" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+</head>
+<body class="antialiased bg-[#eef3f8] min-h-screen">
+  <main class="max-w-3xl mx-auto px-5 py-14">
+    <p class="font-extrabold tracking-tight text-lg">Vigenc<span class="text-sky-700">IA</span> <span class="text-sm font-medium text-slate-500">comentarios</span></p>
+    <h1 class="font-serif text-3xl md:text-4xl tracking-tight mt-2">Lo que dicen los usuarios</h1>
+    <p class="text-slate-500 mt-2 text-sm">Solo el equipo con la clave puede ver y moderar. Lo aprobado se muestra en la app.</p>
+
+    <form id="form-clave" class="mt-6 flex gap-2">
+      <input id="clave" type="password" autocomplete="off" placeholder="Clave del equipo"
+        class="flex-1 border border-slate-300 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-sky-500" />
+      <button type="submit" class="bg-slate-900 text-white text-sm font-semibold px-5 py-3 rounded-xl">Entrar</button>
+    </form>
+    <p id="estado" class="text-sm mt-3 text-slate-500" aria-live="polite"></p>
+    <div id="lista" class="mt-6 space-y-3"></div>
+  </main>
+
+  <script define:vars={{ api: API_COMENTARIOS }}>
+    const estado = document.getElementById('estado');
+    const lista = document.getElementById('lista');
+    let clave = sessionStorage.getItem('vigencia-clave') || '';
+    if (clave) document.getElementById('clave').value = clave;
+
+    async function cargar() {
+      estado.textContent = 'Trayendo comentarios';
+      lista.replaceChildren();
+      const r = await fetch(api + '/admin/comentarios', { headers: { 'x-clave': clave } });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        estado.textContent = j.error || 'Sin permiso o sin conexión.';
+        return;
+      }
+      const items = j.comentarios || [];
+      estado.textContent = items.length ? `${items.length} comentarios.` : 'No hay comentarios todavía.';
+      for (const c of items) {
+        const tarjeta = document.createElement('article');
+        tarjeta.className = 'bg-white border rounded-2xl p-5 ' + (c.visible ? 'border-green-300' : 'border-slate-200');
+        const meta = document.createElement('p');
+        meta.className = 'text-xs text-slate-500 font-medium';
+        meta.textContent = `${c.nombre || 'Anónimo'}, ${c.tipo || 'otro'}, ${String(c.creado || '').slice(0, 10)}, ${c.visible ? 'visible' : 'pendiente'}`;
+        const texto = document.createElement('p');
+        texto.className = 'text-sm mt-2 leading-relaxed';
+        texto.textContent = c.texto || '';
+        const fila = document.createElement('div');
+        fila.className = 'mt-3 flex gap-2';
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = c.visible ? 'text-xs font-semibold px-4 py-2 rounded-xl border border-slate-300' : 'text-xs font-semibold px-4 py-2 rounded-xl bg-green-600 text-white';
+        btn.textContent = c.visible ? 'Ocultar' : 'Aprobar';
+        btn.addEventListener('click', () => moderar(c.id, !c.visible, btn));
+        fila.append(btn);
+        tarjeta.append(meta, texto, fila);
+        lista.append(tarjeta);
+      }
+    }
+
+    async function moderar(id, visible, btn) {
+      btn.disabled = true;
+      const r = await fetch(api + '/admin/comentarios', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-clave': clave },
+        body: JSON.stringify({ id, visible }),
+      });
+      btn.disabled = false;
+      if (!r.ok) {
+        estado.textContent = 'No pude guardar el cambio.';
+        return;
+      }
+      await cargar();
+    }
+
+    document.getElementById('form-clave').addEventListener('submit', (e) => {
+      e.preventDefault();
+      clave = document.getElementById('clave').value;
+      sessionStorage.setItem('vigencia-clave', clave);
+      cargar();
+    });
+
+    if (clave) cargar();
+  </script>
+</body>
+</html>

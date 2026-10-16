@@ -63,6 +63,8 @@ const macLista = (await macEnRelease()) ?? existsSync(join(raizRepo, ARCHIVOS.ma
     <div class="hidden md:flex items-center gap-7 text-sm font-medium text-suave">
       <a href="#funciones" class="hover:text-marino">Qué hace</a>
       <a href="#ia" class="hover:text-marino">Escritos con IA</a>
+      <a href="#documentos" class="hover:text-marino">Documentos</a>
+      <a href="#jurisprudencia" class="hover:text-marino">Jurisprudencia</a>
       <a href="#precio" class="hover:text-marino">Precio</a>
       <a href="#faq" class="hover:text-marino">Preguntas</a>
     </div>
@@ -177,6 +179,42 @@ const macLista = (await macEnRelease()) ?? existsSync(join(raizRepo, ARCHIVOS.ma
       <li class="bg-white border border-linea rounded-xl px-4 py-3">Usa tus plantillas y guarda en Word o PDF</li>
       <li class="bg-white border border-linea rounded-xl px-4 py-3">Cartas cortas al despacho sin IA</li>
       <li class="bg-white border border-linea rounded-xl px-4 py-3">Te avisa cuando el texto va al servicio de IA</li>
+    </ul>
+  </div>
+</section>
+
+<!-- DOCUMENTOS CON IA -->
+<section id="documentos" class="bg-white border-y border-linea py-20 md:py-28 px-5">
+  <div class="max-w-6xl mx-auto grid md:grid-cols-2 gap-10 items-start">
+    <div class="revelar">
+      <p class="text-marino font-bold text-sm tracking-widest uppercase">Documentos con IA</p>
+      <h2 class="font-serif text-3xl md:text-5xl tracking-tight mt-2">Redactas conversando, corriges por párrafos.</h2>
+      <p class="mt-4 text-suave text-lg">Pides una tutela, una demanda o un memorial y la vas puliendo mensaje a mensaje. Cada cambio deja una versión nueva con su historial.</p>
+    </div>
+    <ul class="revelar grid gap-3 text-[15px]">
+      <li class="bg-papel-2 border border-linea rounded-xl px-4 py-3">Tutelas, peticiones, demandas, recursos, contratos y más</li>
+      <li class="bg-papel-2 border border-linea rounded-xl px-4 py-3">Corrige un solo párrafo sin reescribir todo</li>
+      <li class="bg-papel-2 border border-linea rounded-xl px-4 py-3">Responde las dudas punto por punto, con un clic</li>
+      <li class="bg-papel-2 border border-linea rounded-xl px-4 py-3">Arrastra tus archivos como fuentes del escrito</li>
+      <li class="bg-papel-2 border border-linea rounded-xl px-4 py-3">Funciona en tu computador o con tu IA de nube favorita</li>
+      <li class="bg-papel-2 border border-linea rounded-xl px-4 py-3">Exporta a Word y PDF listo para radicar</li>
+    </ul>
+  </div>
+</section>
+
+<!-- JURISPRUDENCIA -->
+<section id="jurisprudencia" class="py-20 md:py-28 px-5">
+  <div class="max-w-6xl mx-auto grid md:grid-cols-2 gap-10 items-start">
+    <div class="revelar">
+      <p class="text-marino font-bold text-sm tracking-widest uppercase">Jurisprudencia</p>
+      <h2 class="font-serif text-3xl md:text-5xl tracking-tight mt-2">La sentencia que necesitas, buscada y guardada.</h2>
+      <p class="mt-4 text-suave text-lg">Corte Suprema, Corte Constitucional y Consejo de Estado con tribunales, en un solo buscador. La lees y con un clic queda como fuente para redactar.</p>
+    </div>
+    <ul class="revelar grid gap-3 text-[15px]">
+      <li class="bg-white border border-linea rounded-xl px-4 py-3">Un solo lugar para las tres relatorías y los tribunales</li>
+      <li class="bg-white border border-linea rounded-xl px-4 py-3">Filtra por sala, ponente, radicado, fechas y más</li>
+      <li class="bg-white border border-linea rounded-xl px-4 py-3">Lee la sentencia completa sin salir de la app</li>
+      <li class="bg-white border border-linea rounded-xl px-4 py-3">Guárdala y la IA la cita al redactar tus documentos</li>
     </ul>
   </div>
 </section>

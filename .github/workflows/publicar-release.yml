@@ -49,10 +49,13 @@ jobs:
       - run: npm run ${{ matrix.comando }}
         working-directory: electron
       # Subida directa al release (borrador): no usa la cuota de artefactos.
-      - run: gh release upload "$TAG" electron/dist/Vigencia* --clobber
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.ref_name }}
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          draft: true
+          generate_release_notes: ${{ matrix.os == 'ubuntu-latest' }}
+          fail_on_unmatched_files: true
+          files: electron/dist/Vigencia*
 
   espejar:
     needs: armar

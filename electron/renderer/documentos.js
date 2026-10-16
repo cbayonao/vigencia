@@ -106,7 +106,8 @@ function llenarExpedientes(select, actual) {
 }
 
 function llenarModelos(select, actual, conPreferido = false) {
-  const modelos = doc.inicio?.modelos?.modelos || [];
+  const soloLocal = !conPreferido && doc.datos?.proyecto?.solo_local;
+  const modelos = (doc.inicio?.modelos?.modelos || []).filter((m) => !soloLocal || !String(m.id).startsWith("nube:"));
   const items = modelos.map((m) => opcion(m.id, m.nombre));
   if (conPreferido) items.unshift(opcion("", "El que esté activo en Modelos de IA"));
   select.replaceChildren(...items);
@@ -172,8 +173,12 @@ function pintarPrivacidad() {
   const caja = $("doc-privacidad");
   const nube = String(m?.id || "").startsWith("nube:");
   caja.classList.toggle("nube", nube);
+  if (doc.datos?.proyecto?.solo_local && !nube) {
+    caja.textContent = "Solo local: este proyecto no envía nada a la nube. Conversión, OCR y redacción quedan en este computador.";
+    return;
+  }
   if (nube) {
-    caja.textContent = `Con ${m.nombre} su mensaje, el documento, los datos del expediente vinculado y los fragmentos de las fuentes salen a internet hacia ese proveedor, con su clave.`;
+    caja.textContent = `Antes de cada envío verá el texto exacto. Con ${m.nombre} su mensaje, el documento, los datos del expediente vinculado y los fragmentos de las fuentes salen a internet hacia ese proveedor, con su clave.`;
   } else if (String(m?.id || "").startsWith("gguf:")) {
     caja.textContent = "El modelo corre en este computador. Nada sale a internet.";
   } else {
@@ -201,6 +206,10 @@ function pintarProyecto() {
   llenarExpedientes($("doc-expediente"), d.proyecto.id_proceso);
   const nFuentes = d.fuentes.length;
   $("doc-fuentes-resumen").textContent = nFuentes ? `${nFuentes} ${nFuentes === 1 ? "fuente elegida" : "fuentes elegidas"}` : "Sin fuentes: solo se cita lo del expediente y sus mensajes.";
+  const archivos = d.archivos || [];
+  const dentro = archivos.filter((a) => a.incluido).length;
+  $("doc-archivos-resumen").textContent = archivos.length ? `${archivos.length} ${archivos.length === 1 ? "archivo" : "archivos"}, ${dentro} en el contexto` : "Sin archivos del proyecto.";
+  $("doc-solo-local").checked = Boolean(d.proyecto.solo_local);
   pintarPrivacidad();
   pintarMensajes();
   pintarVersiones();
@@ -531,12 +540,30 @@ async function enviar(evento) {
     if (dato?.proyectoId === doc.abierto) vivo(dato.texto || "");
   });
   try {
+    let confirmado = "";
+    if (nube) {
+      const previa = await window.vigencia.documentosRevisarEnvio({ id: doc.abierto, mensaje, modelo: doc.modelo, pasaje: doc.pasaje, documento });
+      if (!previa?.ok) {
+        eco.remove();
+        $("doc-mensaje").value = mensaje;
+        estadoChat(previa?.error || "No pude preparar el envío.", true);
+        return;
+      }
+      confirmado = await revisarEnvio(previa);
+      if (!confirmado) {
+        eco.remove();
+        $("doc-mensaje").value = mensaje;
+        estadoChat("No se envió nada.");
+        return;
+      }
+    }
     const r = await window.vigencia.documentosConversar({
       id: doc.abierto,
       mensaje,
       modelo: doc.modelo,
       pasaje: doc.pasaje,
       documento,
+      confirmado,
     });
     if (!r?.ok) {
       eco.remove();
@@ -937,7 +964,7 @@ async function soltarFuentes(archivos) {
   const rutas = [];
   const rechazados = [];
   for (const f of archivos || []) {
-    const ruta = f?.path || "";
+    const ruta = window.vigencia.rutaDeArchivo(f) || f?.path || "";
     const nombre = f?.name || (ruta ? ruta.split(/[/\\]/).pop() : "") || "archivo";
     if (!ruta) {
       rechazados.push(nombre);
@@ -1027,13 +1054,13 @@ function iniciarSoltar() {
   texto.addEventListener("drop", async (e) => {
     if (!tiposDe(e).includes("files")) return;
     e.preventDefault();
-    const primero = [...(e.dataTransfer?.files || [])].find((f) => f?.path && EXTENSIONES_FUENTE.includes(extensionDe(f.name || f.path)));
+    const primero = [...(e.dataTransfer?.files || [])].find((f) => (window.vigencia.rutaDeArchivo(f) || f?.path) && EXTENSIONES_FUENTE.includes(extensionDe(f.name || f.path || "")));
     if (!primero) {
       mostrarError("doc-fuente-error", `Suelte un archivo ${EXTENSIONES_FUENTE.join(", ")}.`);
       return;
     }
     mostrarError("doc-fuente-error", "");
-    const r = await window.vigencia.documentosFuentesImportarRutas([primero.path]);
+    const r = await window.vigencia.documentosFuentesImportarRutas([window.vigencia.rutaDeArchivo(primero) || primero.path]);
     if (!r?.ok) {
       mostrarError("doc-fuente-error", r?.error || "No pude leer ese archivo.");
       return;
@@ -1149,10 +1176,142 @@ export async function abrirDocumentos() {
   else pintarProyecto();
 }
 
+// ---------- Revisar envío ----------
+
+function revisarEnvio(previa) {
+  const inf = previa.informe || {};
+  $("envio-resumen").textContent = `Va a enviar ${Number(inf.caracteres || 0).toLocaleString("es-CO")} caracteres (cerca de ${Number(inf.tokens || 0).toLocaleString("es-CO")} tokens) a ${inf.modelo || "la nube"}, con su clave. ${inf.expediente ? "Incluye datos del expediente vinculado. " : ""}${inf.agentes ? "Incluye las instrucciones del proyecto. " : ""}Nada sale si pulsa No enviar.`;
+  const lista = $("envio-archivos");
+  lista.replaceChildren();
+  for (const a of inf.archivos || []) {
+    lista.append(nodo("p", "ayuda", `${a.nombre}: ${a.fragmentos} ${a.fragmentos === 1 ? "fragmento" : "fragmentos"}${a.paginas?.length ? `, páginas ${a.paginas.join(", ")}` : ""}`));
+  }
+  for (const f of inf.fuentes || []) lista.append(nodo("p", "ayuda", `Fuente de la biblioteca: ${f}`));
+  if (!lista.children.length) lista.append(nodo("p", "ayuda", "No van archivos ni fuentes."));
+  $("envio-texto").textContent = previa.texto || "";
+  $("envio-texto").hidden = true;
+  $("envio-ver").textContent = "Ver texto exacto";
+  ui.mostrarDialogo("dialogo-revisar-envio");
+  return new Promise((resolve) => {
+    const cerrar = (valor) => {
+      $("envio-enviar").onclick = null;
+      $("envio-cancelar").onclick = null;
+      ui.ocultarDialogo("dialogo-revisar-envio");
+      resolve(valor);
+    };
+    $("envio-enviar").onclick = () => cerrar(inf.hash || "");
+    $("envio-cancelar").onclick = () => cerrar("");
+  });
+}
+
+// ---------- Contexto del proyecto: archivos y AGENTS.md ----------
+
+async function abrirContexto() {
+  if (!doc.abierto) return;
+  $("doc-ctx-estado").textContent = "";
+  const r = await window.vigencia.proyectoAgentesLeer(doc.abierto);
+  doc.plantillaAgentes = r?.plantilla || "";
+  $("doc-ctx-agentes").value = r?.ok ? r.texto : "";
+  $("doc-ctx-agentes").placeholder = doc.plantillaAgentes;
+  await pintarArchivosCtx();
+  ui.mostrarDialogo("dialogo-doc-contexto");
+}
+
+async function pintarArchivosCtx() {
+  const r = await window.vigencia.proyectoArchivos(doc.abierto);
+  const caja = $("doc-ctx-archivos");
+  caja.replaceChildren();
+  const lista = r?.ok ? r.archivos : [];
+  if (!lista.length) caja.append(nodo("p", "ayuda", "Todavía no hay archivos en este proyecto."));
+  for (const a of lista) {
+    const fila = nodo("div", "ctx-archivo");
+    const marca = document.createElement("input");
+    marca.type = "checkbox";
+    marca.checked = Boolean(a.incluido);
+    marca.title = "Incluir en el contexto";
+    marca.addEventListener("change", async () => {
+      await window.vigencia.proyectoArchivoIncluir(doc.abierto, a.id, marca.checked);
+      await abrirProyecto(doc.abierto, { conservarVista: true });
+    });
+    const detalle = [a.estado === "listo" ? "listo" : a.estado, a.paginas ? `${a.paginas} págs.` : "", a.paginas_ocr ? `${a.paginas_ocr} con OCR` : "", `${Number(a.tokens_aprox || 0).toLocaleString("es-CO")} tokens aprox.`].filter(Boolean).join(", ");
+    const nombre = nodo("span", "nombre", `${a.nombre} (${detalle})`);
+    if (a.aviso) nombre.title = a.aviso;
+    const quitar = nodo("button", "boton-texto", "Quitar");
+    quitar.type = "button";
+    quitar.addEventListener("click", async () => {
+      await window.vigencia.proyectoArchivoQuitar(doc.abierto, a.id);
+      await pintarArchivosCtx();
+      await abrirProyecto(doc.abierto, { conservarVista: true });
+    });
+    fila.append(marca, nombre, quitar);
+    caja.append(fila);
+    if (a.aviso) caja.append(nodo("p", "ayuda", a.aviso));
+  }
+}
+
+async function convertirAlProyecto(rutas) {
+  if (!rutas.length || !doc.abierto) return;
+  $("doc-ctx-estado").textContent = `Convirtiendo ${rutas.length} ${rutas.length === 1 ? "archivo" : "archivos"} en este computador...`;
+  const quitar = window.vigencia.alConvertir((p) => {
+    if (p?.fase === "ocr") $("doc-ctx-estado").textContent = `${p.nombre}: leyendo con OCR la página ${p.pagina} de ${p.total}`;
+    else if (p?.fase === "leyendo" && p.total) $("doc-ctx-estado").textContent = `${p.nombre}: página ${p.pagina} de ${p.total}`;
+  });
+  try {
+    const r = await window.vigencia.convertirRutas(rutas, doc.abierto);
+    const errores = (r?.resultados || []).filter((x) => x.error).map((x) => `${x.nombre}: ${x.error}`);
+    $("doc-ctx-estado").textContent = errores.length ? errores.join(" ") : "Listo. Los archivos quedaron en el proyecto.";
+  } finally {
+    quitar();
+  }
+  await pintarArchivosCtx();
+  await abrirProyecto(doc.abierto, { conservarVista: true });
+}
+
+function rutasDe(archivos) {
+  return [...(archivos || [])].map((f) => window.vigencia.rutaDeArchivo(f) || f?.path || "").filter(Boolean);
+}
+
+function iniciarContexto() {
+  $("doc-abrir-ctx").addEventListener("click", abrirContexto);
+  $("doc-ctx-cerrar").addEventListener("click", () => ui.ocultarDialogo("dialogo-doc-contexto"));
+  $("doc-ctx-plantilla").addEventListener("click", () => {
+    if (!$("doc-ctx-agentes").value.trim()) $("doc-ctx-agentes").value = doc.plantillaAgentes || "";
+  });
+  $("doc-ctx-guardar").addEventListener("click", async () => {
+    const r = await window.vigencia.proyectoAgentesGuardar(doc.abierto, $("doc-ctx-agentes").value);
+    $("doc-ctx-estado").textContent = r?.ok ? "Instrucciones guardadas." : r?.error || "No pude guardarlas.";
+  });
+  $("doc-ctx-elegir").addEventListener("click", async () => {
+    const r = await window.vigencia.convertirElegir();
+    await convertirAlProyecto(r?.rutas || []);
+  });
+  const zona = $("doc-ctx-soltar");
+  zona.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    zona.classList.add("sobre");
+  });
+  zona.addEventListener("dragleave", () => zona.classList.remove("sobre"));
+  zona.addEventListener("drop", async (e) => {
+    e.preventDefault();
+    zona.classList.remove("sobre");
+    await convertirAlProyecto(rutasDe(e.dataTransfer?.files));
+  });
+  $("envio-ver").addEventListener("click", () => {
+    const t = $("envio-texto");
+    t.hidden = !t.hidden;
+    $("envio-ver").textContent = t.hidden ? "Ver texto exacto" : "Ocultar texto";
+  });
+  $("doc-solo-local").addEventListener("change", async () => {
+    await cambiarProyecto({ solo_local: $("doc-solo-local").checked });
+    await abrirProyecto(doc.abierto, { conservarVista: true });
+  });
+}
+
 export function iniciarDocumentos(herramientas) {
   if (doc.listo) return;
   doc.listo = true;
   ui = herramientas;
+  iniciarContexto();
   $("doc-nuevo").addEventListener("click", abrirNuevo);
   $("doc-nuevo-2").addEventListener("click", abrirNuevo);
   $("form-doc-nuevo").addEventListener("submit", crearNuevo);

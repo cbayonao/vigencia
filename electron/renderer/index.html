@@ -322,6 +322,11 @@
                 <span class="ayuda" id="doc-fuentes-resumen"></span>
                 <button type="button" class="boton-texto" id="doc-elegir-fuentes">Elegir fuentes</button>
               </div>
+              <div class="doc-fuentes-fila">
+                <span class="ayuda" id="doc-archivos-resumen"></span>
+                <button type="button" class="boton-texto" id="doc-abrir-ctx">Contexto del proyecto</button>
+                <label class="ayuda"><input type="checkbox" id="doc-solo-local"> Solo local</label>
+              </div>
               <p class="doc-privacidad" id="doc-privacidad"></p>
             </div>
             <div class="doc-mensajes" id="doc-mensajes" aria-live="polite"></div>
@@ -883,6 +888,39 @@
         <button type="submit" class="boton-cobre">Guardar</button>
       </div>
     </form>
+  </div>
+  <div class="cortina" id="dialogo-doc-contexto" hidden>
+    <div class="dialogo dialogo-ancho" role="dialog" aria-modal="true" aria-labelledby="doc-ctx-titulo">
+      <h2 class="serif dialogo-titulo" id="doc-ctx-titulo">Contexto del proyecto</h2>
+      <p class="nota">Lo que el asistente tiene en cuenta en este documento, en este orden: los lineamientos de Vigencia, el perfil, las instrucciones del proyecto, el expediente y los fragmentos de los archivos y fuentes que más se parecen a su pedido, con su página.</p>
+      <h3 class="seccion serif">Archivos</h3>
+      <div class="zona-soltar" id="doc-ctx-soltar">Suelte aquí PDF, imágenes, Word, Excel, CSV, HTML, TXT o MD. Se convierten a Markdown en este computador.
+        <div><button type="button" class="boton-linea" id="doc-ctx-elegir">Elegir archivos</button></div>
+      </div>
+      <p class="ayuda" id="doc-ctx-estado"></p>
+      <div id="doc-ctx-archivos"></div>
+      <h3 class="seccion serif">Instrucciones del proyecto (AGENTS.md)</h3>
+      <p class="ayuda">Partes, hechos clave, pretensiones, estilo y lo que no se debe decir. Con un modelo local conviene que sea corto.</p>
+      <textarea id="doc-ctx-agentes" class="doc-fuente-texto" spellcheck="true"></textarea>
+      <div class="fila-fin">
+        <button type="button" class="boton-texto" id="doc-ctx-plantilla">Usar la plantilla</button>
+        <button type="button" class="boton-linea" id="doc-ctx-guardar">Guardar instrucciones</button>
+        <button type="button" class="boton-cobre" id="doc-ctx-cerrar">Cerrar</button>
+      </div>
+    </div>
+  </div>
+  <div class="cortina" id="dialogo-revisar-envio" hidden>
+    <div class="dialogo dialogo-ancho" role="dialog" aria-modal="true" aria-labelledby="envio-titulo">
+      <h2 class="serif dialogo-titulo" id="envio-titulo">Revisar envío</h2>
+      <p class="nota" id="envio-resumen"></p>
+      <div id="envio-archivos"></div>
+      <div class="fila-fin"><button type="button" class="boton-texto" id="envio-ver">Ver texto exacto</button></div>
+      <pre class="envio-texto" id="envio-texto" hidden></pre>
+      <div class="fila-fin">
+        <button type="button" class="boton-texto" id="envio-cancelar">No enviar</button>
+        <button type="button" class="boton-cobre" id="envio-enviar">Enviar a la nube</button>
+      </div>
+    </div>
   </div>
   <div class="cortina" id="dialogo-doc-perfiles" hidden>
     <div class="dialogo dialogo-ancho" role="dialog" aria-modal="true" aria-labelledby="doc-perfiles-titulo">

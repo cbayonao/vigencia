@@ -69,6 +69,7 @@ export function registrarDocumentos({ ipcMain, dialog, db, datosDir, ventana, re
         modeloId: dato?.modelo,
         pasaje: dato?.pasaje || "",
         documento: dato?.documento ?? null,
+        confirmado: String(dato?.confirmado || ""),
         onProgreso: (avance) => {
           try {
             evento.sender.send("documentos-progreso", avance);

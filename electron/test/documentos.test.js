@@ -12,7 +12,7 @@ import {
 import { abrirBase, run, uno } from "../src/db.js";
 import { buscarFuentes, guardarPieza, listarPiezas, activarPieza } from "../src/biblioteca.js";
 import {
-  borrarProyecto, conversar, crearProyecto, duplicarProyecto, elegirFuentes, guardarPerfil, guardarVersion,
+  borrarProyecto, conversar, prepararVuelta, crearProyecto, duplicarProyecto, elegirFuentes, guardarPerfil, guardarVersion,
   leerProyecto, listarPerfiles, listarProyectos, restaurarVersion, actualizarProyecto,
 } from "../src/documentos.js";
 import { textoDePdf } from "../src/pdftexto.js";
@@ -182,6 +182,10 @@ test("una conversación pregunta, redacta, revisa en versiones nuevas y reescrib
     const fuente = guardarPieza(tmp.db, { nombre: "Sentencia T-760 de 2008", clase: "jurisprudencia", texto: "La sentencia T-760 de 2008 protege el derecho a la salud." });
     guardarPerfil(tmp.db, { ...perfil, fuentes: [fuente.id] });
     const proyecto = crearProyecto(tmp.db, { nombre: "Tutela salud", tipo: "tutela", perfil_id: perfil.id });
+    assert.equal(proyecto.solo_local, true);
+    await assert.rejects(conversar({ db: tmp.db, datosDir: tmp.dir, proyectoId: proyecto.id, mensaje: "x", resolverModelo: modeloFalso(), pedirTexto: async () => ({ texto: "" }) }), /Solo local/);
+    actualizarProyecto(tmp.db, proyecto.id, { solo_local: false });
+    await assert.rejects(conversar({ db: tmp.db, datosDir: tmp.dir, proyectoId: proyecto.id, mensaje: "x", resolverModelo: modeloFalso(), pedirTexto: async () => ({ texto: "" }) }), /Revise el envío/);
     assert.deepEqual(leerProyecto(tmp.db, proyecto.id).fuentes, [fuente.id], "el perfil trae sus fuentes");
     const encargos = [];
     const respuestas = [
@@ -197,10 +201,10 @@ test("una conversación pregunta, redacta, revisa en versiones nuevas y reescrib
     };
     const avances = [];
     const comun = { db: tmp.db, datosDir: tmp.dir, proyectoId: proyecto.id, pedirTexto, resolverModelo: modeloFalso(), onProgreso: (a) => avances.push(a) };
-    let r = await conversar({ ...comun, mensaje: "Necesito una tutela por salud" });
+    let r = await confirmar({ ...comun, mensaje: "Necesito una tutela por salud" });
     assert.equal(r.versiones.length, 0);
     assert.deepEqual(r.mensajes.at(-1).dudas, ["¿Qué EPS negó el servicio?"]);
-    r = await conversar({ ...comun, mensaje: "La EPS Sana" });
+    r = await confirmar({ ...comun, mensaje: "La EPS Sana" });
     assert.match(encargos[1], /Aclaración del usuario/);
     assert.match(encargos[1], /La sentencia T-760 de 2008 protege/);
     assert.equal(r.actual.numero, 1);
@@ -208,14 +212,14 @@ test("una conversación pregunta, redacta, revisa en versiones nuevas y reescrib
     assert.match(r.actual.cuerpo, /Ley 1751 de 2015 \[Cita no aportada\]/);
     assert.equal(r.actual.avisos.citas, 1);
     assert.equal(avances[0].proyectoId, proyecto.id);
-    r = await conversar({ ...comun, mensaje: "hazlo más corto" });
+    r = await confirmar({ ...comun, mensaje: "hazlo más corto" });
     assert.equal(r.actual.numero, 2, "revisar deja una versión nueva");
     assert.equal(r.versiones.length, 2);
     assert.match(encargos[2], /Documento actual/);
-    r = await conversar({ ...comun, mensaje: "más formal", pasaje: "La EPS Sana negó la cirugía." });
+    r = await confirmar({ ...comun, mensaje: "más formal", pasaje: "La EPS Sana negó la cirugía." });
     assert.equal(r.actual.numero, 3);
     assert.match(r.actual.cuerpo, /se negó a autorizar la cirugía ordenada/);
-    r = await conversar({ ...comun, mensaje: "agrega un hecho", documento: "Asunto: Tutela salud\n\n## Hechos\nTexto editado por mí." , pedirTexto: async ({ encargo }) => { encargos.push(encargo); return { texto: "Asunto: Tutela salud\n\n## Hechos\nTexto editado por mí.\n\nOtro hecho.", origen: "nube" }; } });
+    r = await confirmar({ ...comun, mensaje: "agrega un hecho", documento: "Asunto: Tutela salud\n\n## Hechos\nTexto editado por mí." , pedirTexto: async ({ encargo }) => { encargos.push(encargo); return { texto: "Asunto: Tutela salud\n\n## Hechos\nTexto editado por mí.\n\nOtro hecho.", origen: "nube" }; } });
     assert.match(encargos.at(-1), /Texto editado por mí/, "el agente sigue desde la edición");
     assert.equal(r.versiones.find((v) => v.numero === 4).autor, "usuario");
     assert.equal(r.actual.numero, 5);
@@ -349,3 +353,8 @@ test("el último gasto del proyecto trae sus tokens", async () => {
   assert.equal(ultimoGasto(db, 10), null);
   db.close();
 });
+
+async function confirmar(args) {
+  const previa = prepararVuelta(args);
+  return conversar({ ...args, confirmado: previa.informe?.hash || "" });
+}

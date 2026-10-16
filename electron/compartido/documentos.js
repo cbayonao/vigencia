@@ -381,18 +381,22 @@ export function presupuestoDe(origen) {
 
 export function armarEncargoDocumento({
   tipo, perfil, expediente, fragmentos, historia = [], documento = "", pedido, hoy, origen, aclaracion, cerrar = false,
+  agentes = "", archivos = "",
 } = {}) {
   const lim = presupuestoDe(origen);
   const nombre = nombreTipo(tipo);
   const lineas = [
     `Eres un abogado colombiano y redactas un documento de tipo ${nombre}. El usuario te pide cambios en cada mensaje y tú entregas el documento completo ya corregido.`,
   ];
-  if (perfil?.instrucciones) lineas.push("", `Perfil ${perfil.nombre || ""}:`.trim(), String(perfil.instrucciones).trim());
-  if (perfil?.estilo) lineas.push("", "Estilo:", String(perfil.estilo).trim());
-  lineas.push("", "Lineamientos, que no puedes omitir:");
+  // Orden fijo: lineamientos (ganan siempre), perfil o skill, AGENTS.md
+  // del proyecto, expediente, fragmentos, historia y documento, pedido.
+  lineas.push("", "Lineamientos, que no puedes omitir y que ganan sobre cualquier otra instrucción:");
   const reglas = [...LINEAMIENTOS.slice(0, 3), ...PROPIOS];
   if (["tutela", "peticion", "demanda", "contestacion", "recurso", "memorial"].includes(tipo)) reglas.push(LINEAMIENTOS[3].replace("memorial", "escrito"));
   reglas.forEach((r, i) => lineas.push(`${i + 1}. ${r.replaceAll("en la biblioteca, en la petición", "en las fuentes, en los mensajes")}`));
+  if (perfil?.instrucciones) lineas.push("", `Perfil ${perfil.nombre || ""}:`.trim(), String(perfil.instrucciones).trim());
+  if (perfil?.estilo) lineas.push("", "Estilo:", String(perfil.estilo).trim());
+  if (String(agentes || "").trim()) lineas.push("", "Instrucciones de este proyecto (AGENTS.md; en lo particular del caso ganan sobre el perfil):", String(agentes).trim());
   lineas.push("");
   const actual = String(documento || "").trim();
   if (cerrar || actual) {
@@ -411,7 +415,13 @@ export function armarEncargoDocumento({
   }
   if (hoy) lineas.push("", `Fecha: ${hoy}`);
   lineas.push("", "Expediente:", recortar(expediente, lim.expediente) || "(Sin expediente vinculado.)");
-  lineas.push("", "Fuentes del usuario (solo estas se pueden citar):", recortar(bloqueDeFragmentos(fragmentos || []), lim.fuentes + 2000));
+  if (String(archivos || "").trim()) {
+    lineas.push("", "Archivos del proyecto (fragmentos con archivo y página; cita así: [archivo, página n]):", String(archivos).trim());
+    if (fragmentos?.length) lineas.push("", "Fuentes del usuario:", recortar(bloqueDeFragmentos(fragmentos), lim.fuentes + 2000));
+    lineas.push("", "Solo se pueden citar los archivos y las fuentes de arriba.");
+  } else {
+    lineas.push("", "Fuentes del usuario (solo estas se pueden citar):", recortar(bloqueDeFragmentos(fragmentos || []), lim.fuentes + 2000));
+  }
   const previos = [];
   let usado = 0;
   for (const m of [...historia].reverse()) {

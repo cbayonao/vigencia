@@ -89,7 +89,7 @@ test("la base guarda las horas validadas y rechaza más de dos o repetidas", () 
   const tmp = temporal();
   try {
     assert.deepEqual(leerHorarios(tmp.db), ["07:00", "13:00"]);
-    assert.equal(Number(uno(tmp.db, "SELECT COUNT(*) AS n FROM schema_migracion").n), 12);
+    assert.equal(Number(uno(tmp.db, "SELECT COUNT(*) AS n FROM schema_migracion").n), 15);
     assert.deepEqual(guardarHorarios(tmp.db, ["18:00", "06:30"]), ["06:30", "18:00"]);
     assert.deepEqual(leerHorarios(tmp.db), ["06:30", "18:00"]);
     assert.throws(() => guardarHorarios(tmp.db, ["07:00", "12:00", "18:00"]), Aviso);

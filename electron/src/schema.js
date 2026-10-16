@@ -538,4 +538,101 @@ export const MIGRACIONES = [
       `);
     },
   },
+  {
+    version: 13,
+    nombre: "conversiones a markdown",
+    up(db) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS archivo (
+          id INTEGER PRIMARY KEY,
+          sha256 TEXT NOT NULL UNIQUE,
+          nombre TEXT NOT NULL,
+          extension TEXT NOT NULL,
+          bytes INTEGER NOT NULL,
+          ruta_md TEXT NOT NULL DEFAULT '',
+          estado TEXT NOT NULL DEFAULT 'pendiente'
+            CHECK (estado IN ('pendiente','convirtiendo','listo','error','cancelado')),
+          motor TEXT NOT NULL DEFAULT '',
+          version_conversor INTEGER NOT NULL DEFAULT 1,
+          paginas INTEGER NOT NULL DEFAULT 0,
+          paginas_ocr INTEGER NOT NULL DEFAULT 0,
+          caracteres INTEGER NOT NULL DEFAULT 0,
+          tokens_aprox INTEGER NOT NULL DEFAULT 0,
+          calidad REAL NOT NULL DEFAULT 0,
+          error TEXT NOT NULL DEFAULT '',
+          aviso TEXT NOT NULL DEFAULT '',
+          origen TEXT NOT NULL DEFAULT 'usuario',
+          meta TEXT NOT NULL DEFAULT '{}',
+          creado_en TEXT NOT NULL,
+          actualizado_en TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS doc_archivo (
+          proyecto_id INTEGER NOT NULL REFERENCES doc_proyecto(id) ON DELETE CASCADE,
+          archivo_id INTEGER NOT NULL REFERENCES archivo(id) ON DELETE CASCADE,
+          incluido INTEGER NOT NULL DEFAULT 1,
+          agregado_en TEXT NOT NULL,
+          PRIMARY KEY (proyecto_id, archivo_id)
+        );
+      `);
+      const piezaCols = new Set(db.prepare("PRAGMA table_info(pieza)").all().map((fila) => fila.name));
+      if (!piezaCols.has("archivo_id")) db.exec("ALTER TABLE pieza ADD COLUMN archivo_id INTEGER");
+    },
+  },
+  {
+    version: 14,
+    nombre: "trozos e indice",
+    up(db) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS trozo (
+          id INTEGER PRIMARY KEY,
+          archivo_id INTEGER REFERENCES archivo(id) ON DELETE CASCADE,
+          pieza_id INTEGER REFERENCES pieza(id) ON DELETE CASCADE,
+          orden INTEGER NOT NULL,
+          pagina INTEGER NOT NULL DEFAULT 0,
+          titulo TEXT NOT NULL DEFAULT '',
+          texto TEXT NOT NULL,
+          tokens_aprox INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE INDEX IF NOT EXISTS trozo_archivo ON trozo(archivo_id, orden);
+      `);
+      // FTS5 viene en el SQLite de Node y de Electron 44 (verificado). Si
+      // alguna vez falta, la búsqueda sigue con el BM25 en JavaScript.
+      try {
+        db.exec(`
+          CREATE VIRTUAL TABLE IF NOT EXISTS trozo_fts USING fts5(texto, titulo, content='trozo', content_rowid='id', tokenize='unicode61 remove_diacritics 2');
+          CREATE TRIGGER IF NOT EXISTS trozo_ai AFTER INSERT ON trozo BEGIN
+            INSERT INTO trozo_fts(rowid, texto, titulo) VALUES (new.id, new.texto, new.titulo);
+          END;
+          CREATE TRIGGER IF NOT EXISTS trozo_ad AFTER DELETE ON trozo BEGIN
+            INSERT INTO trozo_fts(trozo_fts, rowid, texto, titulo) VALUES ('delete', old.id, old.texto, old.titulo);
+          END;
+        `);
+      } catch {
+        /* sin FTS5: queda el BM25 */
+      }
+    },
+  },
+  {
+    version: 15,
+    nombre: "solo local y envios a la nube",
+    up(db) {
+      const cols = new Set(db.prepare("PRAGMA table_info(doc_proyecto)").all().map((fila) => fila.name));
+      if (!cols.has("solo_local")) db.exec("ALTER TABLE doc_proyecto ADD COLUMN solo_local INTEGER NOT NULL DEFAULT 1");
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS envio_nube (
+          id INTEGER PRIMARY KEY,
+          fecha TEXT NOT NULL,
+          proyecto_id INTEGER,
+          proveedor TEXT NOT NULL DEFAULT '',
+          modelo TEXT NOT NULL DEFAULT '',
+          motivo TEXT NOT NULL DEFAULT '',
+          caracteres INTEGER NOT NULL DEFAULT 0,
+          tokens_aprox INTEGER NOT NULL DEFAULT 0,
+          archivos TEXT NOT NULL DEFAULT '[]',
+          sha256 TEXT NOT NULL DEFAULT ''
+        );
+        CREATE INDEX IF NOT EXISTS envio_nube_fecha ON envio_nube(fecha);
+      `);
+    },
+  },
 ];

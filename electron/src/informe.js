@@ -98,23 +98,23 @@ export function htmlInforme(informe, dia) {
   <title>Informe ${html(dia)} ${html(nombreCliente(cliente) || "Abogado")}</title>
   <style>
     @page { size: A4; margin: 16mm 14mm; }
-    body { margin: 0; color: #221c16; font-family: "Liberation Sans", "Segoe UI", sans-serif; font-size: 12px; line-height: 1.45; }
+    body { margin: 0; color: #1b2735; font-family: "Liberation Sans", "Segoe UI", sans-serif; font-size: 12px; line-height: 1.45; }
     h1, h2 { font-family: Palatino, Georgia, serif; font-weight: 600; }
     h1 { font-size: 26px; margin: 0; }
     h2 { font-size: 16px; margin: 4px 0; }
     h3 { font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; margin: 12px 0 4px; }
-    .marca { margin: 0; color: #7a3e22; font-size: 11px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; }
-    .fecha { margin: 2px 0 0; color: #5e574e; }
+    .marca { margin: 0; color: #17456e; font-size: 11px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; }
+    .fecha { margin: 2px 0 0; color: #5b6b7c; }
     .cliente { margin: 16px 0 0; font-size: 18px; }
-    .contacto, .cuenta, .despacho, .aviso, .nota { color: #5e574e; }
+    .contacto, .cuenta, .despacho, .aviso, .nota { color: #5b6b7c; }
     .contacto, .cuenta { margin: 2px 0 0; }
-    .expediente { margin-top: 18px; padding-top: 12px; border-top: 1px solid #e0d6c8; break-inside: avoid; }
-    .kicker { margin: 0; color: #7a3e22; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+    .expediente { margin-top: 18px; padding-top: 12px; border-top: 1px solid #d3dce4; break-inside: avoid; }
+    .kicker { margin: 0; color: #17456e; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
     .radicado { margin: 0; font-family: "Liberation Mono", ui-monospace, monospace; letter-spacing: 0.02em; }
     .despacho, .aviso, .nota, .cuando, .que { margin: 2px 0 0; }
-    .cuando { color: #7a3e22; font-weight: 700; }
+    .cuando { color: #17456e; font-weight: 700; }
     .acto { margin-top: 8px; }
-    .pie { margin-top: 22px; color: #5e574e; font-size: 11px; }
+    .pie { margin-top: 22px; color: #5b6b7c; font-size: 11px; }
   </style>
 </head>
 <body>

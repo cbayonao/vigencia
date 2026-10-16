@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
   <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; frame-src 'self' http://127.0.0.1:*">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Procesos · Vigencia</title>
   <script src="./tema.js"></script>
@@ -125,25 +125,103 @@
       </header>
       <div class="cuerpo">
         <aside class="izquierda">
+          <div class="pp-tabs" role="tablist" aria-label="Publicaciones">
+            <button type="button" class="pp-tab elegida" id="pp-tab-buscar" role="tab" aria-selected="true" aria-controls="pp-panel-buscar">Buscar</button>
+            <button type="button" class="pp-tab" id="pp-tab-cargados" role="tab" aria-selected="false" aria-controls="pp-panel-cargados">Cargados <span id="pp-tab-cuenta"></span></button>
+          </div>
+          <div id="pp-panel-buscar" role="tabpanel" aria-labelledby="pp-tab-buscar">
           <p class="etiqueta primera">Departamento</p>
           <select id="pp-depto" aria-label="Departamento"></select>
           <p class="etiqueta">Municipio</p>
           <select id="pp-muni" aria-label="Municipio"></select>
-          <p class="etiqueta">Despacho</p>
-          <input id="pp-texto" placeholder="Filtrar por nombre o código" aria-label="Filtrar despachos" autocomplete="off" spellcheck="false">
-          <select id="pp-despacho" size="8" aria-label="Despacho"></select>
+          <p class="etiqueta">Especialidad</p>
+          <select id="pp-especialidad" aria-label="Especialidad"></select>
+          <p class="etiqueta">Buscar</p>
+          <input id="pp-texto" placeholder="Palabras en cualquier orden" aria-label="Buscar despachos" autocomplete="off" spellcheck="false">
+          <p class="etiqueta">Despacho <span class="cuenta" id="pp-cuenta"></span></p>
+          <div class="lista pp-despachos" id="pp-despacho" role="listbox" aria-label="Despacho" tabindex="0"></div>
           <div class="fila-fin">
             <button type="button" class="boton-cobre" id="pp-cargar">Cargar</button>
             <button type="button" class="boton-linea" id="pp-cancelar" hidden>Cancelar</button>
           </div>
           <div class="barra-progreso" id="pp-barra" hidden><span></span></div>
-          <p class="ayuda" id="pp-estado">Elija un despacho para traer sus publicaciones. La carga corre en segundo plano.</p>
-          <p class="etiqueta">Despachos cargados</p>
-          <div class="lista" id="pp-cargados"></div>
+          <p class="ayuda" id="pp-estado">Elija un despacho para traer sus últimas 5 páginas. La carga corre en segundo plano.</p>
+          </div>
+          <div id="pp-panel-cargados" role="tabpanel" aria-labelledby="pp-tab-cargados" hidden>
+            <p class="etiqueta primera">Cargados en este computador</p>
+            <p class="ayuda">Quedan guardados aquí mismo, sin los PDF.</p>
+            <p class="etiqueta">Revisar novedades (todos los sistemas)</p>
+            <select id="pp-frecuencia" aria-label="Cada cuánto revisar novedades">
+              <option value="0">Apagada</option>
+              <option value="12">Cada 12 horas</option>
+              <option value="24">Cada día</option>
+              <option value="48">Cada 2 días</option>
+            </select>
+            <div class="lista" id="pp-cargados"></div>
+          </div>
         </aside>
         <main class="derecha" id="pp-detalle">
           <p class="ayuda" id="pp-vacio">Aquí se ven las publicaciones del despacho elegido, con sus documentos.</p>
           <div class="lista" id="pp-lista"></div>
+        </main>
+      </div>
+    </div>
+    <div class="pantalla" id="pantalla-spoa" hidden>
+      <header class="barra">
+        <div>
+          <p class="marca">Vigencia</p>
+          <h1 class="nombre serif">SPOA · Fiscalía</h1>
+        </div>
+      </header>
+      <div class="cuerpo">
+        <aside class="izquierda">
+          <p class="etiqueta primera">Radicado SPOA</p>
+          <div class="fila-agregar">
+            <input id="spoa-numero" class="mono" inputmode="numeric" autocomplete="off" spellcheck="false" placeholder="21 o 23 dígitos" aria-label="Radicado SPOA">
+            <button type="button" class="boton-cobre" id="spoa-consultar">Consultar</button>
+          </div>
+          <p class="ayuda" id="spoa-ayuda">Noticia de 21 dígitos (o 23) de la Fiscalía.</p>
+          <p class="etiqueta">Casos consultados</p>
+          <input id="spoa-texto" placeholder="Palabras en cualquier orden" aria-label="Buscar casos" autocomplete="off" spellcheck="false">
+          <p class="etiqueta">Estado</p>
+          <select id="spoa-estado" aria-label="Estado"></select>
+          <p class="etiqueta">Etapa</p>
+          <select id="spoa-etapa" aria-label="Etapa"></select>
+          <div class="lista" id="spoa-casos"></div>
+        </aside>
+        <main class="derecha" id="spoa-detalle">
+          <p class="ayuda" id="spoa-vacio">Aquí se ve la ficha del caso y sus actuaciones.</p>
+          <div id="spoa-ficha"></div>
+        </main>
+      </div>
+    </div>
+    <div class="pantalla" id="pantalla-samai" hidden>
+      <header class="barra">
+        <div>
+          <p class="marca">Vigencia</p>
+          <h1 class="nombre serif">SAMAI · Consejo de Estado</h1>
+        </div>
+      </header>
+      <div class="cuerpo">
+        <aside class="izquierda">
+          <p class="etiqueta primera">Juzgado</p>
+          <select id="samai-corporacion" aria-label="Juzgado"></select>
+          <p class="etiqueta">Cédula o radicado</p>
+          <div class="fila-agregar">
+            <input id="samai-criterio" class="mono" autocomplete="off" spellcheck="false" placeholder="Cédula o 23 dígitos" aria-label="Cédula o radicado">
+            <button type="button" class="boton-cobre" id="samai-buscar">Buscar</button>
+          </div>
+          <p class="ayuda" id="samai-ayuda">Si escribe el radicado va directo; si no, busca por parte.</p>
+          <p class="etiqueta">Clase</p>
+          <select id="samai-clase" aria-label="Clase"></select>
+          <p class="etiqueta">Buscar</p>
+          <input id="samai-texto" placeholder="Palabras en cualquier orden" aria-label="Buscar casos" autocomplete="off" spellcheck="false">
+          <p class="etiqueta">Casos guardados <span class="cuenta" id="samai-cuenta"></span></p>
+          <div class="lista" id="samai-lista"></div>
+        </aside>
+        <main class="derecha" id="samai-detalle">
+          <p class="ayuda" id="samai-vacio">Aquí se ve la ficha del proceso, con demandante y demandado, y sus actuaciones.</p>
+          <div id="samai-ficha"></div>
         </main>
       </div>
     </div>
@@ -397,6 +475,19 @@
       <div class="directorio" id="nubes-lista"></div>
       <div class="fila-fin">
         <button type="button" class="boton-cobre" id="modelos-cerrar">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="cortina" id="dialogo-pp-doc" hidden>
+    <div class="dialogo dialogo-pp-doc" role="dialog" aria-modal="true" aria-labelledby="pp-doc-titulo">
+      <h2 class="serif dialogo-titulo" id="pp-doc-titulo">Documento</h2>
+      <p class="nota" id="pp-doc-info">Cargando vista previa…</p>
+      <iframe id="pp-doc-marco" title="Vista previa del documento"></iframe>
+      <div class="fila-fin">
+        <button type="button" class="boton-linea" id="pp-doc-navegador">Abrir en navegador</button>
+        <button type="button" class="boton-linea" id="pp-doc-descargar">Descargar</button>
+        <button type="button" class="boton-cobre" id="pp-doc-cerrar">Cerrar</button>
       </div>
     </div>
   </div>

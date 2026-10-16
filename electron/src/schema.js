@@ -363,4 +363,81 @@ export const MIGRACIONES = [
       `);
     },
   },
+  {
+    version: 9,
+    nombre: "casos spoa",
+    up(db) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS spoa_caso (
+          noticia TEXT PRIMARY KEY,
+          caso_id TEXT NOT NULL DEFAULT '',
+          despacho TEXT NOT NULL DEFAULT '',
+          unidad TEXT NOT NULL DEFAULT '',
+          seccional TEXT NOT NULL DEFAULT '',
+          direccion TEXT NOT NULL DEFAULT '',
+          telefono TEXT NOT NULL DEFAULT '',
+          depto_unidad TEXT NOT NULL DEFAULT '',
+          muni_unidad TEXT NOT NULL DEFAULT '',
+          fecha_asignacion TEXT NOT NULL DEFAULT '',
+          estado TEXT NOT NULL DEFAULT '',
+          etapa TEXT NOT NULL DEFAULT '',
+          ley TEXT NOT NULL DEFAULT '',
+          correo TEXT NOT NULL DEFAULT '',
+          depto_hecho TEXT NOT NULL DEFAULT '',
+          muni_hecho TEXT NOT NULL DEFAULT '',
+          fecha_hechos TEXT NOT NULL DEFAULT '',
+          delitos TEXT NOT NULL DEFAULT '',
+          reservado TEXT NOT NULL DEFAULT '',
+          conexado TEXT NOT NULL DEFAULT '',
+          actualizada TEXT NOT NULL DEFAULT ''
+        );
+        CREATE TABLE IF NOT EXISTS spoa_actuacion (
+          id INTEGER PRIMARY KEY,
+          noticia TEXT NOT NULL,
+          fecha TEXT NOT NULL DEFAULT '',
+          descripcion TEXT NOT NULL DEFAULT '',
+          UNIQUE(noticia, fecha, descripcion)
+        );
+        CREATE INDEX IF NOT EXISTS spoa_act_noticia ON spoa_actuacion(noticia);
+      `);
+    },
+  },
+  {
+    version: 10,
+    nombre: "casos samai",
+    up(db) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS samai_caso (
+          guid TEXT PRIMARY KEY,
+          radicado TEXT NOT NULL DEFAULT '',
+          corporacion TEXT NOT NULL DEFAULT '',
+          ponente TEXT NOT NULL DEFAULT '',
+          despacho TEXT NOT NULL DEFAULT '',
+          despacho_lindo TEXT NOT NULL DEFAULT '',
+          titular TEXT NOT NULL DEFAULT '',
+          clase TEXT NOT NULL DEFAULT '',
+          fecha_ingreso TEXT NOT NULL DEFAULT '',
+          vigente TEXT NOT NULL DEFAULT '',
+          asunto TEXT NOT NULL DEFAULT '',
+          demandante TEXT NOT NULL DEFAULT '',
+          demandado TEXT NOT NULL DEFAULT '',
+          url_detalle TEXT NOT NULL DEFAULT '',
+          actualizada TEXT NOT NULL DEFAULT ''
+        );
+        CREATE TABLE IF NOT EXISTS samai_actuacion (
+          id INTEGER PRIMARY KEY,
+          guid TEXT NOT NULL,
+          fecha_registro TEXT NOT NULL DEFAULT '',
+          fecha TEXT NOT NULL DEFAULT '',
+          actuacion TEXT NOT NULL DEFAULT '',
+          anotacion TEXT NOT NULL DEFAULT '',
+          estado TEXT NOT NULL DEFAULT '',
+          anexos TEXT NOT NULL DEFAULT '',
+          indice TEXT NOT NULL DEFAULT '',
+          UNIQUE(guid, indice)
+        );
+        CREATE INDEX IF NOT EXISTS samai_act_guid ON samai_actuacion(guid);
+      `);
+    },
+  },
 ];

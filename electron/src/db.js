@@ -593,3 +593,128 @@ export function ppOlvidar(db, despacho) {
     run(db, "DELETE FROM pp_carga WHERE despacho = ?", [despacho]);
   });
 }
+
+export function guardarSpCaso(db, registro) {
+  return transaccion(db, () => {
+    run(db, `INSERT INTO spoa_caso (noticia, caso_id, despacho, unidad, seccional, direccion,
+        telefono, depto_unidad, muni_unidad, fecha_asignacion, estado, etapa, ley, correo,
+        depto_hecho, muni_hecho, fecha_hechos, delitos, reservado, conexado, actualizada)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now', 'localtime'))
+      ON CONFLICT(noticia) DO UPDATE SET caso_id = excluded.caso_id, despacho = excluded.despacho,
+        unidad = excluded.unidad, seccional = excluded.seccional, direccion = excluded.direccion,
+        telefono = excluded.telefono, depto_unidad = excluded.depto_unidad, muni_unidad = excluded.muni_unidad,
+        fecha_asignacion = excluded.fecha_asignacion, estado = excluded.estado, etapa = excluded.etapa,
+        ley = excluded.ley, correo = excluded.correo, depto_hecho = excluded.depto_hecho,
+        muni_hecho = excluded.muni_hecho, fecha_hechos = excluded.fecha_hechos, delitos = excluded.delitos,
+        reservado = excluded.reservado, conexado = excluded.conexado, actualizada = excluded.actualizada`, [
+      registro.noticia || "", registro.caso_id || "", registro.despacho || "",
+      registro.unidad?.descripcion || "", registro.unidad?.seccional || "",
+      registro.unidad?.direccion || "", registro.unidad?.telefono || "",
+      registro.unidad?.depto || "", registro.unidad?.muni || "",
+      registro.fecha_asignacion || "", registro.estado || "", registro.etapa || "",
+      registro.ley || "", registro.correo || "", registro.hechos?.depto || "",
+      registro.hechos?.muni || "", registro.hechos?.fecha || "",
+      (registro.delitos || []).join(" # "), registro.reservado || "", registro.conexado || "",
+    ]);
+    let nuevas = 0;
+    for (const a of registro.actuaciones || []) {
+      const r = run(db, "INSERT OR IGNORE INTO spoa_actuacion (noticia, fecha, descripcion) VALUES (?, ?, ?)", [
+        registro.noticia || "", a.fecha || "", a.descripcion || "",
+      ]);
+      nuevas += Number(r.changes || 0);
+    }
+    return nuevas;
+  });
+}
+
+export function spoaCasos(db) {
+  return filas(db, `SELECT c.noticia, c.despacho, c.estado, c.etapa, c.actualizada,
+      (SELECT COUNT(*) FROM spoa_actuacion WHERE noticia = c.noticia) AS actuaciones
+    FROM spoa_caso c ORDER BY c.actualizada DESC`);
+}
+
+export function spoaCaso(db, noticia) {
+  const caso = uno(db, "SELECT * FROM spoa_caso WHERE noticia = ?", [noticia]);
+  if (!caso) return null;
+  return {
+    ...caso,
+    delitos: String(caso.delitos || "").split(" # ").filter(Boolean),
+    actuaciones: filas(db, "SELECT fecha, descripcion FROM spoa_actuacion WHERE noticia = ? ORDER BY id", [noticia]),
+  };
+}
+
+export function spoaOlvidar(db, noticia) {
+  transaccion(db, () => {
+    run(db, "DELETE FROM spoa_actuacion WHERE noticia = ?", [noticia]);
+    run(db, "DELETE FROM spoa_caso WHERE noticia = ?", [noticia]);
+  });
+}
+
+export function guardarSamaiCaso(db, proceso) {
+  return transaccion(db, () => {
+    run(db, `INSERT INTO samai_caso (guid, radicado, corporacion, ponente, despacho,
+        despacho_lindo, titular, clase, fecha_ingreso, vigente, asunto, demandante,
+        demandado, url_detalle, actualizada)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now', 'localtime'))
+      ON CONFLICT(guid) DO UPDATE SET radicado = excluded.radicado, corporacion = excluded.corporacion,
+        ponente = excluded.ponente, despacho = excluded.despacho, despacho_lindo = excluded.despacho_lindo,
+        titular = excluded.titular, clase = excluded.clase, fecha_ingreso = excluded.fecha_ingreso,
+        vigente = excluded.vigente, asunto = excluded.asunto, demandante = excluded.demandante,
+        demandado = excluded.demandado, url_detalle = excluded.url_detalle, actualizada = excluded.actualizada`, [
+      proceso.guid || "", proceso.radicado || "", proceso.corporacion || "", proceso.ponente || "",
+      proceso.despacho || "", proceso.despacho_lindo || "", proceso.titular || "", proceso.clase || "",
+      proceso.fecha_ingreso || "", proceso.vigente || "", proceso.asunto || "",
+      proceso.demandante || "", proceso.demandado || "", proceso.url_detalle || "",
+    ]);
+    let nuevas = 0;
+    for (const a of proceso.actuaciones || []) {
+      const r = run(db, `INSERT OR IGNORE INTO samai_actuacion
+        (guid, fecha_registro, fecha, actuacion, anotacion, estado, anexos, indice)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, [
+        proceso.guid || "", a.fecha_registro || "", a.fecha || "", a.actuacion || "",
+        a.anotacion || "", a.estado || "", a.anexos || "", a.indice || "",
+      ]);
+      nuevas += Number(r.changes || 0);
+    }
+    return nuevas;
+  });
+}
+
+export function samaiCasos(db) {
+  return filas(db, `SELECT c.guid, c.radicado, c.clase, c.despacho, c.demandante, c.demandado,
+      c.actualizada,
+      (SELECT COUNT(*) FROM samai_actuacion WHERE guid = c.guid) AS actuaciones
+    FROM samai_caso c ORDER BY c.actualizada DESC`);
+}
+
+export function samaiCaso(db, guid) {
+  const caso = uno(db, "SELECT * FROM samai_caso WHERE guid = ?", [guid]);
+  if (!caso) return null;
+  return {
+    ...caso,
+    actuaciones: filas(db, "SELECT fecha_registro, fecha, actuacion, anotacion, estado, anexos, indice FROM samai_actuacion WHERE guid = ? ORDER BY id", [guid]),
+  };
+}
+
+export function samaiOlvidar(db, guid) {
+  transaccion(db, () => {
+    run(db, "DELETE FROM samai_actuacion WHERE guid = ?", [guid]);
+    run(db, "DELETE FROM samai_caso WHERE guid = ?", [guid]);
+  });
+}
+
+export const FRECUENCIAS_SISTEMAS = [0, 12, 24, 48];
+
+export function leerFrecuenciaSistemas(db) {
+  const crudo = leerAjuste(db, "revision_sistemas_horas") ?? leerAjuste(db, "pp_frecuencia_horas");
+  if (crudo === null || crudo === "") return 24;
+  const horas = Number(crudo);
+  return FRECUENCIAS_SISTEMAS.includes(horas) ? horas : 24;
+}
+
+export function guardarFrecuenciaSistemas(db, horas) {
+  const n = Number(horas);
+  if (!FRECUENCIAS_SISTEMAS.includes(n)) throw new Error("Frecuencia no válida.");
+  guardarAjuste(db, "revision_sistemas_horas", String(n));
+  return n;
+}

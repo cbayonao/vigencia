@@ -1,6 +1,9 @@
 import { estadoMotor, instalarMotor, usarDatosMotor, diagnosticoMotor } from "./motor.js";
-import { crearCargaPp } from "./pp.js";
+import { abrirSesion, crearCargaPp, deptoDeDespacho, traerPdf } from "./pp.js";
+import { buscarSp } from "./spoa.js";
+import { abrirSesionSam, actuacionesSam, buscarSam, corporacionesSam } from "./samai.js";
 import fs from "node:fs";
+import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import {
@@ -26,6 +29,7 @@ import {
   turnoCubierto,
 } from "../compartido/horario.js";
 import { ahora, decidirActualizar, nombreCliente, normalizarRadicado } from "../compartido/logica.js";
+import { nombreArchivoPdf } from "../compartido/pp.js";
 import { columnasDeRadicado } from "./csv.js";
 import { activarCodigo, confirmarPlan, fotoLicencia, iniciarPlan, leerPlan } from "./licencia.js";
 import { urlServicio } from "../compartido/licencia.js";
@@ -60,7 +64,17 @@ import {
   guardarHorarios,
   guardarInicioSesion,
   guardarUltimoTurno,
+  guardarSamaiCaso,
+  guardarSpCaso,
+  samaiCaso,
+  samaiCasos,
+  samaiOlvidar,
+  spoaCaso,
+  spoaCasos,
+  spoaOlvidar,
   iniciarRevision,
+  leerFrecuenciaSistemas,
+  guardarFrecuenciaSistemas,
   leerHorarios,
   leerInicioSesion,
   leerUltimoTurno,
@@ -109,6 +123,19 @@ let datosDir = "";
 let cargaPendiente = null;
 let cargaPp = null;
 let catalogoPp = null;
+const pdfsPp = new Map();
+let servidorPdf = null;
+let pdfPuerto = 0;
+
+function guardarPdfPp(nombre, bytes) {
+  const token = `${Date.now().toString(36)}-${Math.floor(Math.random() * 1e9).toString(36)}`;
+  pdfsPp.set(token, { nombre, bytes });
+  while (pdfsPp.size > 3) {
+    const primero = pdfsPp.keys().next().value;
+    pdfsPp.delete(primero);
+  }
+  return token;
+}
 let bandeja = null;
 let saliendo = false;
 let avisoBandejaMostrado = false;
@@ -133,6 +160,55 @@ function registrar(msg) {
   }
 }
 
+
+async function urlPdfLocal(token) {
+  if (!servidorPdf) {
+    servidorPdf = http.createServer((solicitud, respuesta) => {
+      let ruta = "";
+      try {
+        ruta = new URL(solicitud.url, "http://127.0.0.1").pathname;
+      } catch {
+        ruta = "";
+      }
+      const m = /^\/([a-z0-9-]+)$/.exec(ruta);
+      const doc = m ? pdfsPp.get(m[1]) : null;
+      if (!doc) {
+        respuesta.writeHead(404, { "Content-Type": "text/plain" });
+        respuesta.end("No está");
+        return;
+      }
+      const total = doc.bytes.length;
+      const rango = /^bytes=(\d*)-(\d*)$/.exec(String(solicitud.headers.range || ""));
+      if (rango) {
+        const inicio = rango[1] ? Number(rango[1]) : 0;
+        const fin = rango[2] ? Number(rango[2]) : total - 1;
+        if (inicio < total && fin < total && inicio <= fin) {
+          respuesta.writeHead(206, {
+            "Content-Type": "application/pdf",
+            "Content-Length": fin - inicio + 1,
+            "Content-Range": `bytes ${inicio}-${fin}/${total}`,
+            "Accept-Ranges": "bytes",
+            "Cache-Control": "no-store",
+          });
+          respuesta.end(doc.bytes.subarray(inicio, fin + 1));
+          return;
+        }
+      }
+      respuesta.writeHead(200, {
+        "Content-Type": "application/pdf",
+        "Content-Length": total,
+        "Accept-Ranges": "bytes",
+        "Cache-Control": "no-store",
+      });
+      respuesta.end(doc.bytes);
+    });
+    await new Promise((resolver) => servidorPdf.listen(0, "127.0.0.1", resolver));
+    const dir = servidorPdf.address();
+    pdfPuerto = dir && typeof dir === "object" ? dir.port : 0;
+  }
+  if (!pdfPuerto) return null;
+  return `http://127.0.0.1:${pdfPuerto}/${token}`;
+}
 
 function resolverApp(solicitud) {
   const url = new URL(solicitud);
@@ -280,6 +356,128 @@ function abrirCambios(ids) {
     enviar("abrir-cambios", ids);
     cambiosPendientes = null;
   }
+}
+
+// Revisión de sistemas: cada tantas horas (lo elige el usuario, 0 = apagada)
+// revisa publicaciones, SPOA y SAMAI guardados y avisa si algo se movió.
+// Solo con plan vigente y sin carga manual en curso.
+let ppTemporizador = null;
+let ppIntervalo = null;
+
+function programarPpDiario() {
+  if (ppTemporizador) clearTimeout(ppTemporizador);
+  if (ppIntervalo) clearInterval(ppIntervalo);
+  ppTemporizador = null;
+  ppIntervalo = null;
+  const horas = leerFrecuenciaSistemas(db);
+  if (!horas) return;
+  const correr = () => {
+    actualizarPpDiaria().catch((error) => console.error(error));
+  };
+  ppTemporizador = setTimeout(correr, 10 * 60 * 1000);
+  ppTemporizador.unref?.();
+  ppIntervalo = setInterval(correr, horas * 60 * 60 * 1000);
+  ppIntervalo.unref?.();
+}
+
+async function actualizarSpoaDiaria() {
+  const resumen = [];
+  let lista = [];
+  try {
+    lista = spoaCasos(db);
+  } catch {
+    return resumen;
+  }
+  for (const c of lista) {
+    try {
+      const registros = await buscarSp(c.noticia);
+      const nuevas = guardarSpCaso(db, registros[0]);
+      if (nuevas > 0) resumen.push({ noticia: c.noticia, nuevas });
+    } catch {
+      /* sigue con el siguiente caso */
+    }
+    await new Promise((r) => setTimeout(r, 2000));
+  }
+  return resumen;
+}
+
+async function actualizarSamaiDiaria() {
+  const resumen = [];
+  let lista = [];
+  try {
+    lista = samaiCasos(db);
+  } catch {
+    return resumen;
+  }
+  if (!lista.length) return resumen;
+  let sesion = null;
+  try {
+    sesion = await abrirSesionSam();
+  } catch {
+    return resumen;
+  }
+  for (const c of lista) {
+    try {
+      const actuaciones = await actuacionesSam(sesion, c.guid);
+      const ficha = samaiCaso(db, c.guid) || {};
+      const nuevas = guardarSamaiCaso(db, { ...ficha, guid: c.guid, actuaciones });
+      if (nuevas > 0) resumen.push({ guid: c.guid, radicado: c.radicado, nuevas });
+    } catch {
+      /* sigue con el siguiente caso */
+    }
+    await new Promise((r) => setTimeout(r, 2000));
+  }
+  return resumen;
+}
+
+async function actualizarPpDiaria() {
+  if (cargaPp?.estado.corriendo) return;
+  if (!planVigente()) return;
+  let lista = [];
+  try {
+    lista = ppCargados(db).filter((c) => c.estado === "lista");
+  } catch {
+    return;
+  }
+  const partes = [];
+  if (lista.length) {
+    const resumen = [];
+    for (const c of lista) {
+      const depto = deptoDeDespacho(db, c.codigo);
+      if (!depto) continue;
+      const trabajo = crearCargaPp(db, { depto, despacho: c.codigo });
+      cargaPp = trabajo;
+      try {
+        const final = await trabajo.correr((estado) => enviar("pp-progreso", estado));
+        if (final.nuevos > 0) resumen.push({ despacho: c.codigo, nuevos: final.nuevos, docs: final.docs });
+      } catch {
+        /* sigue con el siguiente despacho */
+      }
+    }
+    cargaPp = null;
+    const nuevos = resumen.reduce((n, r) => n + r.nuevos, 0);
+    if (nuevos > 0) {
+      partes.push(nuevos === 1 ? "1 documento nuevo en publicaciones" : `${nuevos} documentos nuevos en ${resumen.length} despachos`);
+      enviar("pp-novedades", { resumen });
+    }
+  }
+  for (const c of await actualizarSpoaDiaria()) {
+    partes.push(`SPOA ${c.noticia}: ${c.nuevas} nuevas`);
+  }
+  if (partes.length) enviar("spoa-novedades", {});
+  for (const c of await actualizarSamaiDiaria()) {
+    partes.push(`SAMAI ${c.radicado}: ${c.nuevas} nuevas`);
+  }
+  if (partes.length) enviar("samai-novedades", {});
+  if (!partes.length) return;
+  const cuerpo = partes.join(" · ");
+  const mostrar = () => {
+    mostrarVentana();
+  };
+  if (ventana && !ventana.isDestroyed() && ventana.isVisible()) {
+    /* ya se enviaron los eventos para refrescar */
+  }
+  notificar({ title: "Novedades en los sistemas", body: cuerpo, alClic: mostrar });
 }
 
 function rutaOmitida() {
@@ -832,6 +1030,67 @@ if (bloqueo) {
       ppOlvidar(db, String(dato?.despacho || ""));
       return {};
     }));
+    ipcMain.handle("spoa-consultar", async (_evento, dato) => {
+      try {
+        const registros = await buscarSp(String(dato?.radicado || ""));
+        const registro = registros[0];
+        const nuevas = guardarSpCaso(db, registro);
+        return { ok: true, caso: spoaCaso(db, registro.noticia), nuevas };
+      } catch (error) {
+        return { ok: false, error: mensajeHumano(error) };
+      }
+    });
+    ipcMain.handle("spoa-casos", () => responder(() => ({ casos: spoaCasos(db) })));
+    ipcMain.handle("spoa-caso", (_evento, dato) => responder(() => ({
+      caso: spoaCaso(db, String(dato?.noticia || "")),
+    })));
+    ipcMain.handle("spoa-olvidar", (_evento, dato) => responder(() => {
+      spoaOlvidar(db, String(dato?.noticia || ""));
+      return {};
+    }));
+    ipcMain.handle("samai-corporaciones", async () => {
+      try {
+        return { ok: true, corporaciones: await corporacionesSam(await abrirSesionSam()) };
+      } catch (error) {
+        return { ok: false, error: mensajeHumano(error) };
+      }
+    });
+    ipcMain.handle("samai-buscar", async (_evento, dato) => {
+      try {
+        const sesion = await abrirSesionSam();
+        const r = await buscarSam(sesion, String(dato?.criterio || ""), String(dato?.corporacion || ""), 1);
+        return { ok: true, ...r };
+      } catch (error) {
+        return { ok: false, error: mensajeHumano(error) };
+      }
+    });
+    ipcMain.handle("samai-ver", async (_evento, dato) => {
+      try {
+        const guid = String(dato?.guid || "");
+        if (!guid) return { ok: false, error: "Falta el proceso." };
+        const sesion = await abrirSesionSam();
+        const actuaciones = await actuacionesSam(sesion, guid);
+        const ficha = samaiCaso(db, guid) || {};
+        const nuevas = guardarSamaiCaso(db, { ...ficha, guid, actuaciones });
+        return { ok: true, caso: samaiCaso(db, guid), nuevas };
+      } catch (error) {
+        return { ok: false, error: mensajeHumano(error) };
+      }
+    });
+    ipcMain.handle("samai-casos", () => responder(() => ({ casos: samaiCasos(db) })));
+    ipcMain.handle("samai-caso", (_evento, dato) => responder(() => ({
+      caso: samaiCaso(db, String(dato?.guid || "")),
+    })));
+    ipcMain.handle("samai-olvidar", (_evento, dato) => responder(() => {
+      samaiOlvidar(db, String(dato?.guid || ""));
+      return {};
+    }));
+    ipcMain.handle("pp-frecuencia", () => responder(() => ({ horas: leerFrecuenciaSistemas(db) })));
+    ipcMain.handle("pp-guardar-frecuencia", (_evento, dato) => responder(() => {
+      const horas = guardarFrecuenciaSistemas(db, dato?.horas);
+      programarPpDiario();
+      return { horas };
+    }));
     ipcMain.handle("pp-abrir", (_evento, dato) => {
       try {
         const url = new URL(String(dato?.url || ""));
@@ -842,6 +1101,47 @@ if (bloqueo) {
         return { ok: true };
       } catch {
         return { ok: false };
+      }
+    });
+    ipcMain.handle("pp-vista", async (_evento, dato) => {
+      try {
+        const url = new URL(String(dato?.url || ""));
+        if (url.protocol !== "https:" || url.hostname !== "publicacionesprocesales.ramajudicial.gov.co") {
+          return { ok: false, error: "Ese enlace no es del micrositio." };
+        }
+        const sesion = await abrirSesion();
+        const { bytes } = await traerPdf(sesion, url.toString());
+        const nombre = String(dato?.nombre || "Documento");
+        const token = guardarPdfPp(nombre, bytes);
+        const urlLocal = await urlPdfLocal(token);
+        if (!urlLocal) return { ok: false, error: "No pude abrir la vista previa." };
+        return { ok: true, token, tamano: bytes.length, url: urlLocal };
+      } catch (error) {
+        return { ok: false, error: mensajeHumano(error) };
+      }
+    });
+    ipcMain.handle("pp-descargar", async (_evento, dato) => {
+      try {
+        const url = new URL(String(dato?.url || ""));
+        if (url.protocol !== "https:" || url.hostname !== "publicacionesprocesales.ramajudicial.gov.co") {
+          return { ok: false, error: "Ese enlace no es del micrositio." };
+        }
+        let bytes = pdfsPp.get(String(dato?.token || ""))?.bytes || null;
+        if (!bytes) {
+          const sesion = await abrirSesion();
+          bytes = (await traerPdf(sesion, url.toString())).bytes;
+        }
+        const elegido = await dialog.showSaveDialog(ventana, {
+          title: "Guardar documento",
+          defaultPath: nombreArchivoPdf(dato?.nombre),
+          filters: [{ name: "PDF", extensions: ["pdf"] }],
+        });
+        if (elegido.canceled || !elegido.filePath) return { ok: false, cancelado: true };
+        fs.writeFileSync(elegido.filePath, bytes);
+        shell.showItemInFolder(elegido.filePath);
+        return { ok: true, ruta: elegido.filePath };
+      } catch (error) {
+        return { ok: false, error: mensajeHumano(error) };
       }
     });
     ipcMain.handle("motor-estado", () => responder(() => estadoMotor(datosDir, {
@@ -1176,6 +1476,7 @@ if (bloqueo) {
     aplicarInicioSesion();
     iniciarProgramador();
     programarRevisionActualizacion();
+    programarPpDiario();
   });
 
   app.on("before-quit", () => {
@@ -1186,6 +1487,11 @@ if (bloqueo) {
   });
   app.on("will-quit", () => {
     programador?.detener();
+    try {
+      servidorPdf?.close();
+    } catch {
+      /* ya estaba cerrado */
+    }
     try {
       db?.close();
     } catch {

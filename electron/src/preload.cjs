@@ -70,11 +70,40 @@ contextBridge.exposeInMainWorld("vigencia", {
   ppCargar: (depto, despacho) => ipcRenderer.invoke("pp-cargar", { depto, despacho }),
   ppCancelar: () => ipcRenderer.invoke("pp-cancelar"),
   ppOlvidar: (despacho) => ipcRenderer.invoke("pp-olvidar", { despacho }),
+  ppFrecuencia: () => ipcRenderer.invoke("pp-frecuencia"),
+  ppGuardarFrecuencia: (horas) => ipcRenderer.invoke("pp-guardar-frecuencia", { horas }),
   ppAbrir: (url) => ipcRenderer.invoke("pp-abrir", { url }),
+  spoaConsultar: (radicado) => ipcRenderer.invoke("spoa-consultar", { radicado }),
+  spoaCasos: () => ipcRenderer.invoke("spoa-casos"),
+  spoaCaso: (noticia) => ipcRenderer.invoke("spoa-caso", { noticia }),
+  spoaOlvidar: (noticia) => ipcRenderer.invoke("spoa-olvidar", { noticia }),
+  samaiCorporaciones: () => ipcRenderer.invoke("samai-corporaciones"),
+  samaiBuscar: (criterio, corporacion) => ipcRenderer.invoke("samai-buscar", { criterio, corporacion }),
+  samaiVer: (guid) => ipcRenderer.invoke("samai-ver", { guid }),
+  samaiCasos: () => ipcRenderer.invoke("samai-casos"),
+  samaiCaso: (guid) => ipcRenderer.invoke("samai-caso", { guid }),
+  samaiOlvidar: (guid) => ipcRenderer.invoke("samai-olvidar", { guid }),
+  ppVista: (url, nombre) => ipcRenderer.invoke("pp-vista", { url, nombre }),
+  ppDescargarDoc: (url, nombre, token) => ipcRenderer.invoke("pp-descargar", { url, nombre, token }),
   alPp: (fn) => {
     const canal = (_evento, dato) => fn(dato);
     ipcRenderer.on("pp-progreso", canal);
     return () => ipcRenderer.removeListener("pp-progreso", canal);
+  },
+  alPpNovedades: (fn) => {
+    const canal = (_evento, dato) => fn(dato);
+    ipcRenderer.on("pp-novedades", canal);
+    return () => ipcRenderer.removeListener("pp-novedades", canal);
+  },
+  alSpoaNovedades: (fn) => {
+    const canal = (_evento, dato) => fn(dato);
+    ipcRenderer.on("spoa-novedades", canal);
+    return () => ipcRenderer.removeListener("spoa-novedades", canal);
+  },
+  alSamaiNovedades: (fn) => {
+    const canal = (_evento, dato) => fn(dato);
+    ipcRenderer.on("samai-novedades", canal);
+    return () => ipcRenderer.removeListener("samai-novedades", canal);
   },
   actualizacionComprobar: () => ipcRenderer.invoke("actualizacion-comprobar"),
   actualizacionOmitir: (version) => ipcRenderer.invoke("actualizacion-omitir", { version }),

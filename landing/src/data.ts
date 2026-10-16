@@ -1,4 +1,4 @@
-export const VERSION = "3.2.5";
+export const VERSION = "3.3.0";
 export const PRECIO = "$599.900";
 // Descargas: nombres estables servidos por el CDN. El pipeline arma los
 // instaladores, los publica como release de GitHub y los espeja a S3;

@@ -9,11 +9,11 @@ import {
   sistemasVisibles,
 } from "../compartido/sistemas.js";
 
-test("la barra trae los siete sistemas y solo consulta y publicaciones están listos", () => {
+test("la barra trae los siete sistemas y cuatro están listos", () => {
   assert.deepEqual(SISTEMAS.map((sistema) => sistema.id), [
     "consulta", "micrositio", "spoa", "samai", "externa", "supersociedades", "sic",
   ]);
-  assert.deepEqual(SISTEMAS.filter((sistema) => sistema.listo).map((sistema) => sistema.id), ["consulta", "micrositio"]);
+  assert.deepEqual(SISTEMAS.filter((sistema) => sistema.listo).map((sistema) => sistema.id), ["consulta", "micrositio", "spoa", "samai"]);
   assert.equal(SISTEMA_INICIAL, "consulta");
 });
 

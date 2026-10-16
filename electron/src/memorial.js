@@ -57,21 +57,21 @@ function destinoHtml(ficha, fecha) {
 
 const ESTILOS = `
   @page { size: A4; margin: 18mm 16mm; }
-  body { margin: 0; color: #221c16; font-family: Georgia, "Times New Roman", serif; font-size: 12.5pt; line-height: 1.55; }
+  body { margin: 0; color: #1b2735; font-family: Georgia, "Times New Roman", serif; font-size: 12.5pt; line-height: 1.55; }
   .hoja { max-width: 170mm; margin: 0 auto; }
-  .marca { margin: 0; color: #7a3e22; font-family: "Liberation Sans", sans-serif; font-size: 10pt; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; }
+  .marca { margin: 0; color: #17456e; font-family: "Liberation Sans", sans-serif; font-size: 10pt; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; }
   h1 { font-size: 20pt; margin: 2mm 0 0; }
   .lugar { margin: 6mm 0 0; }
   p { margin: 2mm 0 0; }
   .despacho { font-weight: 700; }
   .ref { width: 100%; border-collapse: collapse; margin-top: 5mm; font-size: 11pt; }
-  .ref th, .ref td { border: 1px solid #c9b8a4; padding: 2mm 3mm; text-align: left; vertical-align: top; }
-  .ref th { width: 32mm; background: #f6f1e8; font-family: "Liberation Sans", sans-serif; font-size: 9.5pt; text-transform: uppercase; letter-spacing: 0.04em; }
+  .ref th, .ref td { border: 1px solid #b7c9da; padding: 2mm 3mm; text-align: left; vertical-align: top; }
+  .ref th { width: 32mm; background: #f4f7fa; font-family: "Liberation Sans", sans-serif; font-size: 9.5pt; text-transform: uppercase; letter-spacing: 0.04em; }
   .mono { font-family: "Liberation Mono", ui-monospace, monospace; }
-  h2 { font-size: 13pt; margin: 6mm 0 0; border-bottom: 1px solid #c9b8a4; padding-bottom: 1mm; }
+  h2 { font-size: 13pt; margin: 6mm 0 0; border-bottom: 1px solid #b7c9da; padding-bottom: 1mm; }
   section { break-inside: avoid; }
   .firma { letter-spacing: 0.1em; }
-  .pie { margin-top: 8mm; font-family: "Liberation Sans", sans-serif; font-size: 9.5pt; color: #5e574e; border-top: 1px solid #c9b8a4; padding-top: 2mm; }
+  .pie { margin-top: 8mm; font-family: "Liberation Sans", sans-serif; font-size: 9.5pt; color: #5b6b7c; border-top: 1px solid #b7c9da; padding-top: 2mm; }
 `;
 
 export function vistaMemorial({ asunto, secciones, ficha, fecha, origen }) {

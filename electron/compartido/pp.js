@@ -8,6 +8,65 @@ export const PP_PORTLET = "co_com_avanti_efectosProcesales_PublicacionesEfectosP
 export const PP_NS = `_${PP_PORTLET}_`;
 export const PP_PORTLET_ID = 178845807;
 export const PP_POR_PAGINA = 10;
+export const PP_ULTIMAS_PAGINAS = 5;
+
+// Solo las últimas páginas: lo nuevo sale primero y no se puede pedir más.
+export function rangoPaginas(total, porPagina = PP_POR_PAGINA, ultimas = PP_ULTIMAS_PAGINAS) {
+  const paginas = Math.max(1, Math.ceil(Number(total || 0) / porPagina));
+  return { inicio: Math.max(1, paginas - ultimas + 1), fin: paginas, total: paginas };
+}
+
+// Nombre seguro para guardar el PDF en el PC del usuario.
+export function nombreArchivoPdf(nombre) {
+  const base = String(nombre || "documento").replace(/[\\/:*?"<>|]/g, "").replace(/\s+/g, " ").trim().slice(0, 120);
+  const limpio = base || "documento";
+  return limpio.toLowerCase().endsWith(".pdf") ? limpio : `${limpio}.pdf`;
+}
+
+// Búsqueda avanzada: todas las palabras, en cualquier orden y sin tildes.
+export function normalizarTexto(valor) {
+  return String(valor || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
+export function coincideBusqueda(texto, consulta) {
+  const palabras = normalizarTexto(consulta).split(/\s+/).filter(Boolean);
+  if (!palabras.length) return true;
+  const base = normalizarTexto(texto);
+  return palabras.every((palabra) => base.includes(palabra));
+}
+
+// Tipo grueso para segmentar listas largas (Bogotá trae cientos).
+export function tipoDe(nombre) {
+  const n = ` ${String(nombre || "").toUpperCase()} `;
+  if (n.includes(" TRIBUNAL ")) return "Tribunales";
+  if (n.includes(" JUZGADO ")) return "Juzgados";
+  if (n.includes(" CORTE ") || n.includes(" CONSEJO ")) return "Cortes y consejos";
+  return "Otros";
+}
+
+const ESPECIALIDADES = [
+  ["Pequeñas causas", ["QUEÑAS CAUSAS"]],
+  ["Penal", ["PENAL"]],
+  ["Civil", ["CIVIL"]],
+  ["Laboral", ["LABORAL"]],
+  ["Familia", ["FAMILIA"]],
+  ["Administrativo", ["ADMINISTRATIV"]],
+  ["Disciplinario", ["DISCIPLIN"]],
+  ["Promiscuo", ["PROMISCUO"]],
+  ["Ejecución", ["EJECUCI"]],
+  ["Restitución", ["RESTITUCI"]],
+  ["Extinción", ["EXTINCI"]],
+  ["Agrario", ["AGRARI"]],
+  ["Aduanero", ["ADUANER"]],
+];
+
+export function especialidadDe(nombre) {
+  const n = ` ${String(nombre || "").toUpperCase()} `;
+  for (const [etiqueta, claves] of ESPECIALIDADES) {
+    if (claves.some((k) => n.includes(k))) return etiqueta;
+  }
+  return "Otra";
+}
 
 // El código del despacho trae el DANE: depto(2) + municipio(3) + resto.
 export function muniDe(codigo) {

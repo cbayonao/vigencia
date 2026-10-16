@@ -24,6 +24,7 @@ import {
   sistemaElegible,
   sistemasVisibles,
 } from "../compartido/sistemas.js";
+import { coincideBusqueda, especialidadDe } from "../compartido/pp.js";
 
 const $ = (id) => document.getElementById(id);
 const estado = {
@@ -310,6 +311,7 @@ const CAPAS = [
   "dialogo-pieza",
   "dialogo-actualizar",
   "dialogo-sistemas",
+  "dialogo-pp-doc",
 ];
 
 function cerrarMenuOpciones() {
@@ -1534,7 +1536,7 @@ document.addEventListener("keydown", (evento) => {
   }
   if (evento.key === "Escape") {
     if (cima === "dialogo-cliente") cerrarFormulario();
-    else if (cima === "dialogo-ajustes" || cima === "dialogo-csv" || cima === "dialogo-borrar" || cima === "dialogo-eliminar" || cima === "dialogo-escrito" || cima === "dialogo-modelos" || cima === "dialogo-iniciar" || cima === "dialogo-informe" || cima === "dialogo-asignar" || cima === "dialogo-directorio" || cima === "dialogo-biblioteca" || cima === "dialogo-pieza" || cima === "dialogo-actualizar" || cima === "dialogo-sistemas") ocultarDialogo(cima);
+    else if (cima === "dialogo-ajustes" || cima === "dialogo-csv" || cima === "dialogo-borrar" || cima === "dialogo-eliminar" || cima === "dialogo-escrito" || cima === "dialogo-modelos" || cima === "dialogo-iniciar" || cima === "dialogo-informe" || cima === "dialogo-asignar" || cima === "dialogo-directorio" || cima === "dialogo-biblioteca" || cima === "dialogo-pieza" || cima === "dialogo-actualizar" || cima === "dialogo-sistemas" || cima === "dialogo-pp-doc") ocultarDialogo(cima);
     else if (cima === "dialogo-busqueda" && !$("dialogo-cerrar").hidden) ocultarDialogo(cima);
     return;
   }
@@ -2128,6 +2130,69 @@ $("actualizar-omitir").addEventListener("click", async () => {
   ocultarDialogo("dialogo-actualizar");
 });
 $("actualizar-cerrar").addEventListener("click", () => ocultarDialogo("dialogo-actualizar"));
+let ppDocActual = null;
+let ppDocToken = null;
+async function verPpDoc(d) {
+  ppDocActual = d;
+  ppDocToken = null;
+  $("pp-doc-titulo").textContent = d.nombre || "Documento";
+  $("pp-doc-info").textContent = "Cargando vista previa…";
+  $("pp-doc-marco").removeAttribute("src");
+  mostrarDialogo("dialogo-pp-doc");
+  let respuesta = null;
+  try {
+    respuesta = await window.vigencia.ppVista(d.url, d.nombre);
+  } catch {
+    respuesta = { ok: false };
+  }
+  if (!respuesta?.ok) {
+    $("pp-doc-info").textContent = respuesta?.error || "No pude traer el documento.";
+    return;
+  }
+  const kb = Math.max(1, Math.round((respuesta.tamano || 0) / 1024));
+  ppDocToken = respuesta.token;
+  $("pp-doc-info").textContent = `${d.nombre || ""}${d.fecha ? ` · ${d.fecha}` : ""} · ${kb} KB en memoria, sin descargar.`;
+  $("pp-doc-marco").src = respuesta.url;
+}
+$("pp-doc-navegador").addEventListener("click", () => {
+  if (ppDocActual?.url) window.vigencia.ppAbrir(ppDocActual.url);
+});
+$("pp-doc-descargar").addEventListener("click", async () => {
+  if (!ppDocActual?.url) return;
+  const boton = $("pp-doc-descargar");
+  boton.disabled = true;
+  $("pp-doc-info").textContent = "Descargando…";
+  let respuesta = null;
+  try {
+    respuesta = await window.vigencia.ppDescargarDoc(ppDocActual.url, ppDocActual.nombre, ppDocToken);
+  } catch {
+    respuesta = { ok: false };
+  } finally {
+    boton.disabled = false;
+  }
+  if (!respuesta?.ok) {
+    if (!respuesta?.cancelado) $("pp-doc-info").textContent = respuesta?.error || "No pude descargar.";
+    return;
+  }
+  $("pp-doc-info").textContent = `Guardado en ${respuesta.ruta}`;
+});
+$("pp-doc-cerrar").addEventListener("click", () => {
+  $("pp-doc-marco").removeAttribute("src");
+  ocultarDialogo("dialogo-pp-doc");
+});
+window.vigencia.alPpNovedades(() => {
+  elegirSistema("micrositio");
+  elegirPpTab("cargados");
+  pintarPpCargados();
+});
+window.vigencia.alSpoaNovedades(() => {
+  elegirSistema("spoa");
+  pintarSpCasos();
+});
+window.vigencia.alSamaiNovedades(() => {
+  elegirSistema("samai");
+  pintarSamaiCasos();
+});
 window.vigencia.alActualizacion((info) => abrirActualizacion(info));
 $("modelos-cerrar").addEventListener("click", () => {
   ocultarDialogo("dialogo-modelos");
@@ -2834,14 +2899,20 @@ function elegirSistema(id) {
   cerrarCombos();
   const propia = sistema.id === SISTEMA_INICIAL;
   const pp = sistema.id === "micrositio";
+  const spoa = sistema.id === "spoa";
+  const samai = sistema.id === "samai";
   $("pantalla-consulta").hidden = !propia;
   $("pantalla-pp").hidden = !pp;
-  $("pantalla-construccion").hidden = propia || pp;
-  if (!propia && !pp) {
+  $("pantalla-spoa").hidden = !spoa;
+  $("pantalla-samai").hidden = !samai;
+  $("pantalla-construccion").hidden = propia || pp || spoa || samai;
+  if (!propia && !pp && !spoa && !samai) {
     $("obra-sistema").textContent = sistema.fuente ? `${sistema.nombre} · ${sistema.fuente}` : sistema.nombre;
     $("obra-texto").textContent = `Estamos construyendo la consulta de ${sistema.nombre}. Mientras tanto, sus expedientes siguen en la consulta nacional unificada.`;
   }
   if (pp) abrirPp();
+  if (spoa) pintarSpCasos();
+  if (samai) abrirSamai();
   document.title = `${propia ? "Procesos" : sistema.nombre} · Vigencia`;
   pintarSistemas();
 }
@@ -3128,12 +3199,36 @@ window.vigencia.alPago(() => {
 });
 await refrescarLicencia();
 
-const ppPantalla = { deptos: false, despacho: "" };
+const ppPantalla = { deptos: false, muni: "", lista: [], despachoSel: "" };
 
 function llenarOpciones(select, opciones) {
   select.replaceChildren();
   for (const [valor, texto] of opciones) select.append(new Option(texto, valor));
 }
+
+function opcionesDistintas(lista, fn) {
+  const vistos = new Map();
+  for (const d of lista) {
+    const etiqueta = fn(d.nombre);
+    vistos.set(etiqueta, (vistos.get(etiqueta) || 0) + 1);
+  }
+  return [...vistos].map(([etiqueta, n]) => [etiqueta, `${etiqueta} (${n})`]);
+}
+
+function elegirPpTab(cual) {
+  const buscar = cual !== "cargados";
+  $("pp-tab-buscar").classList.toggle("elegida", buscar);
+  $("pp-tab-cargados").classList.toggle("elegida", !buscar);
+  $("pp-tab-buscar").setAttribute("aria-selected", buscar ? "true" : "false");
+  $("pp-tab-cargados").setAttribute("aria-selected", !buscar ? "true" : "false");
+  $("pp-panel-buscar").hidden = !buscar;
+  $("pp-panel-cargados").hidden = buscar;
+}
+$("pp-tab-buscar").addEventListener("click", () => elegirPpTab("buscar"));
+$("pp-tab-cargados").addEventListener("click", () => elegirPpTab("cargados"));
+$("pp-frecuencia").addEventListener("change", async () => {
+  await window.vigencia.ppGuardarFrecuencia(Number($("pp-frecuencia").value));
+});
 
 async function abrirPp() {
   if (!ppPantalla.deptos) {
@@ -3150,14 +3245,48 @@ async function abrirPp() {
 }
 
 async function pintarPpDespachos() {
-  const respuesta = await window.vigencia.ppDespachos($("pp-depto").value, $("pp-muni").value, $("pp-texto").value.trim());
-  const lista = respuesta?.ok ? respuesta.despachos : [];
-  const select = $("pp-despacho");
-  select.replaceChildren();
-  for (const d of lista) {
-    const marca = d.estado === "lista" ? ` ✓ ${d.avisos}` : d.estado === "cancelada" ? " (incompleta)" : "";
-    select.append(new Option(`${d.codigo} · ${d.nombre}${marca}`, d.codigo));
+  const muni = $("pp-muni").value;
+  if (muni !== ppPantalla.muni) {
+    const respuesta = await window.vigencia.ppDespachos($("pp-depto").value, muni, "");
+    ppPantalla.muni = muni;
+    ppPantalla.lista = respuesta?.ok ? respuesta.despachos : [];
+    ppPantalla.despachoSel = "";
+    llenarOpciones($("pp-especialidad"), [["", "Todas"], ...opcionesDistintas(ppPantalla.lista, especialidadDe)]);
+    $("pp-texto").value = "";
   }
+  aplicarFiltrosPp();
+}
+
+function aplicarFiltrosPp() {
+  const esp = $("pp-especialidad").value;
+  const texto = $("pp-texto").value;
+  const caja = $("pp-despacho");
+  caja.replaceChildren();
+  let n = 0;
+  for (const d of ppPantalla.lista) {
+    if (esp && especialidadDe(d.nombre) !== esp) continue;
+    if (!coincideBusqueda(`${d.codigo} ${d.nombre}`, texto)) continue;
+    n++;
+    const marca = d.estado === "lista" ? ` ✓ ${d.avisos}` : d.estado === "cancelada" ? " (incompleta)" : "";
+    const boton = document.createElement("button");
+    boton.type = "button";
+    boton.className = "pp-despacho" + (d.codigo === ppPantalla.despachoSel ? " elegido" : "");
+    boton.setAttribute("role", "option");
+    boton.setAttribute("aria-selected", d.codigo === ppPantalla.despachoSel ? "true" : "false");
+    const codigo = document.createElement("span");
+    codigo.className = "mono pp-codigo";
+    codigo.textContent = d.codigo;
+    const nombre = document.createElement("span");
+    nombre.className = "pp-nombre";
+    nombre.textContent = d.nombre + marca;
+    boton.append(codigo, nombre);
+    boton.addEventListener("click", () => {
+      ppPantalla.despachoSel = d.codigo;
+      aplicarFiltrosPp();
+    });
+    caja.append(boton);
+  }
+  $("pp-cuenta").textContent = n === ppPantalla.lista.length ? `${n}` : `${n} de ${ppPantalla.lista.length}`;
 }
 
 $("pp-depto").addEventListener("change", async () => {
@@ -3167,12 +3296,13 @@ $("pp-depto").addEventListener("change", async () => {
   await pintarPpDespachos();
 });
 $("pp-muni").addEventListener("change", pintarPpDespachos);
-$("pp-texto").addEventListener("input", pintarPpDespachos);
+$("pp-especialidad").addEventListener("change", aplicarFiltrosPp);
+$("pp-texto").addEventListener("input", aplicarFiltrosPp);
 
 $("pp-cargar").addEventListener("click", async () => {
-  const despacho = $("pp-despacho").value;
+  const despacho = ppPantalla.despachoSel;
   if (!despacho) {
-    $("pp-estado").textContent = "Elija un despacho.";
+    $("pp-estado").textContent = "Elija un despacho de la lista.";
     return;
   }
   const respuesta = await window.vigencia.ppCargar($("pp-depto").value, despacho);
@@ -3193,7 +3323,7 @@ window.vigencia.alPp((estado) => {
     $("pp-cargar").disabled = false;
     $("pp-estado").textContent = estado.error && !estado.avisos
       ? `Terminó con error: ${estado.error}`
-      : `${estado.avisos} avisos y ${estado.docs} documentos en ${estado.pagina} páginas.`;
+      : `${estado.nuevos || estado.avisos} nuevos: ${estado.docs} documentos en ${estado.pagina} páginas.`;
     pintarPpCargados();
     if (estado.despacho) verPpDespacho(estado.despacho);
     return;
@@ -3205,7 +3335,11 @@ async function pintarPpCargados() {
   const respuesta = await window.vigencia.ppCargados();
   const caja = $("pp-cargados");
   caja.replaceChildren();
-  for (const c of respuesta?.ok ? respuesta.cargados : []) {
+  const cargados = respuesta?.ok ? respuesta.cargados : [];
+  $("pp-tab-cuenta").textContent = cargados.length ? `(${cargados.length})` : "";
+  const frec = await window.vigencia.ppFrecuencia();
+  if (frec?.ok) $("pp-frecuencia").value = String(frec.horas);
+  for (const c of cargados) {
     const tarjeta = nodo("article", "persona");
     const info = nodo("div");
     info.append(nodo("h3", "", c.codigo));
@@ -3242,7 +3376,11 @@ async function verPpDespacho(codigo) {
     const tarjeta = nodo("article", "persona");
     const info = nodo("div");
     info.append(nodo("h3", "", p.titulo || "(sin título)"));
-    info.append(nodo("p", "modelo-estado", `${p.fecha || ""} · ${p.tipo || ""} · ${p.docs} documento(s)`));
+    const meta = nodo("p", "pp-meta");
+    if (p.fecha) meta.append(nodo("span", "etiqueta-ultima", p.fecha));
+    if (p.tipo) meta.append(nodo("span", "pp-tipo", p.tipo));
+    meta.append(nodo("span", "pp-cuenta-docs", `${p.docs} documento(s)`));
+    info.append(meta);
     const docs = nodo("div");
     docs.hidden = true;
     info.append(docs);
@@ -3259,10 +3397,36 @@ async function verPpDespacho(codigo) {
       const r = await window.vigencia.ppDocumentos(p.id);
       docs.replaceChildren();
       for (const d of r?.ok ? r.documentos : []) {
-        const b = nodo("button", "boton-texto", `${d.nombre || "Documento"}${d.fecha ? ` · ${d.fecha}` : ""}`);
-        b.type = "button";
-        b.addEventListener("click", () => window.vigencia.ppAbrir(d.url));
-        docs.append(b);
+        const fila = nodo("div", "pp-doc");
+        const icono = nodo("span", "pp-doc-icono", "📄");
+        icono.setAttribute("aria-hidden", "true");
+        const datos = nodo("div", "pp-doc-info");
+        datos.append(nodo("p", "pp-doc-nombre", d.nombre || "Documento"));
+        if (d.fecha) datos.append(nodo("p", "pp-doc-fecha", d.fecha));
+        const acciones = nodo("div", "pp-doc-acciones");
+        const ver = nodo("button", "boton-linea pp-mini", "Ver");
+        ver.type = "button";
+        ver.addEventListener("click", () => verPpDoc(d));
+        const bajar = nodo("button", "boton-linea pp-mini", "Descargar");
+        bajar.type = "button";
+        bajar.addEventListener("click", async () => {
+          bajar.disabled = true;
+          let r2 = null;
+          try {
+            r2 = await window.vigencia.ppDescargarDoc(d.url, d.nombre, null);
+          } catch {
+            r2 = { ok: false };
+          } finally {
+            bajar.disabled = false;
+          }
+          bajar.textContent = r2?.ok ? "Guardado ✓" : "Reintentar";
+          setTimeout(() => {
+            bajar.textContent = "Descargar";
+          }, 2500);
+        });
+        acciones.append(ver, bajar);
+        fila.append(icono, datos, acciones);
+        docs.append(fila);
       }
       docs.hidden = false;
       boton.textContent = "Ocultar";
@@ -3272,3 +3436,317 @@ async function verPpDespacho(codigo) {
     caja.append(tarjeta);
   }
 }
+
+const spPantalla = { casos: [] };
+
+function textoSpCaso(c) {
+  return `${c.noticia} ${c.despacho} ${c.estado} ${c.etapa}`;
+}
+
+async function pintarSpCasos() {
+  const respuesta = await window.vigencia.spoaCasos();
+  spPantalla.casos = respuesta?.ok ? respuesta.casos : [];
+  const estados = [...new Set(spPantalla.casos.map((c) => c.estado).filter(Boolean))].sort();
+  const etapas = [...new Set(spPantalla.casos.map((c) => c.etapa).filter(Boolean))].sort();
+  const actualEstado = $("spoa-estado").value;
+  const actualEtapa = $("spoa-etapa").value;
+  llenarOpciones($("spoa-estado"), [["", "Todos"], ...estados.map((e) => [e, e])]);
+  llenarOpciones($("spoa-etapa"), [["", "Todas"], ...etapas.map((e) => [e, e])]);
+  if (estados.includes(actualEstado)) $("spoa-estado").value = actualEstado;
+  if (etapas.includes(actualEtapa)) $("spoa-etapa").value = actualEtapa;
+  aplicarFiltrosSp();
+}
+
+function aplicarFiltrosSp() {
+  const caja = $("spoa-casos");
+  caja.replaceChildren();
+  const estado = $("spoa-estado").value;
+  const etapa = $("spoa-etapa").value;
+  const texto = $("spoa-texto").value;
+  for (const c of spPantalla.casos) {
+    if (estado && c.estado !== estado) continue;
+    if (etapa && c.etapa !== etapa) continue;
+    if (!coincideBusqueda(textoSpCaso(c), texto)) continue;
+    const tarjeta = nodo("article", "persona");
+    const info = nodo("div");
+    info.append(nodo("h3", "mono spoa-noticia", c.noticia));
+    info.append(nodo("p", "", String(c.despacho || "").slice(0, 80)));
+    info.append(nodo("p", "modelo-estado", `${c.estado || ""} · ${c.etapa || ""} · ${c.actuaciones} actuaciones`));
+    tarjeta.append(info);
+    const acciones = nodo("div", "hermanos");
+    const ver = nodo("button", "boton-linea", "Ver");
+    ver.type = "button";
+    ver.addEventListener("click", () => verSpCaso(c.noticia));
+    const olvidar = nodo("button", "boton-texto", "Olvidar");
+    olvidar.type = "button";
+    olvidar.addEventListener("click", async () => {
+      await window.vigencia.spoaOlvidar(c.noticia);
+      await pintarSpCasos();
+    });
+    acciones.append(ver, olvidar);
+    tarjeta.append(acciones);
+    caja.append(tarjeta);
+  }
+}
+
+function pintarSpFicha(caso) {
+  const caja = $("spoa-ficha");
+  caja.replaceChildren();
+  $("spoa-vacio").hidden = true;
+  const ficha = nodo("div", "cabecera lectura ficha");
+  const arriba = nodo("div", "ficha-arriba");
+  const textoFicha = nodo("div", "ficha-texto");
+  textoFicha.append(nodo("p", "kicker", [caso.estado, caso.etapa, caso.ley].filter(Boolean).join(" · ") || "SPOA"));
+  textoFicha.append(nodo("h2", "expediente-titulo serif", caso.despacho || "Sin despacho"));
+  const fila = nodo("div", "fila-radicado");
+  fila.append(nodo("p", "radicado-grande mono", caso.noticia || ""));
+  textoFicha.append(fila);
+  arriba.append(textoFicha);
+  ficha.append(arriba);
+  const datos = [
+    ["Unidad", caso.unidad], ["Seccional", caso.seccional], ["Dirección", caso.direccion],
+    ["Teléfono", caso.telefono], ["Asignación", caso.fecha_asignacion],
+    ["Hechos", [caso.muni_hecho, caso.depto_hecho, caso.fecha_hechos].filter(Boolean).join(" · ")],
+  ].filter(([, valor]) => Boolean(valor));
+  if (datos.length) {
+    const cajaDatos = nodo("div", "datos");
+    for (const [clave, valor] of datos) {
+      const dato = nodo("div", "dato");
+      dato.append(nodo("p", "dato-clave", clave), nodo("p", "dato-valor", valor));
+      cajaDatos.append(dato);
+    }
+    ficha.append(cajaDatos);
+  }
+  if ((caso.delitos || []).length) {
+    ficha.append(nodo("p", "etiqueta", "Delitos"));
+    const lista = nodo("div", "spoa-delitos");
+    for (const delito of caso.delitos) {
+      const parte = nodo("div", "parte");
+      parte.append(nodo("p", "parte-nombre", delito));
+      lista.append(parte);
+    }
+    ficha.append(lista);
+  }
+  ficha.append(nodo("p", "etiqueta", `Actuaciones (${(caso.actuaciones || []).length})`));
+  const linea = nodo("div", "spoa-actos");
+  for (const a of caso.actuaciones || []) {
+    const tarjeta = nodo("article", "persona");
+    const info = nodo("div");
+    if (a.fecha) info.append(nodo("span", "etiqueta-ultima", a.fecha));
+    info.append(nodo("p", "spoa-acto", a.descripcion || ""));
+    tarjeta.append(info);
+    linea.append(tarjeta);
+  }
+  ficha.append(linea);
+  caja.append(ficha);
+}
+
+async function verSpCaso(noticia) {
+  const respuesta = await window.vigencia.spoaCaso(noticia);
+  if (respuesta?.ok && respuesta.caso) pintarSpFicha(respuesta.caso);
+}
+
+$("spoa-estado").addEventListener("change", aplicarFiltrosSp);
+$("spoa-etapa").addEventListener("change", aplicarFiltrosSp);
+$("spoa-texto").addEventListener("input", aplicarFiltrosSp);
+
+$("spoa-consultar").addEventListener("click", async () => {
+  const numero = $("spoa-numero").value.trim();
+  $("spoa-ayuda").textContent = "Consultando en la Fiscalía…";
+  let respuesta = null;
+  try {
+    respuesta = await window.vigencia.spoaConsultar(numero);
+  } catch {
+    respuesta = { ok: false };
+  }
+  if (!respuesta?.ok) {
+    $("spoa-ayuda").textContent = respuesta?.error || "No pude consultar.";
+    return;
+  }
+  $("spoa-ayuda").textContent = respuesta.nuevas
+    ? `Guardado con ${respuesta.nuevas} actuaciones nuevas.`
+    : "Guardado sin actuaciones nuevas.";
+  pintarSpFicha(respuesta.caso);
+  pintarSpCasos();
+});
+
+const samaiPantalla = { corps: false, casos: [] };
+
+function textoSamaiCaso(c) {
+  return `${c.radicado} ${c.despacho} ${c.clase} ${c.demandante} ${c.demandado}`;
+}
+
+async function abrirSamai() {
+  if (!samaiPantalla.corps) {
+    const respuesta = await window.vigencia.samaiCorporaciones();
+    if (!respuesta?.ok) {
+      $("samai-ayuda").textContent = respuesta?.error || "No pude leer los juzgados.";
+      return;
+    }
+    samaiPantalla.corps = true;
+    llenarOpciones($("samai-corporacion"), respuesta.corporaciones.map((c) => [c.codigo, c.nombre]));
+    const bogota = respuesta.corporaciones.find((c) => c.codigo === "1100133");
+    if (bogota) $("samai-corporacion").value = "1100133";
+  }
+  await pintarSamaiCasos();
+}
+
+$("samai-buscar").addEventListener("click", async () => {
+  const criterio = $("samai-criterio").value.trim();
+  if (!criterio) {
+    $("samai-ayuda").textContent = "Escriba la cédula o el radicado.";
+    return;
+  }
+  $("samai-ayuda").textContent = "Buscando en el Consejo de Estado…";
+  let respuesta = null;
+  try {
+    respuesta = await window.vigencia.samaiBuscar(criterio, $("samai-corporacion").value);
+  } catch {
+    respuesta = { ok: false };
+  }
+  if (!respuesta?.ok) {
+    $("samai-ayuda").textContent = respuesta?.error || "No pude buscar.";
+    return;
+  }
+  if (!respuesta.procesos.length) {
+    $("samai-ayuda").textContent = "Sin resultados para esa búsqueda.";
+    return;
+  }
+  $("samai-ayuda").textContent = `${respuesta.total} resultado(s). Elija uno para guardarlo con sus actuaciones.`;
+  pintarSamaiResultados(respuesta.procesos);
+  await pintarSamaiCasos();
+});
+
+function pintarSamaiResultados(procesos) {
+  $("samai-vacio").hidden = true;
+  const caja = $("samai-ficha");
+  caja.replaceChildren();
+  for (const p of procesos) {
+    const tarjeta = nodo("article", "persona");
+    const info = nodo("div");
+    info.append(nodo("h3", "mono spoa-noticia", p.radicado));
+    info.append(nodo("p", "", `${p.demandante || ""} contra ${p.demandado || ""}`.slice(0, 120)));
+    info.append(nodo("p", "modelo-estado", `${p.clase || ""} · ${p.despacho || ""}`.slice(0, 120)));
+    tarjeta.append(info);
+    const acciones = nodo("div", "hermanos");
+    const ver = nodo("button", "boton-cobre", "Guardar");
+    ver.type = "button";
+    ver.addEventListener("click", () => verSamaiProceso(p.guid));
+    acciones.append(ver);
+    tarjeta.append(acciones);
+    caja.append(tarjeta);
+  }
+}
+
+async function verSamaiProceso(guid) {
+  $("samai-vacio").hidden = true;
+  $("samai-ficha").replaceChildren();
+  $("samai-ficha").append(nodo("p", "ayuda", "Trayendo las actuaciones…"));
+  let respuesta = null;
+  try {
+    respuesta = await window.vigencia.samaiVer(guid);
+  } catch {
+    respuesta = { ok: false };
+  }
+  if (!respuesta?.ok || !respuesta.caso) {
+    $("samai-ficha").replaceChildren();
+    $("samai-ficha").append(nodo("p", "ayuda error", respuesta?.error || "No pude traer las actuaciones."));
+    return;
+  }
+  pintarSamaiFicha(respuesta.caso);
+  pintarSamaiCasos();
+}
+
+function pintarSamaiFicha(caso) {
+  const caja = $("samai-ficha");
+  caja.replaceChildren();
+  $("samai-vacio").hidden = true;
+  const ficha = nodo("div", "cabecera lectura ficha");
+  const arriba = nodo("div", "ficha-arriba");
+  const textoFicha = nodo("div", "ficha-texto");
+  textoFicha.append(nodo("p", "kicker", [caso.clase, caso.vigente === "SI" ? "Vigente" : ""].filter(Boolean).join(" · ") || "SAMAI"));
+  textoFicha.append(nodo("h2", "expediente-titulo serif", caso.despacho_lindo || caso.despacho || "Sin despacho"));
+  const fila = nodo("div", "fila-radicado");
+  fila.append(nodo("p", "radicado-grande mono", caso.radicado || ""));
+  textoFicha.append(fila);
+  arriba.append(textoFicha);
+  ficha.append(arriba);
+  const datos = [
+    ["Ponente", caso.ponente], ["Titular", caso.titular], ["Ingreso", caso.fecha_ingreso],
+    ["Demandante", caso.demandante], ["Demandado", caso.demandado], ["Asunto", caso.asunto],
+  ].filter(([, valor]) => Boolean(valor));
+  if (datos.length) {
+    const cajaDatos = nodo("div", "datos");
+    for (const [clave, valor] of datos) {
+      const dato = nodo("div", "dato");
+      dato.append(nodo("p", "dato-clave", clave), nodo("p", "dato-valor", valor));
+      cajaDatos.append(dato);
+    }
+    ficha.append(cajaDatos);
+  }
+  ficha.append(nodo("p", "etiqueta", `Actuaciones (${(caso.actuaciones || []).length})`));
+  const linea = nodo("div", "spoa-actos");
+  for (const a of caso.actuaciones || []) {
+    const tarjeta = nodo("article", "persona");
+    const info = nodo("div");
+    if (a.fecha) info.append(nodo("span", "etiqueta-ultima", a.fecha));
+    info.append(nodo("p", "spoa-acto", a.actuacion || ""));
+    if (a.anotacion) info.append(nodo("p", "pp-doc-fecha", a.anotacion));
+    if (a.estado || a.anexos) info.append(nodo("p", "pp-doc-fecha", `${a.estado || ""}${a.anexos ? ` · ${a.anexos} anexos` : ""}`.trim()));
+    tarjeta.append(info);
+    linea.append(tarjeta);
+  }
+  ficha.append(linea);
+  caja.append(ficha);
+}
+
+function aplicarFiltrosSamai() {
+  const caja = $("samai-lista");
+  caja.replaceChildren();
+  const clase = $("samai-clase").value;
+  const texto = $("samai-texto").value;
+  let n = 0;
+  for (const c of samaiPantalla.casos) {
+    if (clase && c.clase !== clase) continue;
+    if (!coincideBusqueda(textoSamaiCaso(c), texto)) continue;
+    n++;
+    const tarjeta = nodo("article", "persona");
+    const info = nodo("div");
+    info.append(nodo("h3", "mono spoa-noticia", c.radicado));
+    info.append(nodo("p", "", `${c.demandante || ""} contra ${c.demandado || ""}`.slice(0, 120)));
+    info.append(nodo("p", "modelo-estado", `${c.clase || ""} · ${c.actuaciones} actuaciones`));
+    tarjeta.append(info);
+    const acciones = nodo("div", "hermanos");
+    const ver = nodo("button", "boton-linea", "Ver");
+    ver.type = "button";
+    ver.addEventListener("click", () => verSamaiGuardado(c.guid));
+    const olvidar = nodo("button", "boton-texto", "Olvidar");
+    olvidar.type = "button";
+    olvidar.addEventListener("click", async () => {
+      await window.vigencia.samaiOlvidar(c.guid);
+      await pintarSamaiCasos();
+    });
+    acciones.append(ver, olvidar);
+    tarjeta.append(acciones);
+    caja.append(tarjeta);
+  }
+  $("samai-cuenta").textContent = n === samaiPantalla.casos.length ? `${n}` : `${n} de ${samaiPantalla.casos.length}`;
+}
+
+async function pintarSamaiCasos() {
+  const respuesta = await window.vigencia.samaiCasos();
+  samaiPantalla.casos = respuesta?.ok ? respuesta.casos : [];
+  const clases = [...new Set(samaiPantalla.casos.map((c) => c.clase).filter(Boolean))].sort();
+  const actual = $("samai-clase").value;
+  llenarOpciones($("samai-clase"), [["", "Todas"], ...clases.map((e) => [e, e])]);
+  if (clases.includes(actual)) $("samai-clase").value = actual;
+  aplicarFiltrosSamai();
+}
+
+async function verSamaiGuardado(guid) {
+  const respuesta = await window.vigencia.samaiCaso(guid);
+  if (respuesta?.ok && respuesta.caso) pintarSamaiFicha(respuesta.caso);
+}
+
+$("samai-clase").addEventListener("change", aplicarFiltrosSamai);
+$("samai-texto").addEventListener("input", aplicarFiltrosSamai);

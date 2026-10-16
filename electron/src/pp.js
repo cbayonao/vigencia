@@ -8,9 +8,9 @@ import {
   PP_NS,
   PP_PORTLET,
   PP_PORTLET_ID,
-  PP_POR_PAGINA,
   extraerDocumentos,
   extraerFilas,
+  rangoPaginas,
   totalDe,
 } from "../compartido/pp.js";
 import { run, transaccion, uno } from "./db.js";
@@ -25,6 +25,11 @@ const pausa = () => dormir(pausaAleatoriaMs());
 
 export function crearSesion() {
   return { cookies: "" };
+}
+
+export function deptoDeDespacho(db, codigo) {
+  const fila = uno(db, "SELECT depto FROM pp_despacho WHERE codigo = ?", [String(codigo || "")]);
+  return fila?.depto || "";
 }
 
 function guardarCookies(sesion, respuesta) {
@@ -108,6 +113,40 @@ export async function buscarPagina(sesion, depto, despacho, pagina) {
   return { filas: extraerFilas(html), total: totalDe(html) };
 }
 
+export async function traerPdf(sesion, url) {
+  const destino = new URL(url);
+  let ultimo = "sin respuesta";
+  for (let intento = 1; intento <= 3; intento++) {
+    try {
+      const cabeceras = { ...CABECERAS, accept: "application/pdf,application/octet-stream,*/*" };
+      if (sesion.cookies) cabeceras.cookie = sesion.cookies;
+      const respuesta = await fetch(destino, { headers: cabeceras, signal: AbortSignal.timeout(120000) });
+      guardarCookies(sesion, respuesta);
+      if (!respuesta.ok) {
+        ultimo = `HTTP ${respuesta.status}`;
+        await dormir(intento * 2000);
+        continue;
+      }
+      const tipo = respuesta.headers.get("content-type") || "";
+      if (tipo.startsWith("text/html")) {
+        ultimo = "la sesión no abrió el documento";
+        await dormir(intento * 2000);
+        continue;
+      }
+      const bytes = Buffer.from(await respuesta.arrayBuffer());
+      if (!bytes.length) {
+        ultimo = "documento vacío";
+        await dormir(intento * 2000);
+        continue;
+      }
+      return { bytes, tipo };
+    } catch (error) {
+      ultimo = String(error?.message || error);
+      await dormir(intento * 2000);
+    }
+  }
+  throw new Error(ultimo);
+}
 export async function traerDocumentos(sesion, detalleUrl) {
   const destino = new URL(detalleUrl, PP_INICIO);
   let ultimo = "sin respuesta";
@@ -160,7 +199,8 @@ function guardarDocs(db, pubId, docs) {
 }
 
 // Carga un despacho en segundo plano: avisa progreso, acepta cancelación,
-// guarda por página para no perder lo andado. Los PDF no se descargan.
+// guarda por página para no perder lo andado. Solo las últimas 5 páginas
+// (lo nuevo sale primero) y los PDF no se descargan.
 export function crearCargaPp(db, { depto, despacho }) {
   const estado = {
     corriendo: false,
@@ -170,6 +210,7 @@ export function crearCargaPp(db, { depto, despacho }) {
     pagina: 0,
     paginas: 0,
     avisos: 0,
+    nuevos: 0,
     docs: 0,
     errores: 0,
     error: "",
@@ -193,36 +234,46 @@ export function crearCargaPp(db, { depto, despacho }) {
         const sesion = await abrirSesion();
         await pausa();
         const primera = await buscarPagina(sesion, depto, despacho, 1);
-        estado.paginas = Math.max(1, Math.ceil(primera.total / PP_POR_PAGINA));
+        const rango = rangoPaginas(primera.total);
+        estado.paginas = rango.total;
         const guardar = async (filas) => {
+          let nuevas = 0;
           for (const fila of filas) {
-            if (estado.cancelada) return;
+            if (estado.cancelada) return nuevas;
             if (!fila.article_id || !fila.detalle_url) continue;
+            const existe = uno(db, "SELECT id FROM pp_publicacion WHERE article_id = ?", [fila.article_id]);
+            if (existe) continue;
             try {
               const pubId = guardarFila(db, despacho, fila);
               await pausa();
-              if (estado.cancelada) return;
+              if (estado.cancelada) return nuevas;
               const docs = await traerDocumentos(sesion, fila.detalle_url);
               guardarDocs(db, pubId, docs);
               estado.avisos += 1;
+              estado.nuevos += 1;
               estado.docs += docs.length;
+              nuevas += 1;
             } catch (error) {
               estado.errores += 1;
               estado.error = String(error?.message || error).slice(0, 200);
             }
             avisar();
           }
+          return nuevas;
         };
-        estado.pagina = 1;
+        estado.pagina = rango.inicio;
         avisar();
-        await guardar(primera.filas);
-        for (let pagina = 2; pagina <= estado.paginas && !estado.cancelada; pagina++) {
-          await pausa();
-          if (estado.cancelada) break;
+        for (let pagina = rango.inicio; pagina <= rango.fin && !estado.cancelada; pagina++) {
+          if (pagina > rango.inicio) {
+            await pausa();
+            if (estado.cancelada) break;
+          }
           try {
-            const { filas } = await buscarPagina(sesion, depto, despacho, pagina);
+            // La primera página ya se pidió para saber el total.
+            const { filas } = pagina === 1 ? primera : await buscarPagina(sesion, depto, despacho, pagina);
             estado.pagina = pagina;
-            await guardar(filas);
+            const nuevas = await guardar(filas);
+            if (nuevas === 0 && filas.length > 0) break;
           } catch (error) {
             estado.errores += 1;
             estado.error = String(error?.message || error).slice(0, 200);

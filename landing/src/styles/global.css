@@ -3,18 +3,18 @@
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-serif: "Fraunces", ui-serif, Georgia, serif;
-  --color-papel: #faf7f1;
-  --color-tinta: #1c1917;
-  --color-cobre: #b45309;
-  --color-cobre-claro: #f59e0b;
+  --color-papel: #eef3f8;
+  --color-tinta: #1b2735;
+  --color-cobre: #17456e;
+  --color-cobre-claro: #0284c7;
 }
 
 html {
   scroll-behavior: smooth;
 }
 body {
-  background: #faf7f1;
-  color: #1c1917;
+  background: #eef3f8;
+  color: #1b2735;
   overflow-x: hidden;
 }
 
@@ -62,7 +62,7 @@ body {
 .cursor-vivo::after {
   content: "▍";
   animation: cursor 1s steps(1) infinite;
-  color: #b45309;
+  color: #17456e;
 }
 .btn-brillo { position: relative; overflow: hidden; }
 .btn-brillo::before {
@@ -96,7 +96,7 @@ body {
   top: 8px;
   bottom: 8px;
   width: 2px;
-  background: linear-gradient(#f59e0b, #b45309, #f59e0b);
+  background: linear-gradient(#0284c7, #17456e, #0284c7);
   opacity: .5;
 }
 

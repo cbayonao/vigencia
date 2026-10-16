@@ -800,3 +800,6 @@ html[data-tema="oscuro"] .doc-marca-dato { background: #4a4220; color: #f6e9b5; 
   .doc-chat { width: 360px; flex-basis: 360px; }
   .doc-proyectos { width: 210px; flex-basis: 210px; }
 }
+.doc-fuentes-fila .boton-texto { white-space: nowrap; flex: 0 0 auto; }
+#dialogo-doc-biblioteca .fila-fin button { white-space: nowrap; }
+#dialogo-doc-biblioteca .fila-fin { flex-wrap: wrap; justify-content: flex-end; }

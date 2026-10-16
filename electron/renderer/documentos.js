@@ -546,8 +546,11 @@ async function mostrarDiferencias(antesId, despuesId) {
     if (!hay) {
       sec.append(nodo("p", "ayuda", "Sin cambios."));
     } else {
+      const limpio = (t) => String(t || "").replace(/^##\s+/, "Título: ");
       for (const c of grupo.cambios) {
         if (c.tipo === "igual") continue;
+        c.texto = limpio(c.texto);
+        c.antes = limpio(c.antes);
         if (c.tipo === "cambiado") {
           sec.append(nodo("p", "doc-dif-quitado", c.antes), nodo("p", "doc-dif-agregado", c.texto));
         } else {

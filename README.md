@@ -66,6 +66,22 @@ Ese comando activa esa instalación. No activa el programa instalado en otro com
 
 Para volver a ver la página de pago, vacía `token` y `visto` en el `licencia.json` de esa máquina, cierra con **Salir** y ábrela otra vez.
 
+## Documentos con IA
+
+En la barra lateral, **Documentos** abre un espacio para redactar escritos por conversación: tutelas, derechos de petición, demandas, contestaciones, recursos, memoriales, contratos, conceptos y poderes.
+
+1. Pulse **Nuevo documento**, póngale nombre y elija el tipo, el perfil y, si quiere, un expediente de la lista. Del expediente se usan sus datos, partes, actuaciones, el abogado asignado y a quién representa.
+2. Escriba lo que necesita. Si falta un dato importante, el asistente pregunta primero; responda en un solo mensaje.
+3. Cada mensaje siguiente (hazlo más corto, agrega la sentencia que le pegué, cambia el tono) deja una **versión nueva**. Nada se sobrescribe: en **Historial** se ve cada versión, qué cambió frente a la anterior y se puede restaurar.
+4. **Editar** deja cambiar el texto a mano; el asistente sigue desde ese texto. Si selecciona un pasaje, el siguiente mensaje cambia solo esa parte.
+5. **Word** y **PDF** guardan la versión que está viendo.
+
+**Biblioteca** guarda leyes, jurisprudencia, doctrina, modelos propios y notas, con etiquetas y búsqueda. Se pegan o se importan desde .txt, .docx o .pdf (PDF con texto; si es escaneado, copie y pegue el texto). Es la misma biblioteca del escrito. Marque las fuentes de cada documento: de un texto largo solo viajan al modelo los fragmentos que sirven para lo que pidió.
+
+**Perfiles** guarda instrucciones, estilo, modelo preferido, tipos y fuentes por defecto. Vienen tres de ejemplo y se pueden cambiar o borrar.
+
+Para conversar con el documento hace falta un modelo local (GGUF) o de nube configurado en **Modelos de IA**. Con el modelo Sencillo solo se arma la plantilla básica. Con un modelo local nada sale del computador; con uno de nube, el mensaje, el documento, los datos del expediente y los fragmentos de las fuentes van a ese proveedor con su clave, y la pantalla lo dice. Las citas que no estén en sus fuentes, el expediente o sus mensajes salen marcadas como [Cita no aportada]. Verifique siempre los hechos y las citas antes de presentar el escrito.
+
 ## Actualizar la aplicación
 
 Vigencia avisa sola cuando hay versión nueva: revisa al arrancar y muestra el diálogo con la versión instalada y la disponible. También está en Menú ▸ **Buscar actualizaciones**. El botón **Descargar** baja el instalador y lo abre (en Linux muestra la carpeta para abrirlo a mano). **Omitir esta versión** silencia solo esa versión. Actualizar no toca los expedientes ni la licencia: siguen donde estaban.

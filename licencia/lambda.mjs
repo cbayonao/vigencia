@@ -1,5 +1,5 @@
 import { wompiDesdeEnv } from "./comun.mjs";
-import { tiendaDynamo } from "./dynamo.mjs";
+import { tiendaDynamo, tiendaComentarios } from "./dynamo.mjs";
 import { crearServicio } from "./servicio.mjs";
 
 let servicio;
@@ -16,6 +16,8 @@ function obtenerServicio() {
   const wompi = wompiDesdeEnv();
   servicio = crearServicio({
     tienda: tiendaDynamo(),
+    comentarios: tiendaComentarios(),
+    claveAdmin: process.env.COMENTARIOS_CLAVE || "",
     wompi,
     privada: llavePrivada(),
     publicaBase: process.env.URL_PUBLICA || "",
@@ -48,6 +50,7 @@ export async function handler(event) {
     method,
     path,
     query: event?.queryStringParameters || {},
+    headers: event?.headers || {},
     body,
   });
   const texto = Boolean(resultado.texto);

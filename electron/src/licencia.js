@@ -24,22 +24,35 @@ export function guardarCaja(dir, caja) {
   fs.renameSync(temporal, ruta);
 }
 
-export function asegurarInstalacion(dir) {
+export function asegurarInstalacion(dir, ahora = new Date()) {
   const caja = leerCaja(dir) || {};
-  if (/^[a-f0-9]{64}$/.test(String(caja.id || ""))) return caja;
-  const siguiente = { id: crypto.randomBytes(32).toString("hex"), token: "", visto: "" };
+  const sello = ahora instanceof Date ? ahora.toISOString() : new Date().toISOString();
+  if (/^[a-f0-9]{64}$/.test(String(caja.id || ""))) {
+    if (!Date.parse(caja.inicio || "")) {
+      guardarCaja(dir, { ...caja, inicio: caja.visto || sello });
+    }
+    return leerCaja(dir) || caja;
+  }
+  const siguiente = { id: crypto.randomBytes(32).toString("hex"), token: "", visto: "", inicio: sello };
   guardarCaja(dir, siguiente);
   return siguiente;
 }
 
 export function fotoLicencia(dir, ahora = new Date(), env = process.env) {
-  const caja = asegurarInstalacion(dir);
+  const caja = asegurarInstalacion(dir, ahora);
+  // El visto solo avanza: así el reloj atrasado cierra la prueba.
+  const sello = ahora instanceof Date ? ahora.toISOString() : new Date().toISOString();
+  if (sello > String(caja.visto || "")) {
+    guardarCaja(dir, { ...caja, visto: sello });
+    caja.visto = sello;
+  }
   return {
     ...estadoLicencia({
       token: caja.token,
       instalacion: caja.id,
       ahora,
       visto: caja.visto,
+      inicio: caja.inicio,
     }),
     conectado: Boolean(urlServicio(env)),
   };
@@ -56,7 +69,7 @@ async function leerJson(res) {
 export async function leerPlan({ dir, env = process.env, pedir = fetch, ahora = new Date() } = {}) {
   const base = urlServicio(env);
   if (!base) return fotoLicencia(dir, ahora, env);
-  const caja = asegurarInstalacion(dir);
+  const caja = asegurarInstalacion(dir, ahora);
   try {
     const res = await pedir(`${base}/estado?instalacion=${encodeURIComponent(caja.id)}`, {
       signal: AbortSignal.timeout(8000),
@@ -82,7 +95,7 @@ function aplicarRespuesta(dir, caja, json, ahora) {
 export async function iniciarPlan({ dir, env = process.env, pedir = fetch, ahora = new Date() } = {}) {
   const base = urlServicio(env);
   if (!base) return { ok: false, error: "El pago todavía no está conectado." };
-  const caja = asegurarInstalacion(dir);
+  const caja = asegurarInstalacion(dir, ahora);
   let res;
   try {
     res = await pedir(`${base}/iniciar`, {
@@ -104,7 +117,7 @@ export async function iniciarPlan({ dir, env = process.env, pedir = fetch, ahora
 }
 
 export function activarCodigo({ dir, codigo, ahora = new Date(), env = process.env } = {}) {
-  const caja = asegurarInstalacion(dir);
+  const caja = asegurarInstalacion(dir, ahora);
   const limpio = String(codigo || "").replace(/\s+/g, "");
   const revisado = estadoLicencia({ token: limpio, instalacion: caja.id, ahora });
   if (revisado.estado === "vencida") {
@@ -120,7 +133,7 @@ export function activarCodigo({ dir, codigo, ahora = new Date(), env = process.e
 export async function confirmarPlan({ dir, env = process.env, pedir = fetch, ahora = new Date() } = {}) {
   const base = urlServicio(env);
   if (!base) return { ok: false, error: "El pago todavía no está conectado.", ...fotoLicencia(dir, ahora, env) };
-  const caja = asegurarInstalacion(dir);
+  const caja = asegurarInstalacion(dir, ahora);
   let res;
   try {
     res = await pedir(`${base}/estado?instalacion=${encodeURIComponent(caja.id)}`, {

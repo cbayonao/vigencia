@@ -102,3 +102,33 @@ export function htmlMemorial({ asunto, secciones, ficha, fecha, origen }) {
 </body>
 </html>`;
 }
+
+// Documentos: la misma hoja y el mismo pie, sin el encabezado del juzgado,
+// porque el documento (contrato, concepto, tutela) ya trae el suyo.
+function cuerpoDocumentoHtml(secciones) {
+  return (secciones || []).map((seccion) => {
+    const parrafos = (seccion.parrafos || []).map((parrafo) => (/___/.test(parrafo)
+      ? `<p class="firma">${html(parrafo)}</p>`
+      : `<p>${html(parrafo)}</p>`)).join("");
+    const titulo = SIN_TITULO.has(seccion.titulo) || EXCLUIDOS_CUERPO.has(seccion.titulo) ? "" : `<h2>${html(seccion.titulo)}</h2>`;
+    return `<section>${titulo}${parrafos}</section>`;
+  }).join("");
+}
+
+export function htmlDocumento({ asunto, secciones, origen }) {
+  return `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>${html(asunto || "Documento")}</title>
+  <style>${ESTILOS}</style>
+</head>
+<body>
+  <div class="hoja">
+    <h1>${html(asunto || "Documento")}</h1>
+    ${cuerpoDocumentoHtml(secciones)}
+    ${pieHtml(origen)}
+  </div>
+</body>
+</html>`;
+}

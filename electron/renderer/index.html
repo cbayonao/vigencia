@@ -17,6 +17,7 @@
       <div class="licencia-acciones">
         <button type="button" class="boton-cobre" id="iniciar-plan">Iniciar el plan</button>
         <button type="button" class="boton-linea" id="ya-pague">Ya pagué</button>
+        <button type="button" class="boton-texto" id="licencia-seguir" hidden>Seguir probando</button>
       </div>
       <button type="button" class="boton-texto" id="pago-navegador" hidden>Abrir el pago en el navegador</button>
       <label class="etiqueta" for="licencia-codigo">Código de activación</label>
@@ -37,6 +38,11 @@
         <span class="sistemas-flecha" aria-hidden="true">«</span>
         <span class="sistemas-texto sistemas-encabezado">Sistemas</span>
       </button>
+      <button type="button" class="sistema sistema-documentos" id="sistema-documentos" title="Documentos, redacción con IA">
+        <span class="sistema-sigla">DO</span>
+        <span class="sistema-textos sistemas-texto"><span class="sistema-nombre">Documentos</span><span class="sistema-fuente">Redacción con IA</span></span>
+      </button>
+      <div class="sistemas-separador" aria-hidden="true"></div>
       <div class="sistemas-lista" id="sistemas-lista"></div>
       <button type="button" class="sistemas-ajustar" id="sistemas-ajustar" title="Elegir qué sistemas aparecen">
         <span class="sistemas-engrane" aria-hidden="true">⚙</span>
@@ -44,6 +50,7 @@
       </button>
     </nav>
     <div class="escenario">
+    <button type="button" class="aviso-prueba" id="aviso-prueba" hidden title="Ver el plan"></button>
     <div class="pantalla" id="pantalla-consulta">
     <header class="barra">
       <div>
@@ -75,6 +82,8 @@
               <button type="button" class="combo-opcion" id="abrir-biblioteca" role="menuitem" title="Plantillas, ejemplos, normas y estilo para los escritos">Biblioteca del escrito</button>
               <button type="button" class="combo-opcion" id="abrir-ajustes" role="menuitem" title="Horas de la revisión automática">Revisión automática</button>
               <button type="button" class="combo-opcion" id="buscar-actualizacion" role="menuitem" title="Revisa si hay una versión nueva para descargar">Buscar actualizaciones</button>
+              <button type="button" class="combo-opcion" id="ver-plan" role="menuitem" title="Tu prueba gratis, tu plan y el pago">Plan</button>
+              <button type="button" class="combo-opcion" id="abrir-comentarios" role="menuitem" title="Sugerencias y errores: los lee el equipo de Vigencia">Comentarios y reportes</button>
               <button type="button" class="combo-opcion" id="tema" role="menuitem" aria-pressed="false">Tema oscuro</button>
               <button type="button" class="combo-opcion" id="salir" role="menuitem" title="Cierra Vigencia del todo. Cerrar la ventana la deja en la bandeja">Salir</button>
             </div>
@@ -222,6 +231,135 @@
         <main class="derecha" id="samai-detalle">
           <p class="ayuda" id="samai-vacio">Aquí se ve la ficha del proceso, con demandante y demandado, y sus actuaciones.</p>
           <div id="samai-ficha"></div>
+        </main>
+      </div>
+    </div>
+    <div class="pantalla" id="pantalla-juris" hidden>
+      <header class="barra">
+        <div>
+          <p class="marca">Vigencia</p>
+          <h1 class="nombre serif">Jurisprudencia</h1>
+        </div>
+      </header>
+      <div class="cuerpo">
+        <aside class="izquierda juris-lado">
+          <section class="juris-card" aria-label="Fuente de jurisprudencia">
+            <p class="etiqueta primera">Fuente</p>
+            <div class="juris-fuentes" role="tablist" aria-label="Fuentes de jurisprudencia" id="juris-fuentes"></div>
+            <p class="ayuda" id="juris-ayuda-fuente"></p>
+          </section>
+          <section class="juris-card" aria-label="Buscar">
+            <form id="form-juris">
+              <p class="etiqueta primera">Tema o texto libre</p>
+              <div class="fila-agregar">
+                <input id="juris-texto-buscar" autocomplete="off" spellcheck="false" placeholder="Ej. pensión gracia, salud, tutela" aria-label="Tema o texto libre">
+                <button type="submit" class="boton-cobre" id="juris-buscar">Buscar</button>
+              </div>
+              <details class="juris-mas" id="juris-mas-filtros">
+                <summary class="boton-texto" aria-label="Mostrar más filtros"><span id="juris-mas-filtros-resumen">Más filtros</span></summary>
+                <div id="juris-filtros-extra"></div>
+              </details>
+            </form>
+            <p class="ayuda" id="juris-estado" aria-live="polite"></p>
+          </section>
+          <section class="juris-resultados" aria-label="Resultados">
+            <p class="etiqueta">Resultados <span class="cuenta" id="juris-cuenta"></span></p>
+            <div class="lista juris-lista" id="juris-lista"></div>
+          </section>
+        </aside>
+        <main class="derecha juris-lector" id="juris-detalle">
+          <div class="juris-vacio" id="juris-vacio">
+            <p class="juris-vacio-icono" aria-hidden="true">⚖️</p>
+            <p class="juris-vacio-titulo">Busque y lea sin salir de aquí</p>
+            <p class="ayuda">Elija la fuente, escriba el tema y pulse un resultado para leerlo. Con Guardar queda como fuente para la IA.</p>
+          </div>
+          <div id="juris-ficha"></div>
+        </main>
+      </div>
+    </div>
+    <div class="pantalla" id="pantalla-documentos" hidden>
+      <header class="barra">
+        <div>
+          <p class="marca">Vigencia</p>
+          <h1 class="nombre serif">Documentos</h1>
+        </div>
+        <div class="botones">
+          <button type="button" class="boton-texto" id="doc-abrir-perfiles">Perfiles</button>
+          <button type="button" class="boton-texto" id="doc-abrir-modelos">Modelos de IA</button>
+          <button type="button" class="boton-linea" id="doc-abrir-biblioteca">Biblioteca</button>
+          <button type="button" class="boton-cobre" id="doc-nuevo">Nuevo documento</button>
+        </div>
+      </header>
+      <div class="cuerpo doc-cuerpo">
+        <aside class="doc-proyectos">
+          <input id="doc-buscar" placeholder="Buscar documentos" aria-label="Buscar documentos" autocomplete="off" spellcheck="false">
+          <div class="pp-tabs" role="tablist" aria-label="Documentos">
+            <button type="button" class="pp-tab elegida" id="doc-tab-activos" role="tab" aria-selected="true">Activos</button>
+            <button type="button" class="pp-tab" id="doc-tab-archivados" role="tab" aria-selected="false">Archivados</button>
+          </div>
+          <div class="lista doc-lista" id="doc-lista"></div>
+        </aside>
+        <section class="doc-chat" id="doc-chat" aria-label="Conversación">
+          <div class="doc-vacio" id="doc-sin-proyecto">
+            <h2 class="serif">Redacte con su asistente</h2>
+            <p class="nota">Cree un documento, elija el tipo y el perfil, y pida lo que necesita. Cada mensaje mejora el texto y deja una versión nueva. Puede vincular un expediente y elegir fuentes de su biblioteca.</p>
+            <button type="button" class="boton-cobre" id="doc-nuevo-2">Nuevo documento</button>
+          </div>
+          <div class="doc-proyecto" id="doc-proyecto" hidden>
+            <div class="doc-cabeza">
+              <div class="doc-titulo-fila">
+                <h2 class="serif doc-titulo" id="doc-titulo"></h2>
+                <div id="doc-menu"></div>
+              </div>
+              <div class="doc-ajustes">
+                <label><span class="etiqueta">Tipo</span><select id="doc-tipo" aria-label="Tipo de documento"></select></label>
+                <label><span class="etiqueta">Perfil</span><select id="doc-perfil" aria-label="Perfil del asistente"></select></label>
+                <label><span class="etiqueta">Modelo</span><select id="doc-modelo" aria-label="Modelo"></select></label>
+                <span class="ayuda" id="doc-contexto">Sin llamadas a la nube todavía.</span>
+                <label><span class="etiqueta">Expediente</span><select id="doc-expediente" aria-label="Expediente vinculado"></select></label>
+              </div>
+              <div class="doc-fuentes-fila">
+                <span class="ayuda" id="doc-fuentes-resumen"></span>
+                <button type="button" class="boton-texto" id="doc-elegir-fuentes">Elegir fuentes</button>
+              </div>
+              <p class="doc-privacidad" id="doc-privacidad"></p>
+            </div>
+            <div class="doc-mensajes" id="doc-mensajes" aria-live="polite"></div>
+            <form class="doc-redactar" id="doc-form">
+              <div class="doc-pasaje" id="doc-pasaje" hidden>
+                <span class="doc-pasaje-ref" id="doc-pasaje-ref"></span>
+                <span class="doc-pasaje-txt">Solo este pasaje: <em id="doc-pasaje-texto"></em></span>
+                <button type="button" class="boton-texto" id="doc-pasaje-quitar">Quitar</button>
+              </div>
+              <textarea id="doc-mensaje" placeholder="Pida el documento o un cambio: hazlo más corto, agrega la sentencia que le aporto, cambia el tono" aria-label="Mensaje"></textarea>
+              <div class="fila-fin">
+                <span class="ayuda" id="doc-estado"></span>
+                <button type="submit" class="boton-cobre" id="doc-enviar">Enviar</button>
+              </div>
+            </form>
+          </div>
+        </section>
+        <main class="derecha doc-papel" id="doc-papel">
+          <div class="doc-herramientas" id="doc-herramientas" hidden>
+            <select id="doc-version" aria-label="Versión"></select>
+            <button type="button" class="boton-texto" id="doc-historial">Historial</button>
+            <button type="button" class="boton-texto" id="doc-comparar">Comparar con la anterior</button>
+            <button type="button" class="boton-linea" id="doc-editar">Editar</button>
+            <button type="button" class="boton-linea" id="doc-word">Word</button>
+            <button type="button" class="boton-linea" id="doc-pdf">PDF</button>
+          </div>
+          <div class="doc-avisos" id="doc-avisos" hidden></div>
+          <p class="ayuda doc-pista-pasaje" id="doc-pista-pasaje" hidden>Pase el cursor sobre un párrafo del documento para corregirlo solo a él ✎ o citarlo ❝ en su mensaje.</p>
+          <div class="doc-vivo" id="doc-vivo" hidden></div>
+          <div id="doc-hoja-caja"><p class="ayuda doc-papel-vacio">Aquí se ve el documento mientras se escribe.</p></div>
+          <div class="doc-edicion" id="doc-edicion" hidden>
+            <p class="ayuda">Edite el texto. Las secciones empiezan con ## y la primera línea puede ser Asunto: título. Seleccione un pasaje para pedir que solo esa parte cambie.</p>
+            <textarea id="doc-texto" spellcheck="true" aria-label="Texto del documento"></textarea>
+            <div class="fila-fin">
+              <button type="button" class="boton-texto" id="doc-edicion-cancelar">Cancelar</button>
+              <button type="button" class="boton-cobre" id="doc-edicion-guardar">Guardar como versión nueva</button>
+            </div>
+          </div>
         </main>
       </div>
     </div>
@@ -473,8 +611,58 @@
       <h3 class="modelos-sub">Modelos en la nube (con su clave)</h3>
       <p class="nota">Pruebe la conexión antes de guardar: el botón Probar usa los datos escritos sin guardarlos. La clave se guarda solo en este computador y únicamente se usa para pedirle el memorial al proveedor que elija. El texto del expediente sale a internet.</p>
       <div class="directorio" id="nubes-lista"></div>
+      <h3 class="modelos-sub">Consumo de nube</h3>
+      <p class="nota">Tokens y costo aproximado de cada llamada a la nube, con las tarifas oficiales de cada proveedor. Lo local (GGUF y Sencillo) no cuesta.</p>
+      <div class="fila-modelo">
+        <p class="ayuda" id="gasto-resumen-corto">Sin llamadas a la nube todavía.</p>
+        <button type="button" class="boton-linea" id="gasto-ver">Ver consumo</button>
+      </div>
       <div class="fila-fin">
         <button type="button" class="boton-cobre" id="modelos-cerrar">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="cortina" id="dialogo-gasto" hidden>
+    <div class="dialogo dialogo-ancho" role="dialog" aria-modal="true" aria-labelledby="gasto-titulo">
+      <h2 class="serif dialogo-titulo" id="gasto-titulo">Consumo de nube</h2>
+      <p class="nota" id="gasto-nota">Tokens medidos por cada proveedor y costo aproximado con sus tarifas oficiales.</p>
+      <div class="fila-fin">
+        <button type="button" class="boton-linea" id="gasto-mes">Este mes</button>
+        <button type="button" class="boton-linea" id="gasto-todo">Todo</button>
+      </div>
+      <div id="gasto-tablas"></div>
+      <div class="fila-fin">
+        <button type="button" class="boton-cobre" id="gasto-cerrar">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="cortina" id="dialogo-comentarios" hidden>
+    <div class="dialogo dialogo-ancho" role="dialog" aria-modal="true" aria-labelledby="comentarios-titulo">
+      <h2 class="serif dialogo-titulo" id="comentarios-titulo">Comentarios y reportes</h2>
+      <p class="nota">Cuéntenos qué mejorar o qué falló. Lo lee el equipo de Vigencia. Su comentario queda pendiente de revisión antes de mostrarse.</p>
+      <form id="form-comentario">
+        <div class="doc-dos">
+          <label><span class="etiqueta">Su nombre (opcional)</span><input id="comentario-nombre" maxlength="60" autocomplete="off" placeholder="Como quiere que aparezca"></label>
+          <label><span class="etiqueta">Tipo</span><select id="comentario-tipo">
+            <option value="sugerencia">Sugerencia</option>
+            <option value="bug">Error o bug</option>
+            <option value="otro">Otro</option>
+          </select></label>
+        </div>
+        <label><span class="etiqueta">Comentario</span><textarea id="comentario-texto" maxlength="1000" placeholder="Qué le gustaría que hiciera Vigencia, o qué no le funcionó"></textarea></label>
+        <input id="comentario-trampa" type="text" tabindex="-1" autocomplete="off" hidden aria-hidden="true">
+        <p class="ayuda error" id="comentario-error" hidden></p>
+        <div class="fila-fin">
+          <span class="ayuda" id="comentario-estado"></span>
+          <button type="submit" class="boton-cobre" id="comentario-enviar">Enviar comentario</button>
+        </div>
+      </form>
+      <p class="etiqueta">Lo que han dicho otros usuarios</p>
+      <div class="directorio comentarios-lista" id="comentarios-lista"></div>
+      <div class="fila-fin">
+        <button type="button" class="boton-texto" id="comentarios-cerrar">Cerrar</button>
       </div>
     </div>
   </div>
@@ -629,6 +817,133 @@
       <div class="fila-fin">
         <button type="button" class="boton-texto" id="pieza-cancelar">Cancelar</button>
         <button type="button" class="boton-linea" id="pieza-pegar">Pegar desde .txt</button>
+        <button type="submit" class="boton-cobre">Guardar</button>
+      </div>
+    </form>
+  </div>
+  <div class="cortina" id="dialogo-doc-nuevo" hidden>
+    <form class="dialogo" id="form-doc-nuevo" role="dialog" aria-modal="true" aria-labelledby="doc-nuevo-titulo">
+      <h2 class="serif dialogo-titulo" id="doc-nuevo-titulo">Nuevo documento</h2>
+      <label class="etiqueta" for="doc-nuevo-nombre">Nombre</label>
+      <input id="doc-nuevo-nombre" maxlength="120" autocomplete="off" placeholder="Por ejemplo, Tutela salud de la señora Pérez">
+      <label class="etiqueta" for="doc-nuevo-tipo">Tipo</label>
+      <select id="doc-nuevo-tipo"></select>
+      <label class="etiqueta" for="doc-nuevo-perfil">Perfil</label>
+      <select id="doc-nuevo-perfil"></select>
+      <label class="etiqueta" for="doc-nuevo-expediente">Expediente (opcional)</label>
+      <select id="doc-nuevo-expediente"></select>
+      <p class="ayuda error" id="doc-nuevo-error" hidden></p>
+      <div class="fila-fin">
+        <button type="button" class="boton-texto" id="doc-nuevo-cancelar">Cancelar</button>
+        <button type="submit" class="boton-cobre">Crear</button>
+      </div>
+    </form>
+  </div>
+  <div class="cortina" id="dialogo-doc-biblioteca" hidden>
+    <div class="dialogo dialogo-ancho" role="dialog" aria-modal="true" aria-labelledby="doc-bib-titulo">
+      <h2 class="serif dialogo-titulo" id="doc-bib-titulo">Biblioteca de fuentes</h2>
+      <p class="nota">Leyes, jurisprudencia, doctrina, modelos propios y notas de este computador. Es la misma biblioteca del escrito. Marque las que usa este documento: del texto largo solo viajan al modelo los fragmentos que sirven para lo que pide.</p>
+      <div class="doc-soltar" id="doc-bib-soltar" tabindex="0" role="button" aria-label="Adjuntar archivos arrastrándolos a la biblioteca">
+        <span class="doc-soltar-icono" aria-hidden="true">⤓</span>
+        <span class="doc-soltar-texto"><strong>Arrastre aquí sus archivos</strong> .txt, .md, .docx o .pdf</span>
+        <span class="doc-soltar-sub">Se guardan en la biblioteca y se marcan para este documento. También puede usar Importar.</span>
+        <span class="ayuda doc-soltar-estado" id="doc-bib-soltar-estado" hidden></span>
+      </div>
+      <div class="doc-bib-filtros">
+        <input id="doc-bib-buscar" placeholder="Buscar en nombre, etiquetas y texto" aria-label="Buscar fuentes" autocomplete="off">
+        <select id="doc-bib-clase" aria-label="Clase"></select>
+        <select id="doc-bib-etiqueta" aria-label="Etiqueta"></select>
+      </div>
+      <p class="ayuda error" id="doc-bib-error" hidden></p>
+      <div class="directorio doc-bib-lista" id="doc-bib-lista"></div>
+      <div class="fila-fin">
+        <span class="ayuda" id="doc-bib-cuenta"></span>
+        <button type="button" class="boton-texto" id="doc-bib-cerrar">Cerrar</button>
+        <button type="button" class="boton-linea" id="doc-bib-importar">Importar .txt, .docx o .pdf</button>
+        <button type="button" class="boton-linea" id="doc-bib-nueva">Nueva fuente</button>
+        <button type="button" class="boton-cobre" id="doc-bib-usar">Usar las marcadas</button>
+      </div>
+    </div>
+  </div>
+  <div class="cortina" id="dialogo-doc-fuente" hidden>
+    <form class="dialogo dialogo-ancho" id="form-doc-fuente" role="dialog" aria-modal="true" aria-labelledby="doc-fuente-titulo">
+      <h2 class="serif dialogo-titulo" id="doc-fuente-titulo">Nueva fuente</h2>
+      <label class="etiqueta" for="doc-fuente-nombre">Nombre</label>
+      <input id="doc-fuente-nombre" maxlength="120" autocomplete="off" placeholder="Por ejemplo, Sentencia T-760 de 2008">
+      <div class="doc-dos">
+        <label><span class="etiqueta">Clase</span><select id="doc-fuente-clase"></select></label>
+        <label><span class="etiqueta">Etiquetas, separadas por comas</span><input id="doc-fuente-etiquetas" autocomplete="off" placeholder="salud, tutela"></label>
+      </div>
+      <label class="etiqueta" for="doc-fuente-texto">Texto</label>
+      <textarea id="doc-fuente-texto" class="doc-fuente-texto" placeholder="Pegue el texto de la norma, la sentencia, la doctrina, el modelo o la nota."></textarea>
+      <p class="ayuda" id="doc-fuente-largo"></p>
+      <p class="ayuda error" id="doc-fuente-error" hidden></p>
+      <div class="fila-fin">
+        <button type="button" class="boton-texto" id="doc-fuente-cancelar">Cancelar</button>
+        <button type="submit" class="boton-cobre">Guardar</button>
+      </div>
+    </form>
+  </div>
+  <div class="cortina" id="dialogo-doc-perfiles" hidden>
+    <div class="dialogo dialogo-ancho" role="dialog" aria-modal="true" aria-labelledby="doc-perfiles-titulo">
+      <h2 class="serif dialogo-titulo" id="doc-perfiles-titulo">Perfiles del asistente</h2>
+      <p class="nota">Cada perfil tiene sus instrucciones, su estilo, el modelo que prefiere y las fuentes que trae por defecto a un documento nuevo.</p>
+      <div class="doc-perfiles">
+        <div class="directorio" id="doc-perfiles-lista"></div>
+        <form id="form-doc-perfil" class="doc-perfil-form">
+          <label class="etiqueta" for="doc-perfil-nombre">Nombre</label>
+          <input id="doc-perfil-nombre" maxlength="80" autocomplete="off">
+          <label class="etiqueta" for="doc-perfil-instrucciones">Instrucciones</label>
+          <textarea id="doc-perfil-instrucciones"></textarea>
+          <label class="etiqueta" for="doc-perfil-estilo">Estilo</label>
+          <textarea id="doc-perfil-estilo"></textarea>
+          <label class="etiqueta" for="doc-perfil-modelo">Modelo preferido</label>
+          <select id="doc-perfil-modelo"></select>
+          <p class="etiqueta">Tipos de documento</p>
+          <div class="doc-casillas" id="doc-perfil-tipos"></div>
+          <p class="etiqueta">Fuentes por defecto</p>
+          <div class="doc-casillas" id="doc-perfil-fuentes"></div>
+          <p class="ayuda error" id="doc-perfil-error" hidden></p>
+          <div class="fila-fin">
+            <button type="button" class="boton-texto" id="doc-perfil-borrar">Borrar</button>
+            <button type="button" class="boton-linea" id="doc-perfil-nuevo">Nuevo perfil</button>
+            <button type="submit" class="boton-cobre">Guardar perfil</button>
+          </div>
+        </form>
+      </div>
+      <div class="fila-fin">
+        <button type="button" class="boton-texto" id="doc-perfiles-cerrar">Cerrar</button>
+      </div>
+    </div>
+  </div>
+  <div class="cortina" id="dialogo-doc-historial" hidden>
+    <div class="dialogo dialogo-ancho" role="dialog" aria-modal="true" aria-labelledby="doc-historial-titulo">
+      <h2 class="serif dialogo-titulo" id="doc-historial-titulo">Historial de versiones</h2>
+      <div class="doc-historial">
+        <div class="directorio" id="doc-historial-lista"></div>
+        <div class="doc-historial-vista" id="doc-historial-vista"></div>
+      </div>
+      <div class="fila-fin">
+        <button type="button" class="boton-texto" id="doc-historial-cerrar">Cerrar</button>
+      </div>
+    </div>
+  </div>
+  <div class="cortina" id="dialogo-doc-confirmar" hidden>
+    <div class="dialogo" role="dialog" aria-modal="true" aria-labelledby="doc-confirmar-titulo">
+      <h2 class="serif dialogo-titulo" id="doc-confirmar-titulo">Eliminar</h2>
+      <p class="nota" id="doc-confirmar-texto"></p>
+      <div class="fila-fin">
+        <button type="button" class="boton-texto" id="doc-confirmar-no">Cancelar</button>
+        <button type="button" class="boton-cobre" id="doc-confirmar-si">Eliminar</button>
+      </div>
+    </div>
+  </div>
+  <div class="cortina" id="dialogo-doc-nombre" hidden>
+    <form class="dialogo" id="form-doc-nombre" role="dialog" aria-modal="true" aria-labelledby="doc-nombre-titulo">
+      <h2 class="serif dialogo-titulo" id="doc-nombre-titulo">Cambiar el nombre</h2>
+      <input id="doc-nombre-valor" maxlength="120" autocomplete="off" aria-label="Nombre">
+      <div class="fila-fin">
+        <button type="button" class="boton-texto" id="doc-nombre-cancelar">Cancelar</button>
         <button type="submit" class="boton-cobre">Guardar</button>
       </div>
     </form>

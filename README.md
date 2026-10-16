@@ -1,6 +1,6 @@
 # Vigencia
 
-El plan cuesta $599.900 por un año. El año empieza cuando el pago queda confirmado. Hasta entonces, y otra vez cuando el año se cumple, la aplicación solo muestra la página de pago. Los expedientes siguen en el computador.
+Todo el que instala tiene **20 días gratis**, sin tarjeta y sin internet: la prueba empieza al abrir la app por primera vez y vale para todo. Cuando se acaban, el plan cuesta $599.900 por un año. El año empieza cuando el pago queda confirmado. Hasta entonces, y otra vez cuando el año se cumple, la aplicación solo muestra la página de pago. Los expedientes siguen en el computador. Borrar `licencia.json` reinicia la prueba con otro identificador (y una llave anterior deja de servir).
 
 Hay dos formas de abrir una máquina: pagando con Wompi, o con una llave hecha a mano. La llave dura 10 años y solo abre la máquina para la que se creó.
 
@@ -8,7 +8,7 @@ Hay dos formas de abrir una máquina: pagando con Wompi, o con una llave hecha a
 
 Este es el camino normal.
 
-1. Abre Vigencia. Aparece **Iniciar el plan**. Si el año ya se cumplió, el botón dice **Pagar el otro año**.
+1. Abre Vigencia. Durante la prueba entras directo (la cinta dice cuántos días quedan y **Plan** abre el pago). Si la prueba se acabó, aparece **Iniciar el plan**. Si el año ya se cumplió, el botón dice **Pagar el otro año**.
 2. Pulsa ese botón. Se abre el pago de Wompi.
 3. Paga $599.900.
 4. Vuelve a Vigencia y pulsa **Ya pagué**.
@@ -65,6 +65,22 @@ node licencia/emitir.mjs "$env:APPDATA\Vigencia\licencia.json"
 Ese comando activa esa instalación. No activa el programa instalado en otro computador.
 
 Para volver a ver la página de pago, vacía `token` y `visto` en el `licencia.json` de esa máquina, cierra con **Salir** y ábrela otra vez.
+
+## Documentos con IA
+
+En la barra lateral, **Documentos** abre un espacio para redactar escritos por conversación: tutelas, derechos de petición, demandas, contestaciones, recursos, memoriales, contratos, conceptos y poderes.
+
+1. Pulse **Nuevo documento**, póngale nombre y elija el tipo, el perfil y, si quiere, un expediente de la lista. Del expediente se usan sus datos, partes, actuaciones, el abogado asignado y a quién representa.
+2. Escriba lo que necesita. Si falta un dato importante, el asistente pregunta primero; responda en un solo mensaje.
+3. Cada mensaje siguiente (hazlo más corto, agrega la sentencia que le pegué, cambia el tono) deja una **versión nueva**. Nada se sobrescribe: en **Historial** se ve cada versión, qué cambió frente a la anterior y se puede restaurar.
+4. **Editar** deja cambiar el texto a mano; el asistente sigue desde ese texto. Si selecciona un pasaje, el siguiente mensaje cambia solo esa parte.
+5. **Word** y **PDF** guardan la versión que está viendo.
+
+**Biblioteca** guarda leyes, jurisprudencia, doctrina, modelos propios y notas, con etiquetas y búsqueda. Se pegan o se importan desde .txt, .docx o .pdf (PDF con texto; si es escaneado, copie y pegue el texto). Es la misma biblioteca del escrito. Marque las fuentes de cada documento: de un texto largo solo viajan al modelo los fragmentos que sirven para lo que pidió.
+
+**Perfiles** guarda instrucciones, estilo, modelo preferido, tipos y fuentes por defecto. Vienen tres de ejemplo y se pueden cambiar o borrar.
+
+Para conversar con el documento hace falta un modelo local (GGUF) o de nube configurado en **Modelos de IA**. Con el modelo Sencillo solo se arma la plantilla básica. Con un modelo local nada sale del computador; con uno de nube, el mensaje, el documento, los datos del expediente y los fragmentos de las fuentes van a ese proveedor con su clave, y la pantalla lo dice. Las citas que no estén en sus fuentes, el expediente o sus mensajes salen marcadas como [Cita no aportada]. Verifique siempre los hechos y las citas antes de presentar el escrito.
 
 ## Actualizar la aplicación
 

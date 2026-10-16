@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { DIAS_PRUEBA } from "./plan.js";
 
 export const PRECIO_PESOS = 599900;
 export const PRECIO_CENTAVOS = PRECIO_PESOS * 100;
@@ -15,6 +16,10 @@ YwIDAQAB
 -----END PUBLIC KEY-----`;
 
 const HOLGURA_MS = 5 * 60 * 1000;
+
+// Días gratis desde la primera apertura, sin internet y sin tarjeta. El
+// inicio se sella en licencia.json; borrarlo reinicia la prueba (se dice).
+const PRUEBA_MS = DIAS_PRUEBA * 24 * 60 * 60 * 1000;
 
 export function textoPrecio(pesos = PRECIO_PESOS) {
   const n = Math.round(Number(pesos) || 0);
@@ -51,20 +56,30 @@ export function leerToken(token, publica = LLAVE_PUBLICA) {
   }
 }
 
-export function estadoLicencia({ token, instalacion, ahora = new Date(), visto = "", publica = LLAVE_PUBLICA } = {}) {
+export function estadoLicencia({ token, instalacion, ahora = new Date(), visto = "", inicio = "", publica = LLAVE_PUBLICA } = {}) {
   const dato = leerToken(token, publica);
-  if (!dato || dato.inst !== instalacion || typeof dato.hasta !== "string") {
-    return { estado: "sin_pago", precioTexto: textoPrecio() };
-  }
-  const hastaMs = Date.parse(dato.hasta);
-  const iatMs = Number(dato.iat) * 1000;
-  if (!Number.isFinite(hastaMs)) return { estado: "sin_pago", precioTexto: textoPrecio() };
   const ahoraMs = ahora.getTime();
-  const vistoMs = Date.parse(visto || "");
-  const relojAtras = (Number.isFinite(iatMs) && ahoraMs + HOLGURA_MS < iatMs)
-    || (Number.isFinite(vistoMs) && ahoraMs + HOLGURA_MS < vistoMs);
-  if (relojAtras || ahoraMs >= hastaMs) {
-    return { estado: "vencida", hasta: dato.hasta, precioTexto: textoPrecio() };
+  if (dato && dato.inst === instalacion && typeof dato.hasta === "string") {
+    const hastaMs = Date.parse(dato.hasta);
+    const iatMs = Number(dato.iat) * 1000;
+    if (!Number.isFinite(hastaMs)) return { estado: "sin_pago", precioTexto: textoPrecio() };
+    const vistoMs = Date.parse(visto || "");
+    const relojAtras = (Number.isFinite(iatMs) && ahoraMs + HOLGURA_MS < iatMs)
+      || (Number.isFinite(vistoMs) && ahoraMs + HOLGURA_MS < vistoMs);
+    if (relojAtras || ahoraMs >= hastaMs) {
+      return { estado: "vencida", hasta: dato.hasta, precioTexto: textoPrecio() };
+    }
+    return { estado: "vigente", hasta: dato.hasta, precioTexto: textoPrecio() };
   }
-  return { estado: "vigente", hasta: dato.hasta, precioTexto: textoPrecio() };
+  // Sin comprobante: prueba local de 20 días desde el primer arranque.
+  const inicioMs = Date.parse(inicio || "");
+  if (!Number.isFinite(inicioMs)) return { estado: "sin_pago", precioTexto: textoPrecio() };
+  const vistoMs = Date.parse(visto || "");
+  const finMs = inicioMs + PRUEBA_MS;
+  const relojAtras = ahoraMs + HOLGURA_MS < inicioMs
+    || (Number.isFinite(vistoMs) && ahoraMs + HOLGURA_MS < vistoMs);
+  if (relojAtras || ahoraMs >= finMs) return { estado: "sin_pago", precioTexto: textoPrecio() };
+  const fin = new Date(finMs).toISOString();
+  const diasRestantes = Math.max(1, Math.ceil((finMs - ahoraMs) / (24 * 60 * 60 * 1000)));
+  return { estado: "prueba", finPrueba: fin, diasRestantes, precioTexto: textoPrecio() };
 }

@@ -4,6 +4,7 @@ import { DatabaseSync } from "node:sqlite";
 import { ahora, nombreCliente, texto } from "../compartido/logica.js";
 import { horariosOPredeterminados, validarHorarios } from "../compartido/horario.js";
 import { BASE_SQL, COLUMNAS_PROCESO, MIGRACIONES } from "./schema.js";
+import { costoAprox } from "./nube.js";
 
 export class Aviso extends Error {}
 
@@ -717,4 +718,49 @@ export function guardarFrecuenciaSistemas(db, horas) {
   if (!FRECUENCIAS_SISTEMAS.includes(n)) throw new Error("Frecuencia no válida.");
   guardarAjuste(db, "revision_sistemas_horas", String(n));
   return n;
+}
+
+export function guardarGasto(db, { proveedor = "", modelo = "", motivo = "", proyectoId = null, entrada = 0, salida = 0, costo = null }) {
+  const e = Math.max(0, Math.round(Number(entrada) || 0));
+  const s = Math.max(0, Math.round(Number(salida) || 0));
+  if (e <= 0 && s <= 0) return;
+  run(db, `INSERT INTO gasto_nube (fecha, proveedor, modelo, motivo, proyecto_id, entrada, salida, costo_usd)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, [
+    ahora(), proveedor, modelo, motivo, proyectoId, e, s,
+    costo == null ? 0 : Number(costo),
+  ]);
+}
+
+export function resumenGastos(db, { desde = "", limite = 30 } = {}) {
+  const filtro = desde ? "WHERE fecha >= ?" : "";
+  const params = desde ? [desde] : [];
+  const totales = uno(db, `SELECT COUNT(*) AS llamadas, COALESCE(SUM(entrada), 0) AS entrada,
+    COALESCE(SUM(salida), 0) AS salida, COALESCE(SUM(costo_usd), 0) AS costo FROM gasto_nube ${filtro}`, params);
+  const porProveedor = filas(db, `SELECT proveedor, modelo, COUNT(*) AS llamadas,
+    COALESCE(SUM(entrada), 0) AS entrada, COALESCE(SUM(salida), 0) AS salida,
+    COALESCE(SUM(costo_usd), 0) AS costo FROM gasto_nube ${filtro}
+    GROUP BY proveedor, modelo ORDER BY costo DESC`, params);
+  const condProyecto = ["proyecto_id IS NOT NULL", ...(desde ? ["fecha >= ?"] : [])].join(" AND ");
+  const paramsProyecto = desde ? [desde] : [];
+  const porProyecto = filas(db, `SELECT proyecto_id AS proyecto, COUNT(*) AS llamadas,
+    COALESCE(SUM(entrada), 0) AS entrada, COALESCE(SUM(salida), 0) AS salida,
+    COALESCE(SUM(costo_usd), 0) AS costo FROM gasto_nube
+    WHERE ${condProyecto} GROUP BY proyecto_id ORDER BY costo DESC`, paramsProyecto);
+  const recientes = filas(db, `SELECT fecha, proveedor, modelo, motivo, proyecto_id AS proyecto,
+    entrada, salida, costo_usd AS costo FROM gasto_nube ${filtro}
+    ORDER BY id DESC LIMIT ?`, [...params, limite]);
+  return { totales, porProveedor, porProyecto, recientes };
+}
+
+export function guardarUso(db, { proveedor = "", modelo = "", motivo = "", proyectoId = null, entrada = 0, salida = 0 }) {
+  const e = Math.max(0, Math.round(Number(entrada) || 0));
+  const s = Math.max(0, Math.round(Number(salida) || 0));
+  if (e <= 0 && s <= 0) return;
+  const costo = costoAprox(modelo, e, s) ?? 0;
+  guardarGasto(db, { proveedor, modelo, motivo, proyectoId, entrada: e, salida: s, costo });
+}
+
+export function ultimoGasto(db, proyectoId) {
+  return uno(db, `SELECT fecha, proveedor, modelo, motivo, entrada, salida, costo_usd AS costo
+    FROM gasto_nube WHERE proyecto_id = ? ORDER BY id DESC LIMIT 1`, [proyectoId]);
 }

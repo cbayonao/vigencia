@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { PROVEEDORES, chatNube } from "../src/nube.js";
+import { PROVEEDORES, avisoClaveMeta, chatNube, mensajePrueba } from "../src/nube.js";
 
 function respuestaSSE(trozos) {
   const codificado = trozos.map((trozo) => new TextEncoder().encode(trozo));
@@ -64,6 +64,26 @@ test("la clave rechazada avisa en claro", async () => {
   );
 });
 
+test("un 400 de clave inválida también se dice en claro", async () => {
+  const fetchFn = async () => ({
+    ok: false,
+    status: 400,
+    text: async () => JSON.stringify({ code: "invalid-argument", error: "Incorrect API key provided." }),
+  });
+  const error = await chatNube({
+    proveedor: "xai", key: "xai-mala", modelo: "grok-3-mini", texto: "h", fetchFn,
+  }).catch((fallo) => fallo);
+  assert.match(error.message, /clave no fue aceptada/);
+  assert.match(error.message, /Incorrect API key/);
+  assert.match(mensajePrueba(error), /clave no fue aceptada/);
+});
+
+test("Meta acepta la clave larga y la corta", () => {
+  assert.equal(avisoClaveMeta("LLM|123|secreto"), "");
+  assert.equal(avisoClaveMeta("LLM_14619_qwerty-1234"), "");
+  assert.match(avisoClaveMeta("sk-otra"), /empieza por LLM/);
+});
+
 test("Meta apunta a la Model API con Muse Spark", () => {
   assert.equal(PROVEEDORES.meta.base, "https://api.meta.ai/v1");
   assert.ok(PROVEEDORES.meta.modelos.includes("muse-spark-1.3"));
@@ -86,4 +106,106 @@ test("los cinco proveedores están definidos y traen modelos sugeridos", () => {
     assert.ok(Array.isArray(definicion.modelos), id);
     if (id !== "custom") assert.ok(definicion.modelos.length > 0, id);
   }
+});
+
+test("Meta va sin temperature, con esfuerzo medio y mensaje developer", async () => {
+  let cuerpo = null;
+  const fetchFn = async (_url, pedido) => {
+    cuerpo = JSON.parse(pedido.body);
+    return respuestaSSE(['data: {"choices":[{"delta":{"content":"ok"}}]}\n\n']);
+  };
+  const texto = await chatNube({
+    proveedor: "meta",
+    key: "LLM|1|abc",
+    modelo: "muse-spark-1.3",
+    texto: "hola",
+    instrucciones: "Instrucción fija.",
+    fetchFn,
+  });
+  assert.equal(texto, "ok");
+  assert.equal("temperature" in cuerpo, false);
+  assert.equal(cuerpo.reasoning_effort, "medium");
+  assert.deepEqual(cuerpo.messages, [
+    { role: "developer", content: "Instrucción fija." },
+    { role: "user", content: "hola" },
+  ]);
+});
+
+test("OpenAI conserva temperature y no manda esfuerzo", async () => {
+  let cuerpo = null;
+  const fetchFn = async (_url, pedido) => {
+    cuerpo = JSON.parse(pedido.body);
+    return respuestaSSE(['data: {"choices":[{"delta":{"content":"ok"}}]}\n\n']);
+  };
+  await chatNube({ proveedor: "openai", key: "k", modelo: "gpt-4o-mini", texto: "hola", fetchFn });
+  assert.equal(cuerpo.temperature, 0.2);
+  assert.equal("reasoning_effort" in cuerpo, false);
+  assert.deepEqual(cuerpo.messages, [{ role: "user", content: "hola" }]);
+});
+
+test("la clave de Meta se limpia de espacios y Bearer pegados", async () => {
+  let auth = "";
+  const fetchFn = async (_url, pedido) => {
+    auth = pedido.headers.Authorization;
+    return respuestaSSE(['data: {"choices":[{"delta":{"content":"ok"}}]}\n\n']);
+  };
+  await chatNube({ proveedor: "meta", key: "Bearer LLM|1|a b c ", modelo: "muse-spark-1.3", texto: "h", fetchFn });
+  assert.equal(auth, "Bearer LLM|1|abc");
+});
+
+test("cada proveedor declara su ayuda y prefijos de clave", async () => {
+  const { formaClaveValida } = await import("../src/nube.js");
+  assert.equal(formaClaveValida("meta", "LLM|1|abc"), true);
+  assert.equal(formaClaveValida("meta", "LLM_abc-123"), true);
+  assert.equal(formaClaveValida("meta", "otra"), false);
+  assert.equal(formaClaveValida("openai", "sk-abc"), true);
+  assert.equal(formaClaveValida("xai", "xai-abc"), true);
+  assert.equal(formaClaveValida("anthropic", "sk-ant-abc"), true);
+  assert.equal(formaClaveValida("custom", "loquesea"), true);
+  assert.equal(formaClaveValida("meta", ""), true);
+});
+
+test("el uso del proveedor se reporta sin romper el texto", async () => {
+  let uso = null;
+  const fetchFn = async () => respuestaSSE([
+    'data: {"choices":[{"delta":{"content":"ok"}}]}\n\n',
+    'data: {"choices":[],"usage":{"prompt_tokens":100,"completion_tokens":50}}\n\n',
+    'data: [DONE]\n\n',
+  ]);
+  const texto = await chatNube({
+    proveedor: "openai", key: "k", modelo: "gpt-6.1-sol", texto: "h",
+    onUso: (u) => { uso = u; }, fetchFn,
+  });
+  assert.equal(texto, "ok");
+  assert.deepEqual(uso, { entrada: 100, salida: 50 });
+});
+
+test("Anthropic junta entrada del inicio y salida del delta", async () => {
+  let uso = null;
+  const fetchFn = async () => respuestaSSE([
+    'event: message_start\ndata: {"message":{"usage":{"input_tokens":30}}}\n\n',
+    'event: content_block_delta\ndata: {"delta":{"text":"hola"}}\n\n',
+    'event: message_delta\ndata: {"usage":{"output_tokens":7}}\n\n',
+  ]);
+  const texto = await chatNube({
+    proveedor: "anthropic", key: "k", modelo: "claude-sonnet-5-5", texto: "h",
+    onUso: (u) => { uso = u; }, fetchFn,
+  });
+  assert.equal(texto, "hola");
+  assert.deepEqual(uso, { entrada: 30, salida: 7 });
+});
+
+test("el costo sale de la tabla oficial por modelo", async () => {
+  const { costoAprox } = await import("../src/nube.js");
+  assert.equal(costoAprox("muse-spark-1.3", 1000000, 0), 1.25);
+  assert.equal(costoAprox("muse-spark-1.3", 0, 1000000), 4.25);
+  assert.equal(costoAprox("otro-modelo", 10, 10), null);
+});
+
+test("la ventana de contexto sale de la tabla oficial", async () => {
+  const { contextoDe } = await import("../src/nube.js");
+  assert.equal(contextoDe("muse-spark-1.3"), 1048576);
+  assert.equal(contextoDe("claude-sonnet-5-5"), 1000000);
+  assert.equal(contextoDe("otro-modelo"), null);
+  assert.equal(contextoDe(""), null);
 });

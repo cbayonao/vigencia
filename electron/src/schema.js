@@ -1,3 +1,4 @@
+import { PERFILES_SEMILLA } from "../compartido/documentos.js";
 export const BASE_SQL = `
 CREATE TABLE IF NOT EXISTS ficha (
     id            INTEGER PRIMARY KEY,
@@ -437,6 +438,103 @@ export const MIGRACIONES = [
           UNIQUE(guid, indice)
         );
         CREATE INDEX IF NOT EXISTS samai_act_guid ON samai_actuacion(guid);
+      `);
+    },
+  },
+  {
+    version: 11,
+    nombre: "documentos con ia",
+    up(db) {
+      const piezaCols = new Set(db.prepare("PRAGMA table_info(pieza)").all().map((fila) => fila.name));
+      if (!piezaCols.has("clase")) db.exec("ALTER TABLE pieza ADD COLUMN clase TEXT NOT NULL DEFAULT ''");
+      if (!piezaCols.has("etiquetas")) db.exec("ALTER TABLE pieza ADD COLUMN etiquetas TEXT NOT NULL DEFAULT ''");
+      if (!piezaCols.has("origen")) db.exec("ALTER TABLE pieza ADD COLUMN origen TEXT NOT NULL DEFAULT ''");
+      db.exec(`
+        UPDATE pieza SET clase = CASE tipo
+          WHEN 'norma' THEN 'ley'
+          WHEN 'plantilla' THEN 'modelo'
+          WHEN 'ejemplo' THEN 'modelo'
+          ELSE 'nota' END
+        WHERE clase = '';
+        CREATE TABLE IF NOT EXISTS doc_perfil (
+          id INTEGER PRIMARY KEY,
+          nombre TEXT NOT NULL,
+          instrucciones TEXT NOT NULL DEFAULT '',
+          estilo TEXT NOT NULL DEFAULT '',
+          modelo TEXT NOT NULL DEFAULT '',
+          tipos TEXT NOT NULL DEFAULT '[]',
+          fuentes TEXT NOT NULL DEFAULT '[]',
+          creado_en TEXT NOT NULL,
+          actualizado_en TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS doc_proyecto (
+          id INTEGER PRIMARY KEY,
+          nombre TEXT NOT NULL,
+          tipo TEXT NOT NULL DEFAULT 'otro',
+          perfil_id INTEGER REFERENCES doc_perfil(id) ON DELETE SET NULL,
+          id_proceso INTEGER,
+          archivado INTEGER NOT NULL DEFAULT 0,
+          creado_en TEXT NOT NULL,
+          actualizado_en TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS doc_fuente (
+          proyecto_id INTEGER NOT NULL REFERENCES doc_proyecto(id) ON DELETE CASCADE,
+          pieza_id INTEGER NOT NULL REFERENCES pieza(id) ON DELETE CASCADE,
+          PRIMARY KEY (proyecto_id, pieza_id)
+        );
+        CREATE TABLE IF NOT EXISTS doc_version (
+          id INTEGER PRIMARY KEY,
+          proyecto_id INTEGER NOT NULL REFERENCES doc_proyecto(id) ON DELETE CASCADE,
+          numero INTEGER NOT NULL,
+          cuerpo TEXT NOT NULL,
+          autor TEXT NOT NULL DEFAULT 'modelo',
+          modelo TEXT NOT NULL DEFAULT '',
+          origen TEXT NOT NULL DEFAULT 'local',
+          nota TEXT NOT NULL DEFAULT '',
+          creado_en TEXT NOT NULL,
+          UNIQUE(proyecto_id, numero)
+        );
+        CREATE TABLE IF NOT EXISTS doc_mensaje (
+          id INTEGER PRIMARY KEY,
+          proyecto_id INTEGER NOT NULL REFERENCES doc_proyecto(id) ON DELETE CASCADE,
+          rol TEXT NOT NULL CHECK (rol IN ('usuario', 'asistente')),
+          texto TEXT NOT NULL,
+          version_id INTEGER,
+          dudas TEXT NOT NULL DEFAULT '',
+          origen TEXT NOT NULL DEFAULT 'local',
+          creado_en TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS doc_version_proyecto ON doc_version(proyecto_id, numero);
+        CREATE INDEX IF NOT EXISTS doc_mensaje_proyecto ON doc_mensaje(proyecto_id, id);
+      `);
+      const marca = "2026-10-16T00:00:00.000Z";
+      const insertar = db.prepare(`
+        INSERT INTO doc_perfil (nombre, instrucciones, estilo, modelo, tipos, fuentes, creado_en, actualizado_en)
+        VALUES (?, ?, ?, '', ?, '[]', ?, ?)
+      `);
+      for (const perfil of PERFILES_SEMILLA) {
+        insertar.run(perfil.nombre, perfil.instrucciones, perfil.estilo, JSON.stringify(perfil.tipos), marca, marca);
+      }
+    },
+  },
+  {
+    version: 12,
+    nombre: "gasto de nube",
+    up(db) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS gasto_nube (
+          id INTEGER PRIMARY KEY,
+          fecha TEXT NOT NULL,
+          proveedor TEXT NOT NULL DEFAULT '',
+          modelo TEXT NOT NULL DEFAULT '',
+          motivo TEXT NOT NULL DEFAULT '',
+          proyecto_id INTEGER,
+          entrada INTEGER NOT NULL DEFAULT 0,
+          salida INTEGER NOT NULL DEFAULT 0,
+          costo_usd REAL NOT NULL DEFAULT 0
+        );
+        CREATE INDEX IF NOT EXISTS gasto_nube_fecha ON gasto_nube(fecha);
+        CREATE INDEX IF NOT EXISTS gasto_nube_proyecto ON gasto_nube(proyecto_id);
       `);
     },
   },

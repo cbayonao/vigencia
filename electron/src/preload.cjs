@@ -1,7 +1,50 @@
-const { contextBridge, ipcRenderer } = require("electron");
+const { contextBridge, ipcRenderer, webUtils } = require("electron");
 
 contextBridge.exposeInMainWorld("vigencia", {
   listar: () => ipcRenderer.invoke("listar"),
+  rutaDeArchivo: (archivo) => {
+    try {
+      return webUtils.getPathForFile(archivo) || "";
+    } catch {
+      return "";
+    }
+  },
+  convertirInicio: () => ipcRenderer.invoke("convertir-inicio"),
+  convertirElegir: () => ipcRenderer.invoke("convertir-elegir"),
+  convertirRutas: (rutas, proyectoId, forzarOcr) => ipcRenderer.invoke("convertir-rutas", { rutas, proyectoId, forzarOcr }),
+  convertirReconvertir: (id) => ipcRenderer.invoke("convertir-reconvertir", { id }),
+  convertirCancelar: (id) => ipcRenderer.invoke("convertir-cancelar", { id }),
+  convertirLeer: (id) => ipcRenderer.invoke("convertir-leer", { id }),
+  convertirGuardarEdicion: (id, markdown) => ipcRenderer.invoke("convertir-guardar-edicion", { id, markdown }),
+  convertirGuardarComo: (id) => ipcRenderer.invoke("convertir-guardar-como", { id }),
+  convertirABiblioteca: (id) => ipcRenderer.invoke("convertir-a-biblioteca", { id }),
+  convertirLimpiarCache: () => ipcRenderer.invoke("convertir-limpiar-cache"),
+  convertirOcrEstado: () => ipcRenderer.invoke("convertir-ocr-estado"),
+  convertirOcrInstalar: () => ipcRenderer.invoke("convertir-ocr-instalar"),
+  convertirOcrQuitar: () => ipcRenderer.invoke("convertir-ocr-quitar"),
+  alConvertir: (fn) => {
+    const canal = (_e, dato) => fn(dato);
+    ipcRenderer.on("convertir-progreso", canal);
+    return () => ipcRenderer.removeListener("convertir-progreso", canal);
+  },
+  alOcrProgreso: (fn) => {
+    const canal = (_e, dato) => fn(dato);
+    ipcRenderer.on("convertir-ocr-progreso", canal);
+    return () => ipcRenderer.removeListener("convertir-ocr-progreso", canal);
+  },
+  proyectoArchivos: (proyectoId) => ipcRenderer.invoke("proyecto-archivos", { proyectoId }),
+  proyectoArchivoAgregar: (proyectoId, archivoId) => ipcRenderer.invoke("proyecto-archivo-agregar", { proyectoId, archivoId }),
+  proyectoArchivoQuitar: (proyectoId, archivoId) => ipcRenderer.invoke("proyecto-archivo-quitar", { proyectoId, archivoId }),
+  proyectoArchivoIncluir: (proyectoId, archivoId, incluido) => ipcRenderer.invoke("proyecto-archivo-incluir", { proyectoId, archivoId, incluido }),
+  proyectoAgentesLeer: (proyectoId) => ipcRenderer.invoke("proyecto-agentes-leer", { proyectoId }),
+  proyectoAgentesGuardar: (proyectoId, texto) => ipcRenderer.invoke("proyecto-agentes-guardar", { proyectoId, texto }),
+  proyectoEnvios: (proyectoId) => ipcRenderer.invoke("proyecto-envios", { proyectoId }),
+  bloqueRevisar: (datos) => ipcRenderer.invoke("bloque-revisar", datos),
+  bloqueProponer: (datos) => ipcRenderer.invoke("bloque-proponer", datos),
+  bloqueResolver: (datos) => ipcRenderer.invoke("bloque-resolver", datos),
+  bloqueHistorial: (id) => ipcRenderer.invoke("bloque-historial", id),
+  documentosRevisarEnvio: (datos) => ipcRenderer.invoke("documentos-revisar-envio", datos),
+  jurisConvertir: (sentencia, proyectoId) => ipcRenderer.invoke("juris-convertir", { sentencia, proyectoId }),
   documentosInicio: () => ipcRenderer.invoke("documentos-inicio"),
   documentosProyecto: (id, modelo) => ipcRenderer.invoke("documentos-proyecto", { id, modelo }),
   documentosCrear: (datos) => ipcRenderer.invoke("documentos-crear", datos),
@@ -12,7 +55,7 @@ contextBridge.exposeInMainWorld("vigencia", {
   documentosVersion: (id) => ipcRenderer.invoke("documentos-version", { id }),
   documentosDiferencias: (antes, despues) => ipcRenderer.invoke("documentos-diferencias", { antes, despues }),
   documentosRestaurar: (id) => ipcRenderer.invoke("documentos-restaurar", { id }),
-  documentosGuardarTexto: (id, cuerpo) => ipcRenderer.invoke("documentos-guardar-texto", { id, cuerpo }),
+  documentosGuardarTexto: (id, cuerpo, ids) => ipcRenderer.invoke("documentos-guardar-texto", { id, cuerpo, ids }),
   documentosConversar: (datos) => ipcRenderer.invoke("documentos-conversar", datos),
   alDocumento: (fn) => {
     const canal = (_evento, dato) => fn(dato);
@@ -33,7 +76,7 @@ contextBridge.exposeInMainWorld("vigencia", {
   jurisBuscar: (datos) => ipcRenderer.invoke("juris-buscar", datos),
   jurisLeer: (sentencia) => ipcRenderer.invoke("juris-leer", { sentencia }),
   jurisGuardar: (sentencia, texto) => ipcRenderer.invoke("juris-guardar", { sentencia, texto }),
-  documentosExportar: (version, formato) => ipcRenderer.invoke("documentos-exportar", { version, formato }),
+  documentosExportar: (version, formato, pie = true) => ipcRenderer.invoke("documentos-exportar", { version, formato, pie }),
   detalle: (id) => ipcRenderer.invoke("detalle", id),
   guardarCliente: (datos) => ipcRenderer.invoke("guardar-cliente", datos),
   borrarCliente: (id) => ipcRenderer.invoke("borrar-cliente", id),

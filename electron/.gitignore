@@ -1,3 +1,6 @@
 node_modules/
 dist/
 semilla/
+
+# Datos del OCR para pruebas (se bajan a mano)
+test/.ocr/

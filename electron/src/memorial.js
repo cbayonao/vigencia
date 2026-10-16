@@ -1,3 +1,4 @@
+import { parrafoHtml } from "../compartido/formato.js";
 import { fechaInforme } from "./informe.js";
 import { texto } from "../compartido/logica.js";
 
@@ -71,6 +72,17 @@ const ESTILOS = `
   h2 { font-size: 13pt; margin: 6mm 0 0; border-bottom: 1px solid #b7c9da; padding-bottom: 1mm; }
   section { break-inside: avoid; }
   .firma { letter-spacing: 0.1em; }
+  .hoja p { text-align: justify; }
+  .al-centro, .firma { text-align: center !important; }
+  .al-derecha { text-align: right !important; }
+  .al-izquierda { text-align: left !important; }
+  h3 { font-size: 12pt; font-style: italic; margin: 4mm 0 0; }
+  blockquote { margin: 3mm 12mm 3mm 20mm; font-size: 11pt; font-style: italic; }
+  ul, ol { margin: 2mm 0 0; padding-left: 10mm; }
+  .doc-tabla { width: 100%; border-collapse: collapse; margin-top: 3mm; font-size: 10.5pt; }
+  .doc-tabla th, .doc-tabla td { border: 1px solid #8fa5ba; padding: 1.5mm 2.5mm; text-align: left; vertical-align: top; }
+  .doc-tabla th { background: #eef2f6; }
+  mark { background: none; color: #a33; }
   .pie { margin-top: 8mm; font-family: "Liberation Sans", sans-serif; font-size: 9.5pt; color: #5b6b7c; border-top: 1px solid #b7c9da; padding-top: 2mm; }
 `;
 
@@ -107,15 +119,13 @@ export function htmlMemorial({ asunto, secciones, ficha, fecha, origen }) {
 // porque el documento (contrato, concepto, tutela) ya trae el suyo.
 function cuerpoDocumentoHtml(secciones) {
   return (secciones || []).map((seccion) => {
-    const parrafos = (seccion.parrafos || []).map((parrafo) => (/___/.test(parrafo)
-      ? `<p class="firma">${html(parrafo)}</p>`
-      : `<p>${html(parrafo)}</p>`)).join("");
+    const parrafos = (seccion.parrafos || []).map((parrafo) => parrafoHtml(parrafo)).join("");
     const titulo = SIN_TITULO.has(seccion.titulo) || EXCLUIDOS_CUERPO.has(seccion.titulo) ? "" : `<h2>${html(seccion.titulo)}</h2>`;
     return `<section>${titulo}${parrafos}</section>`;
   }).join("");
 }
 
-export function htmlDocumento({ asunto, secciones, origen }) {
+export function htmlDocumento({ asunto, secciones, origen }, { pie = true } = {}) {
   return `<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -128,6 +138,7 @@ export function htmlDocumento({ asunto, secciones, origen }) {
     <h1>${html(asunto || "Documento")}</h1>
     ${cuerpoDocumentoHtml(secciones)}
     ${pieHtml(origen)}
+    ${pie ? '<p class="pie">Generado con IA. Favor revisar.</p>' : ""}
   </div>
 </body>
 </html>`;

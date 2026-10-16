@@ -42,6 +42,10 @@
         <span class="sistema-sigla">DO</span>
         <span class="sistema-textos sistemas-texto"><span class="sistema-nombre">Documentos</span><span class="sistema-fuente">Redacción con IA</span></span>
       </button>
+      <button type="button" class="sistema sistema-documentos" id="sistema-convertir" title="Convertir a Markdown, en este computador">
+        <span class="sistema-sigla">MD</span>
+        <span class="sistema-textos sistemas-texto"><span class="sistema-nombre">Convertir</span><span class="sistema-fuente">A Markdown, sin internet</span></span>
+      </button>
       <div class="sistemas-separador" aria-hidden="true"></div>
       <div class="sistemas-lista" id="sistemas-lista"></div>
       <button type="button" class="sistemas-ajustar" id="sistemas-ajustar" title="Elegir qué sistemas aparecen">
@@ -277,6 +281,44 @@
         </main>
       </div>
     </div>
+    <div class="pantalla" id="pantalla-convertir" hidden>
+      <header class="barra">
+        <div>
+          <p class="kicker">Herramienta</p>
+          <h1 class="serif">Convertir a Markdown</h1>
+        </div>
+        <div class="botones">
+          <button type="button" class="boton-texto" id="conv-limpiar">Limpiar caché</button>
+          <button type="button" class="boton-linea" id="conv-elegir">Elegir archivos</button>
+        </div>
+      </header>
+      <div class="cuerpo conv-cuerpo">
+        <div class="zona-soltar" id="conv-soltar">Suelte aquí uno o varios archivos: PDF, imágenes, Word (.docx), Excel, ODS, CSV, HTML, TXT o MD. Todo se convierte en este computador, sin internet.
+          <div><label class="ayuda"><input type="checkbox" id="conv-forzar-ocr"> Leer con OCR aunque el PDF traiga texto</label></div>
+        </div>
+        <p class="ayuda" id="conv-ocr"></p>
+        <div id="conv-cola"></div>
+        <h2 class="seccion serif">Convertidos</h2>
+        <div id="conv-lista"></div>
+        <section id="conv-vista" hidden>
+          <h2 class="seccion serif" id="conv-vista-titulo"></h2>
+          <div class="fila-fin">
+            <select id="conv-proyecto" class="campo"></select>
+            <button type="button" class="boton-linea" id="conv-a-proyecto">Agregar al proyecto</button>
+            <button type="button" class="boton-linea" id="conv-a-biblioteca">Agregar a la biblioteca</button>
+            <button type="button" class="boton-texto" id="conv-copiar">Copiar Markdown</button>
+            <button type="button" class="boton-texto" id="conv-guardar-como">Guardar .md</button>
+            <button type="button" class="boton-texto" id="conv-reocr">Reconvertir con OCR</button>
+            <button type="button" class="boton-cobre" id="conv-guardar">Guardar edición</button>
+          </div>
+          <p class="ayuda" id="conv-vista-estado"></p>
+          <div class="conv-paneles">
+            <div id="conv-original"></div>
+            <textarea id="conv-md" spellcheck="false" aria-label="Markdown"></textarea>
+          </div>
+        </section>
+      </div>
+    </div>
     <div class="pantalla" id="pantalla-documentos" hidden>
       <header class="barra">
         <div>
@@ -322,6 +364,11 @@
                 <span class="ayuda" id="doc-fuentes-resumen"></span>
                 <button type="button" class="boton-texto" id="doc-elegir-fuentes">Elegir fuentes</button>
               </div>
+              <div class="doc-fuentes-fila">
+                <span class="ayuda" id="doc-archivos-resumen"></span>
+                <button type="button" class="boton-texto" id="doc-abrir-ctx">Contexto del proyecto</button>
+                <label class="ayuda"><input type="checkbox" id="doc-solo-local"> Solo local</label>
+              </div>
               <p class="doc-privacidad" id="doc-privacidad"></p>
             </div>
             <div class="doc-mensajes" id="doc-mensajes" aria-live="polite"></div>
@@ -347,14 +394,60 @@
             <button type="button" class="boton-linea" id="doc-editar">Editar</button>
             <button type="button" class="boton-linea" id="doc-word">Word</button>
             <button type="button" class="boton-linea" id="doc-pdf">PDF</button>
+            <button type="button" class="boton-linea" id="doc-parrafo" title="El modelo reescribe solo el párrafo que elija">Cambiar un párrafo</button>
+            <button type="button" class="boton-linea" id="doc-odt" title="OpenDocument para LibreOffice">ODT</button>
+            <label class="ayuda" title="Pie de página que se puede borrar en Word o LibreOffice"><input type="checkbox" id="doc-pie-ia" checked> Pie: Generado con IA. Favor revisar.</label>
           </div>
           <div class="doc-avisos" id="doc-avisos" hidden></div>
           <p class="ayuda doc-pista-pasaje" id="doc-pista-pasaje" hidden>Pase el cursor sobre un párrafo del documento para corregirlo solo a él ✎ o citarlo ❝ en su mensaje.</p>
           <div class="doc-vivo" id="doc-vivo" hidden></div>
           <div id="doc-hoja-caja"><p class="ayuda doc-papel-vacio">Aquí se ve el documento mientras se escribe.</p></div>
           <div class="doc-edicion" id="doc-edicion" hidden>
-            <p class="ayuda">Edite el texto. Las secciones empiezan con ## y la primera línea puede ser Asunto: título. Seleccione un pasaje para pedir que solo esa parte cambie.</p>
-            <textarea id="doc-texto" spellcheck="true" aria-label="Texto del documento"></textarea>
+            <div class="ed-barra" id="ed-barra" role="toolbar" aria-label="Formato del documento">
+              <select id="ed-estilo" aria-label="Estilo del párrafo" title="Estilo del párrafo">
+                <option value="parrafo">Párrafo</option>
+                <option value="seccion">Título de sección</option>
+                <option value="subtitulo">Subtítulo</option>
+                <option value="cita">Cita textual</option>
+                <option value="firma">Firma</option>
+              </select>
+              <span class="ed-grupo">
+                <button type="button" class="ed-btn ed-n" data-ed="negrita" title="Negrita (Ctrl+B)" aria-label="Negrita">N</button>
+                <button type="button" class="ed-btn ed-k" data-ed="italica" title="Cursiva (Ctrl+I)" aria-label="Cursiva">K</button>
+                <button type="button" class="ed-btn ed-s" data-ed="subrayado" title="Subrayado (Ctrl+U)" aria-label="Subrayado">S</button>
+              </span>
+              <span class="ed-grupo">
+                <button type="button" class="ed-btn" data-ed="vinetas" title="Lista con viñetas">Viñetas</button>
+                <button type="button" class="ed-btn" data-ed="numeros" title="Lista numerada">Numerales</button>
+              </span>
+              <span class="ed-grupo" aria-label="Alineación">
+                <button type="button" class="ed-btn" data-ed="izquierda" title="Alinear a la izquierda">Izq.</button>
+                <button type="button" class="ed-btn" data-ed="centro" title="Centrar">Centro</button>
+                <button type="button" class="ed-btn" data-ed="derecha" title="Alinear a la derecha">Der.</button>
+                <button type="button" class="ed-btn" data-ed="justificado" title="Justificar">Justif.</button>
+              </span>
+              <span class="ed-grupo">
+                <button type="button" class="ed-btn" data-ed="tabla" title="Insertar una tabla de 3 por 3">Tabla</button>
+                <button type="button" class="ed-btn ed-en-tabla" data-ed="fila" title="Agregar fila debajo" hidden>+ Fila</button>
+                <button type="button" class="ed-btn ed-en-tabla" data-ed="columna" title="Agregar columna a la derecha" hidden>+ Columna</button>
+                <button type="button" class="ed-btn ed-en-tabla" data-ed="quitar-tabla" title="Quitar la tabla" hidden>Quitar tabla</button>
+              </span>
+              <span class="ed-grupo">
+                <button type="button" class="ed-btn" data-ed="deshacer" title="Deshacer (Ctrl+Z)">Deshacer</button>
+                <button type="button" class="ed-btn" data-ed="rehacer" title="Rehacer (Ctrl+Y)">Rehacer</button>
+              </span>
+              <span class="ed-grupo ed-fin">
+                <button type="button" class="ed-btn ed-ia" data-ed="ia" title="El modelo reescribe solo el párrafo donde está el cursor">Cambiar este párrafo con IA</button>
+                <button type="button" class="ed-btn" data-ed="markdown" title="Ver y editar el Markdown que se guarda">Markdown</button>
+              </span>
+            </div>
+            <div class="ed-papel" id="ed-papel"><div id="doc-editor"></div>
+              <div class="ed-pie" id="ed-pie"><span>Generado con IA. Favor revisar.</span><button type="button" class="boton-texto" id="ed-pie-quitar" title="El pie no saldrá en Word, ODT ni PDF">Quitar pie</button></div>
+              <p class="ed-pie-off ayuda" id="ed-pie-off" hidden>Sin pie de IA. <button type="button" class="boton-texto" id="ed-pie-poner">Poner pie</button></p>
+            </div>
+            <p class="ayuda" id="ed-ayuda-md" hidden>Markdown que se guarda: ## sección, #### subtítulo, &gt; cita, - viñeta, 1. numeral, **negrita**, *cursiva*, ++subrayado++, {centro} al inicio del párrafo.</p>
+            <textarea id="doc-texto" spellcheck="true" aria-label="Texto del documento en Markdown" hidden></textarea>
+            <p class="ayuda" id="ed-estado"></p>
             <div class="fila-fin">
               <button type="button" class="boton-texto" id="doc-edicion-cancelar">Cancelar</button>
               <button type="button" class="boton-cobre" id="doc-edicion-guardar">Guardar como versión nueva</button>
@@ -604,6 +697,13 @@
         <button type="button" class="boton-linea" id="motor-copiar" hidden>Copiar detalle</button>
       </div>
       <pre class="registro" id="motor-detalle" hidden></pre>
+      <h3 class="modelos-sub">Reconocimiento de texto (OCR)</h3>
+      <p class="nota">Lee PDF escaneados e imágenes en español. No viene en el instalador: se descarga una sola vez (unos 35 MB) y después funciona sin internet. Nada de sus documentos sale del computador.</p>
+      <div class="fila-modelo">
+        <p class="ayuda" id="ocr-estado">Revisando el OCR...</p>
+        <button type="button" class="boton-cobre" id="ocr-instalar">Instalar OCR en español</button>
+        <button type="button" class="boton-texto" id="ocr-quitar" hidden>Quitar OCR</button>
+      </div>
       <h3 class="modelos-sub">Modelos locales (en este computador)</h3>
       <p class="nota">Se descargan una sola vez de Hugging Face y después trabajan sin internet.</p>
       <p class="ayuda error" id="modelos-error" hidden></p>
@@ -883,6 +983,58 @@
         <button type="submit" class="boton-cobre">Guardar</button>
       </div>
     </form>
+  </div>
+  <div class="cortina" id="dialogo-doc-contexto" hidden>
+    <div class="dialogo dialogo-ancho" role="dialog" aria-modal="true" aria-labelledby="doc-ctx-titulo">
+      <h2 class="serif dialogo-titulo" id="doc-ctx-titulo">Contexto del proyecto</h2>
+      <p class="nota">Lo que el asistente tiene en cuenta en este documento, en este orden: los lineamientos de Vigencia, el perfil, las instrucciones del proyecto, el expediente y los fragmentos de los archivos y fuentes que más se parecen a su pedido, con su página.</p>
+      <h3 class="seccion serif">Archivos</h3>
+      <div class="zona-soltar" id="doc-ctx-soltar">Suelte aquí PDF, imágenes, Word, Excel, CSV, HTML, TXT o MD. Se convierten a Markdown en este computador.
+        <div><button type="button" class="boton-linea" id="doc-ctx-elegir">Elegir archivos</button></div>
+      </div>
+      <p class="ayuda" id="doc-ctx-estado"></p>
+      <div id="doc-ctx-archivos"></div>
+      <h3 class="seccion serif">Instrucciones del proyecto (AGENTS.md)</h3>
+      <p class="ayuda">Partes, hechos clave, pretensiones, estilo y lo que no se debe decir. Con un modelo local conviene que sea corto.</p>
+      <textarea id="doc-ctx-agentes" class="doc-fuente-texto" spellcheck="true"></textarea>
+      <div class="fila-fin">
+        <button type="button" class="boton-texto" id="doc-ctx-plantilla">Usar la plantilla</button>
+        <button type="button" class="boton-linea" id="doc-ctx-guardar">Guardar instrucciones</button>
+        <button type="button" class="boton-cobre" id="doc-ctx-cerrar">Cerrar</button>
+      </div>
+    </div>
+  </div>
+  <div class="cortina" id="dialogo-bloque" hidden>
+    <div class="dialogo dialogo-ancho" role="dialog" aria-modal="true" aria-labelledby="bloque-titulo">
+      <h2 class="serif dialogo-titulo" id="bloque-titulo">Cambiar un párrafo</h2>
+      <p class="nota">Elija el párrafo. El modelo devuelve solo ese párrafo; usted ve antes y después y decide.</p>
+      <label class="etiqueta" for="bloque-lista">Párrafo</label>
+      <select id="bloque-lista"></select>
+      <label class="etiqueta" for="bloque-pedido">Qué quiere cambiar</label>
+      <input id="bloque-pedido" maxlength="500" autocomplete="off">
+      <div class="fila-fin"><button type="button" class="boton-cobre" id="bloque-pedir">Pedir cambio</button></div>
+      <p class="nota" id="bloque-estado"></p>
+      <div class="bloque-diff" id="bloque-diff" hidden></div>
+      <div id="bloque-historial"></div>
+      <div class="fila-fin">
+        <button type="button" class="boton-texto" id="bloque-cerrar">Cerrar</button>
+        <button type="button" class="boton-texto" id="bloque-rechazar" hidden>Rechazar</button>
+        <button type="button" class="boton-cobre" id="bloque-aceptar" hidden>Aceptar</button>
+      </div>
+    </div>
+  </div>
+  <div class="cortina" id="dialogo-revisar-envio" hidden>
+    <div class="dialogo dialogo-ancho" role="dialog" aria-modal="true" aria-labelledby="envio-titulo">
+      <h2 class="serif dialogo-titulo" id="envio-titulo">Revisar envío</h2>
+      <p class="nota" id="envio-resumen"></p>
+      <div id="envio-archivos"></div>
+      <div class="fila-fin"><button type="button" class="boton-texto" id="envio-ver">Ver texto exacto</button></div>
+      <pre class="envio-texto" id="envio-texto" hidden></pre>
+      <div class="fila-fin">
+        <button type="button" class="boton-texto" id="envio-cancelar">No enviar</button>
+        <button type="button" class="boton-cobre" id="envio-enviar">Enviar a la nube</button>
+      </div>
+    </div>
   </div>
   <div class="cortina" id="dialogo-doc-perfiles" hidden>
     <div class="dialogo dialogo-ancho" role="dialog" aria-modal="true" aria-labelledby="doc-perfiles-titulo">

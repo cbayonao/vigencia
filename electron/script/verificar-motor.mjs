@@ -117,3 +117,41 @@ if (sobra.length) {
   console.warn(`Aviso: hay binarios de otras plataformas en el instalador (${sobra.length} archivos). Engordan el exe sin usarse.`);
 }
 console.log(`Motor verificado en ${dir} (${plataforma}).`);
+
+// Conversor a Markdown: pdfjs (con su worker, cmaps y fuentes estándar),
+// mammoth, turndown y SheetJS van en el asar. El OCR (tesseract.js y su
+// wasm) no viaja en el instalador: se baja desde Modelos de IA.
+const exigirConversor = [
+  "src/convertir/proceso.js",
+  "src/convertir/convertidores.js",
+  "node_modules/pdfjs-dist/legacy/build/pdf.mjs",
+  "node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs",
+  "node_modules/pdfjs-dist/cmaps/UniJIS-UCS2-H.bcmap",
+  "node_modules/pdfjs-dist/standard_fonts/FoxitSerif.pfb",
+  "node_modules/mammoth/lib/index.js",
+  "node_modules/turndown/package.json",
+  "node_modules/xlsx/package.json",
+];
+const faltanConversor = exigirConversor.filter((rel) => !enAsar.has(`/${rel}`) && !fs.existsSync(path.join(recursos, "app.asar.unpacked", rel)));
+if (faltanConversor.length) {
+  console.error(`Falta el conversor a Markdown en ${dir}:`);
+  for (const rel of faltanConversor) console.error(`  - ${rel}`);
+  console.error("No publique este instalador: Convertir a Markdown fallará.");
+  process.exit(1);
+}
+const ocrColado = [...enAsar].filter((ruta) => /node_modules\/tesseract\.js(-core)?\//.test(ruta));
+if (ocrColado.length) {
+  console.warn(`Aviso: el OCR se coló en el instalador (${ocrColado.length} archivos). Debe bajarse desde Modelos de IA.`);
+}
+console.log(`Conversor verificado en ${dir}.`);
+
+// Editor del documento: TipTap va empaquetado en renderer/vendor/editor.js
+// (npm run editor). Sin ese archivo, Editar cae al modo Markdown.
+const exigirEditor = ["renderer/vendor/editor.js", "compartido/formato.js", "compartido/memoria.js"];
+const faltanEditor = exigirEditor.filter((rel) => !enAsar.has(`/${rel}`));
+if (faltanEditor.length) {
+  console.error(`Falta el editor del documento en ${dir}: ${faltanEditor.join(", ")}`);
+  console.error("Corra npm run editor antes de empaquetar.");
+  process.exit(1);
+}
+console.log(`Editor verificado en ${dir}.`);

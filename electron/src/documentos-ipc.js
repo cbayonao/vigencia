@@ -8,11 +8,11 @@ import { listarProcesos } from "./db.js";
 import { borrarPieza, buscarFuentes, etiquetasUsadas, guardarPieza, leerPieza } from "./biblioteca.js";
 import {
   actualizarProyecto, borrarPerfil, borrarProyecto, conversar, crearProyecto, duplicarProyecto, elegirFuentes,
-  escritoDeVersion, guardarPerfil, guardarVersion, leerProyecto, leerVersion, listarPerfiles, listarProyectos,
+  escritoDeVersion, guardarEdicionDocumento, guardarPerfil, guardarVersion, leerProyecto, leerVersion, listarPerfiles, listarProyectos,
   modeloDelProyecto, restaurarVersion,
 } from "./documentos.js";
 import { listarModelos } from "./ia.js";
-import { docxDeEscrito } from "./docx.js";
+import { docxDeEscrito, odtDeEscrito } from "./docx.js";
 import { leerArchivoFuente } from "./importar.js";
 import { htmlDocumento } from "./memorial.js";
 import { pdfDesdeHtml } from "./pdf.js";
@@ -56,9 +56,10 @@ export function registrarDocumentos({ ipcMain, dialog, db, datosDir, ventana, re
     return { diferencias: diferencias(a?.cuerpo || "", b.cuerpo), antes: a?.numero || 0, despues: b.numero };
   }));
   ipcMain.handle("documentos-restaurar", (_e, dato) => responder(() => ({ version: restaurarVersion(base(), dato?.id) })));
-  ipcMain.handle("documentos-guardar-texto", (_e, dato) => responder(() => ({
-    version: guardarVersion(base(), dato?.id, { cuerpo: dato?.cuerpo, autor: "usuario", nota: "Edición directa" }),
-  })));
+  ipcMain.handle("documentos-guardar-texto", (_e, dato) => responder(() => {
+    const r = guardarEdicionDocumento(base(), dato?.id, dato?.cuerpo, Array.isArray(dato?.ids) ? dato.ids.map((x) => (x ? String(x) : null)) : []);
+    return { version: r.version, cambiados: r.cambiados };
+  }));
   ipcMain.handle("documentos-conversar", async (evento, dato) => {
     try {
       const resultado = await conversar({
@@ -69,6 +70,7 @@ export function registrarDocumentos({ ipcMain, dialog, db, datosDir, ventana, re
         modeloId: dato?.modelo,
         pasaje: dato?.pasaje || "",
         documento: dato?.documento ?? null,
+        confirmado: String(dato?.confirmado || ""),
         onProgreso: (avance) => {
           try {
             evento.sender.send("documentos-progreso", avance);
@@ -105,7 +107,7 @@ export function registrarDocumentos({ ipcMain, dialog, db, datosDir, ventana, re
         filters: [{ name: "Texto, Word o PDF", extensions: ["txt", "md", "docx", "pdf"] }],
       });
       if (elegido.canceled || !elegido.filePaths[0]) return { ok: false, cancelado: true };
-      return { ...leerArchivoFuente(elegido.filePaths[0]), archivo: path.basename(elegido.filePaths[0]) };
+      return { ...(await leerArchivoFuente(elegido.filePaths[0], { datosDir: datosDir() })), archivo: path.basename(elegido.filePaths[0]) };
     } catch (error) {
       return { ok: false, error: mensajeHumano(error) };
     }
@@ -113,34 +115,38 @@ export function registrarDocumentos({ ipcMain, dialog, db, datosDir, ventana, re
   // Arrastrar y soltar: recibe rutas del renderer (File.path) y guarda cada
   // archivo como fuente de la biblioteca. No asocia al proyecto: el renderer
   // marca los ids devueltos y el usuario pulsa Usar las marcadas.
-  ipcMain.handle("documentos-fuentes-importar-rutas", (_e, dato) => responder(() => {
+  ipcMain.handle("documentos-fuentes-importar-rutas", async (_e, dato) => {
+    try {
     const rutas = Array.isArray(dato?.rutas) ? dato.rutas.slice(0, 20) : [];
-    if (!rutas.length) return { fuentes: [], errores: [] };
+    if (!rutas.length) return { ok: true, fuentes: [], errores: [] };
     const fuentes = [];
     const errores = [];
     for (const ruta of rutas) {
-      const base = path.basename(String(ruta || ""));
+      const archivoBase = path.basename(String(ruta || ""));
       try {
-        const leido = leerArchivoFuente(String(ruta || ""));
+        const leido = await leerArchivoFuente(String(ruta || ""), { datosDir: datosDir() });
         if (!leido.ok) {
-          errores.push({ archivo: base || String(ruta || ""), error: leido.error });
+          errores.push({ archivo: archivoBase || String(ruta || ""), error: leido.error });
           continue;
         }
-        const nombre = String(leido.nombre || base).slice(0, 120);
+        const nombre = String(leido.nombre || archivoBase).slice(0, 120);
         const clase = /sentencia|t-\d|c-\d|su-\d/i.test(nombre) ? "jurisprudencia" : (/ley|decreto|c[oó]digo/i.test(nombre) ? "ley" : "nota");
-        const guardada = guardarPieza(base(), { nombre, clase, etiquetas: [], texto: leido.texto, origen: base });
+        const guardada = guardarPieza(base(), { nombre, clase, etiquetas: [], texto: leido.texto, origen: archivoBase });
         fuentes.push({ id: guardada.id, nombre: guardada.nombre });
       } catch (error) {
-        errores.push({ archivo: base || String(ruta || ""), error: mensajeHumano(error) });
+        errores.push({ archivo: archivoBase || String(ruta || ""), error: mensajeHumano(error) });
       }
     }
-    return { fuentes, errores };
-  }));
+    return { ok: true, fuentes, errores };
+    } catch (error) {
+      return { ok: false, error: mensajeHumano(error) };
+    }
+  });
   async function guardarComo(titulo, nombre, extension, bytes) {
     const elegido = await dialog.showSaveDialog(ventana(), {
       title: titulo,
       defaultPath: nombreArchivo(nombre, extension),
-      filters: [{ name: extension === "pdf" ? "PDF" : "Word", extensions: [extension] }],
+      filters: [{ name: { pdf: "PDF", odt: "OpenDocument" }[extension] || "Word", extensions: [extension] }],
     });
     if (elegido.canceled || !elegido.filePath) return { ok: false, cancelado: true };
     let ruta = elegido.filePath;
@@ -152,11 +158,13 @@ export function registrarDocumentos({ ipcMain, dialog, db, datosDir, ventana, re
     try {
       const version = leerVersion(base(), dato?.version);
       const escrito = escritoDeVersion(version);
+      const pie = dato?.pie !== false;
       if (dato?.formato === "pdf") {
-        const pdf = await pdfDesdeHtml(htmlDocumento(escrito), ventana());
+        const pdf = await pdfDesdeHtml(htmlDocumento(escrito, { pie }), ventana());
         return await guardarComo("Descargar el documento en PDF", escrito.asunto, "pdf", pdf);
       }
-      return await guardarComo("Guardar el documento en Word", escrito.asunto, "docx", docxDeEscrito(escrito));
+      if (dato?.formato === "odt") return await guardarComo("Guardar el documento para LibreOffice", escrito.asunto, "odt", odtDeEscrito(escrito, { pie }));
+      return await guardarComo("Guardar el documento en Word", escrito.asunto, "docx", docxDeEscrito(escrito, { pie, titulo: true }));
     } catch (error) {
       return { ok: false, error: mensajeHumano(error) };
     }

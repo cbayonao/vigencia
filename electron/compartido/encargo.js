@@ -137,10 +137,17 @@ function tituloLimpio(linea, max = 80) {
 }
 
 function aParrafos(bloque) {
-  return String(bloque || "")
+  const lineas = String(bloque || "")
     .split(/\n+/)
     .map((linea) => linea.trim())
     .filter((linea) => linea && !/^#{1,3}[ \t]+/.test(linea) && !/^[-*_]{3,}$/.test(linea));
+  // Las filas seguidas de una tabla (| a | b |) son un solo párrafo.
+  const salida = [];
+  for (const linea of lineas) {
+    if (/^\|/.test(linea) && /^\|/.test(salida.at(-1) || "")) salida[salida.length - 1] += `\n${linea}`;
+    else salida.push(linea);
+  }
+  return salida;
 }
 
 export function partirEscrito(respuesta) {

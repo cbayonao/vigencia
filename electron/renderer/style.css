@@ -893,3 +893,67 @@ html[data-tema="oscuro"] .doc-pasaje-ref { background: var(--cobre); }
 .doc-dudas-pie { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .doc-dudas-pie .ayuda { margin: 0; }
 .doc-dudas-enviar { padding: 6px 14px; font-size: 13px; white-space: nowrap; }
+
+/* Convertir a Markdown */
+.juris-md { white-space: pre-wrap; max-height: 420px; overflow: auto; font-family: ui-monospace, monospace; font-size: 12.5px; }
+.zona-soltar { border: 2px dashed var(--cobre, #17456e); border-radius: 10px; padding: 22px; text-align: center; }
+.zona-soltar.sobre { background: var(--cobre-suave, #dce8f4); }
+.conv-fila { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px solid rgba(0,0,0,.08); }
+.conv-barra { height: 4px; background: rgba(0,0,0,.08); border-radius: 2px; overflow: hidden; grid-column: 1 / -1; }
+.conv-barra > i { display: block; height: 100%; background: var(--cobre, #17456e); }
+.conv-paneles { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; min-height: 360px; }
+.conv-paneles iframe, .conv-paneles img, .conv-paneles textarea { width: 100%; height: 100%; min-height: 360px; border: 1px solid rgba(0,0,0,.12); border-radius: 8px; }
+.conv-paneles textarea { font-family: ui-monospace, monospace; font-size: 12.5px; padding: 8px; }
+.envio-texto { white-space: pre-wrap; max-height: 50vh; overflow: auto; font-family: ui-monospace, monospace; font-size: 12px; border: 1px solid rgba(0,0,0,.12); padding: 8px; border-radius: 8px; }
+.ctx-archivo { display: flex; gap: 8px; align-items: center; padding: 4px 0; width: 100%; }
+.ctx-archivo input[type="checkbox"] { flex: none; width: auto; margin: 0; }
+.ctx-archivo .nombre { flex: 1 1 auto; min-width: 0; font-size: 14px; line-height: 1.4; font-weight: 400; overflow-wrap: anywhere; }
+.ctx-archivo .boton-texto { flex: none; }
+.conv-cuerpo { display: block; overflow: auto; padding: 16px; }
+
+.bloque-diff { border: 1px solid var(--linea, #ccc); padding: 10px; margin: 8px 0; line-height: 1.6; max-height: 40vh; overflow: auto; }
+.bloque-diff .quitado { text-decoration: line-through; background: #f6dcdc; color: #6b1d1d; }
+.bloque-diff .agregado { background: #dcefdc; color: #154d15; }
+
+/* ---------- Editor del documento ---------- */
+.doc-edicion { display: flex; flex-direction: column; gap: 10px; }
+.ed-barra { position: sticky; top: 0; z-index: 3; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 6px 8px; background: var(--blanco); border: 1px solid var(--linea); border-radius: 6px; box-shadow: 0 2px 8px var(--sombra); }
+.ed-grupo { display: inline-flex; gap: 2px; padding-left: 6px; border-left: 1px solid var(--linea); }
+.ed-fin { margin-left: auto; }
+.ed-btn { border: 1px solid transparent; background: none; color: var(--tinta); border-radius: 4px; padding: 4px 8px; font: inherit; font-size: 12.5px; cursor: pointer; }
+.ed-btn:hover { background: var(--hover-fondo); border-color: var(--hover-borde); }
+.ed-btn.activo { background: var(--cobre-suave); border-color: var(--cobre); color: var(--cobre); }
+.ed-btn:disabled { opacity: 0.45; cursor: default; }
+.ed-n { font-weight: 700; min-width: 28px; }
+.ed-k { font-style: italic; font-family: Georgia, serif; min-width: 28px; }
+.ed-s { text-decoration: underline; min-width: 28px; }
+.ed-ia { color: var(--cobre); border-color: var(--hover-borde); }
+#ed-estilo { font-size: 12.5px; padding: 3px 6px; }
+.ed-papel { background: #fffdf9; color: #221c16; border: 1px solid var(--linea); border-radius: 4px; box-shadow: 0 6px 22px var(--sombra); max-width: 816px; width: 100%; margin: 0 auto; padding: 64px 72px 28px; box-sizing: border-box; min-height: 70vh; }
+.doc-editor-hoja { outline: none; font-family: "Times New Roman", Georgia, serif; font-size: 16px; line-height: 1.6; min-height: 50vh; }
+.doc-editor-hoja p { margin: 0 0 10px; text-align: justify; }
+.doc-editor-hoja h1 { font-size: 22px; text-align: center; margin: 0 0 18px; font-weight: 700; }
+.doc-editor-hoja h2 { font-size: 16px; text-transform: uppercase; letter-spacing: 0.04em; margin: 22px 0 8px; font-weight: 700; }
+.doc-editor-hoja h3 { font-size: 15.5px; font-style: italic; margin: 14px 0 6px; font-weight: 700; }
+.doc-editor-hoja blockquote { margin: 10px 40px 12px 64px; font-size: 14.5px; font-style: italic; color: #3a3129; border-left: 3px solid #d8cbb9; padding-left: 12px; }
+.doc-editor-hoja ul, .doc-editor-hoja ol { margin: 0 0 10px; padding-left: 34px; }
+.doc-editor-hoja li p { margin: 0 0 4px; }
+.doc-editor-hoja table { border-collapse: collapse; width: 100%; margin: 8px 0 14px; font-size: 14px; table-layout: fixed; }
+.doc-editor-hoja th, .doc-editor-hoja td { border: 1px solid #b9a993; padding: 5px 8px; vertical-align: top; }
+.doc-editor-hoja th { background: #f3ede4; }
+.doc-editor-hoja th p, .doc-editor-hoja td p { margin: 0; text-align: left; }
+.doc-editor-hoja .selectedCell { background: #e6eef7; }
+.doc-editor-hoja [data-bloque].ed-actual { background: #f5efe3; box-shadow: -10px 0 0 #f5efe3, 10px 0 0 #f5efe3; border-radius: 2px; }
+.ed-pie { display: flex; justify-content: center; align-items: center; gap: 10px; margin-top: 36px; padding-top: 8px; border-top: 1px solid #e3d8c9; font-size: 12px; font-style: italic; color: #6b5e50; }
+.ed-pie-off { text-align: center; margin-top: 30px; }
+#doc-texto { min-height: 60vh; font-family: "Liberation Mono", ui-monospace, monospace; font-size: 13px; }
+.doc-hoja .doc-parrafo blockquote { margin: 6px 30px 6px 40px; font-style: italic; font-size: 13px; }
+.doc-hoja .doc-parrafo ul, .doc-hoja .doc-parrafo ol { margin: 4px 0 0; padding-left: 28px; }
+.doc-hoja .doc-parrafo h3 { font-size: 14px; font-style: italic; margin: 10px 0 0; }
+.doc-hoja .doc-tabla { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 13px; }
+.doc-hoja .doc-tabla th, .doc-hoja .doc-tabla td { border: 1px solid #c9b8a4; padding: 4px 7px; text-align: left; vertical-align: top; }
+.doc-hoja .doc-tabla th { background: var(--papel-2); }
+.al-centro, .doc-hoja .firma { text-align: center; }
+.al-derecha { text-align: right; }
+.al-izquierda { text-align: left; }
+.al-justificado { text-align: justify; }

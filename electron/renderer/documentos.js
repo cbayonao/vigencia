@@ -1,6 +1,8 @@
 // Pantalla Documentos: proyectos, conversación, hoja viva, versiones,
 // biblioteca de fuentes y perfiles. Todo pasa por window.vigencia.
-import { contarAvisos, diferencias, escritoDeTexto, estimarTokens } from "../compartido/documentos.js";
+import { contarAvisos, diferencias, escritoDeTexto, estimarTokens, textoDeEscrito } from "../compartido/documentos.js";
+import { escritoAJson, jsonAEscrito, parrafoHtml, textoPlano } from "../compartido/formato.js";
+import { bloquesDeCuerpo } from "../compartido/memoria.js";
 
 const $ = (id) => document.getElementById(id);
 const doc = {
@@ -106,7 +108,8 @@ function llenarExpedientes(select, actual) {
 }
 
 function llenarModelos(select, actual, conPreferido = false) {
-  const modelos = doc.inicio?.modelos?.modelos || [];
+  const soloLocal = !conPreferido && doc.datos?.proyecto?.solo_local;
+  const modelos = (doc.inicio?.modelos?.modelos || []).filter((m) => !soloLocal || !String(m.id).startsWith("nube:"));
   const items = modelos.map((m) => opcion(m.id, m.nombre));
   if (conPreferido) items.unshift(opcion("", "El que esté activo en Modelos de IA"));
   select.replaceChildren(...items);
@@ -172,8 +175,12 @@ function pintarPrivacidad() {
   const caja = $("doc-privacidad");
   const nube = String(m?.id || "").startsWith("nube:");
   caja.classList.toggle("nube", nube);
+  if (doc.datos?.proyecto?.solo_local && !nube) {
+    caja.textContent = "Solo local: este proyecto no envía nada a la nube. Conversión, OCR y redacción quedan en este computador.";
+    return;
+  }
   if (nube) {
-    caja.textContent = `Con ${m.nombre} su mensaje, el documento, los datos del expediente vinculado y los fragmentos de las fuentes salen a internet hacia ese proveedor, con su clave.`;
+    caja.textContent = `Antes de cada envío verá el texto exacto. Con ${m.nombre} su mensaje, el documento, los datos del expediente vinculado y los fragmentos de las fuentes salen a internet hacia ese proveedor, con su clave.`;
   } else if (String(m?.id || "").startsWith("gguf:")) {
     caja.textContent = "El modelo corre en este computador. Nada sale a internet.";
   } else {
@@ -201,6 +208,10 @@ function pintarProyecto() {
   llenarExpedientes($("doc-expediente"), d.proyecto.id_proceso);
   const nFuentes = d.fuentes.length;
   $("doc-fuentes-resumen").textContent = nFuentes ? `${nFuentes} ${nFuentes === 1 ? "fuente elegida" : "fuentes elegidas"}` : "Sin fuentes: solo se cita lo del expediente y sus mensajes.";
+  const archivos = d.archivos || [];
+  const dentro = archivos.filter((a) => a.incluido).length;
+  $("doc-archivos-resumen").textContent = archivos.length ? `${archivos.length} ${archivos.length === 1 ? "archivo" : "archivos"}, ${dentro} en el contexto` : "Sin archivos del proyecto.";
+  $("doc-solo-local").checked = Boolean(d.proyecto.solo_local);
   pintarPrivacidad();
   pintarMensajes();
   pintarVersiones();
@@ -344,6 +355,8 @@ function conMarcas(contenedor, valor) {
 
 function hojaDe(cuerpo, origen) {
   const escrito = escritoDeTexto(cuerpo);
+  const ids = cuerpo === doc.datos?.actual?.cuerpo ? idsDe(cuerpo) : [];
+  let orden = 0;
   const hoja = nodo("article", "doc-hoja doc-hoja-viva");
   hoja.append(nodo("p", "marca", "Vista del documento"));
   hoja.append(nodo("h1", "", escrito.asunto));
@@ -353,7 +366,7 @@ function hojaDe(cuerpo, origen) {
     let n = 0;
     for (const p of s.parrafos) {
       n += 1;
-      sec.append(parrafoDe(s.titulo, n, p));
+      sec.append(parrafoDe(s.titulo, n, p, ids[orden++]));
     }
     hoja.append(sec);
   }
@@ -366,13 +379,14 @@ function hojaDe(cuerpo, origen) {
 // Cada párrafo de la hoja trae sus acciones: corregirlo solo a él o
 // citarlo en el mensaje. Es el corazón del editor: el abogado apunta a un
 // pedazo pequeño en vez de reescribir todo.
-function parrafoDe(seccion, numero, texto) {
+function parrafoDe(seccion, numero, texto, bloqueId = "") {
   const caja = nodo("div", "doc-parrafo");
   const ref = `${seccion} · ¶${numero}`;
   caja.dataset.pasaje = String(texto || "");
   caja.dataset.ref = ref;
-  const el = nodo("p", /___/.test(texto) ? "firma" : "");
-  conMarcas(el, texto);
+  const el = nodo("div", "doc-parrafo-cuerpo");
+  // parrafoHtml escapa todo el texto; solo agrega etiquetas de formato.
+  el.innerHTML = parrafoHtml(texto);
   const acciones = nodo("div", "doc-parrafo-acciones");
   const corregir = nodo("button", "doc-parrafo-btn", "✎ Corregir solo este");
   corregir.type = "button";
@@ -385,6 +399,13 @@ function parrafoDe(seccion, numero, texto) {
   citar.setAttribute("aria-label", `Citar el párrafo ${numero} de ${seccion} en el mensaje`);
   citar.addEventListener("click", () => citarParrafo(texto, ref));
   acciones.append(corregir, citar);
+  if (bloqueId) {
+    const ia = nodo("button", "doc-parrafo-btn", "Cambiar con IA");
+    ia.type = "button";
+    ia.title = "El modelo propone un cambio solo para este párrafo; usted ve antes y después";
+    ia.addEventListener("click", () => abrirParrafo(bloqueId));
+    acciones.append(ia);
+  }
   caja.append(el, acciones);
   if (doc.pasaje && String(texto) === doc.pasaje) caja.classList.add("elegido");
   return caja;
@@ -518,7 +539,7 @@ async function enviar(evento) {
   $("doc-enviar").disabled = true;
   const nube = String(doc.modelo).startsWith("nube:");
   estadoChat(nube ? "Pidiendo el texto al proveedor con su clave" : "Redactando en este computador");
-  const documento = doc.editando ? $("doc-texto").value : null;
+  const documento = cuerpoEditado();
   // Eco inmediato: el mensaje se ve en el chat sin esperar la respuesta.
   const eco = nodo("div", "doc-msj doc-msj-usuario");
   eco.append(nodo("p", "doc-msj-texto", mensaje));
@@ -531,12 +552,30 @@ async function enviar(evento) {
     if (dato?.proyectoId === doc.abierto) vivo(dato.texto || "");
   });
   try {
+    let confirmado = "";
+    if (nube) {
+      const previa = await window.vigencia.documentosRevisarEnvio({ id: doc.abierto, mensaje, modelo: doc.modelo, pasaje: doc.pasaje, documento });
+      if (!previa?.ok) {
+        eco.remove();
+        $("doc-mensaje").value = mensaje;
+        estadoChat(previa?.error || "No pude preparar el envío.", true);
+        return;
+      }
+      confirmado = await revisarEnvio(previa);
+      if (!confirmado) {
+        eco.remove();
+        $("doc-mensaje").value = mensaje;
+        estadoChat("No se envió nada.");
+        return;
+      }
+    }
     const r = await window.vigencia.documentosConversar({
       id: doc.abierto,
       mensaje,
       modelo: doc.modelo,
       pasaje: doc.pasaje,
       documento,
+      confirmado,
     });
     if (!r?.ok) {
       eco.remove();
@@ -617,38 +656,202 @@ async function restaurar_(id) {
 async function exportar(formato) {
   const id = doc.versionVista || doc.datos?.actual?.id;
   if (!id) return;
-  const r = await window.vigencia.documentosExportar(id, formato);
+  const r = await window.vigencia.documentosExportar(id, formato, $("doc-pie-ia").checked);
   if (r?.ok) estadoChat(`Guardado en ${r.ruta}`);
   else if (!r?.cancelado) estadoChat(r?.error || "No pude guardar el archivo.", true);
 }
 
 // ---------- Edición directa y pasaje ----------
 
-function empezarEdicion() {
+// El editor (TipTap, empaquetado en vendor/editor.js) trabaja sobre los
+// mismos párrafos con id que usa Cambiar un párrafo y la memoria.
+let modEditor = null;
+let editor = null;
+
+function idsDe(cuerpo) {
+  const bloques = doc.datos?.bloques || [];
+  return bloques.length === bloquesDeCuerpo(cuerpo).length ? bloques.map((b) => b.id) : [];
+}
+
+function cuerpoEditado() {
+  if (!doc.editando) return null;
+  if (doc.modoMarkdown || !editor) return $("doc-texto").value;
+  return textoDeEscrito(jsonAEscrito(editor.getJSON()).escrito);
+}
+
+async function empezarEdicion() {
   doc.editando = true;
-  $("doc-texto").value = doc.datos.actual.cuerpo;
+  doc.modoMarkdown = false;
+  doc.sucio = false;
   $("doc-hoja-caja").hidden = true;
   $("doc-edicion").hidden = false;
-  $("doc-texto").focus();
+  $("ed-estado").textContent = "";
+  const cuerpo = doc.datos.actual.cuerpo;
+  try {
+    modEditor ||= await import("./vendor/editor.js");
+  } catch {
+    // Sin el editor se edita el Markdown, que es lo que se guarda.
+    doc.modoMarkdown = true;
+  }
+  editor?.destroy();
+  editor = null;
+  if (!doc.modoMarkdown) {
+    $("doc-editor").replaceChildren();
+    editor = modEditor.crearEditor($("doc-editor"), {
+      contenido: escritoAJson(escritoDeTexto(cuerpo), idsDe(cuerpo)),
+      alCambiar: () => { doc.sucio = true; pintarBarra(); },
+      alMover: pintarBarra,
+    });
+    editor.commands.focus("start");
+  }
+  $("doc-texto").value = cuerpo;
+  mostrarModo();
+  pintarPieEditor();
+  pintarBarra();
+}
+
+function mostrarModo() {
+  const md = doc.modoMarkdown;
+  $("ed-papel").hidden = md;
+  $("doc-texto").hidden = !md;
+  $("ed-ayuda-md").hidden = !md;
+  for (const b of document.querySelectorAll("#ed-barra .ed-btn, #ed-estilo")) {
+    if (b.dataset.ed !== "markdown") b.disabled = md;
+  }
+  document.querySelector('[data-ed="markdown"]').textContent = md ? "Vista de documento" : "Markdown";
+}
+
+function cambiarModo() {
+  if (!editor && doc.modoMarkdown) return;
+  if (doc.modoMarkdown) {
+    editor.commands.setContent(escritoAJson(escritoDeTexto($("doc-texto").value), idsDe($("doc-texto").value)));
+    doc.modoMarkdown = false;
+  } else {
+    $("doc-texto").value = cuerpoEditado();
+    doc.modoMarkdown = true;
+  }
+  mostrarModo();
+}
+
+function pintarPieEditor() {
+  const on = $("doc-pie-ia").checked;
+  $("ed-pie").hidden = !on;
+  $("ed-pie-off").hidden = on;
+}
+
+const ESTILO_DE = (ed) => {
+  if (ed.isActive("heading", { level: 2 })) return "seccion";
+  if (ed.isActive("heading", { level: 3 })) return "subtitulo";
+  if (ed.isActive("blockquote")) return "cita";
+  if (ed.isActive({ textAlign: "center" }) && /_{3,}/.test(ed.state.selection.$from.parent.textContent)) return "firma";
+  return "parrafo";
+};
+
+function pintarBarra() {
+  if (!editor) return;
+  const activo = (nombre, valor) => document.querySelector(`[data-ed="${nombre}"]`)?.classList.toggle("activo", Boolean(valor));
+  activo("negrita", editor.isActive("bold"));
+  activo("italica", editor.isActive("italic"));
+  activo("subrayado", editor.isActive("underline"));
+  activo("vinetas", editor.isActive("bulletList"));
+  activo("numeros", editor.isActive("orderedList"));
+  for (const [n, v] of [["izquierda", "left"], ["centro", "center"], ["derecha", "right"], ["justificado", "justify"]]) activo(n, editor.isActive({ textAlign: v }));
+  $("ed-estilo").value = ESTILO_DE(editor);
+  const enTabla = editor.isActive("table");
+  for (const b of document.querySelectorAll(".ed-en-tabla")) b.hidden = !enTabla;
+  for (const el of document.querySelectorAll("#doc-editor .ed-actual")) el.classList.remove("ed-actual");
+  const actual = modEditor.bloqueActual(editor);
+  if (actual?.id) document.querySelector(`#doc-editor [data-bloque="${CSS.escape(actual.id)}"]`)?.classList.add("ed-actual");
+}
+
+function aplicarEstilo(valor) {
+  const c = editor.chain().focus();
+  if (editor.isActive("blockquote") && valor !== "cita") c.lift("blockquote");
+  if (valor === "seccion") c.setHeading({ level: 2 });
+  else if (valor === "subtitulo") c.setHeading({ level: 3 });
+  else if (valor === "cita") c.setParagraph().setBlockquote();
+  else if (valor === "firma") c.setParagraph().setTextAlign("center");
+  else c.setParagraph();
+  c.run();
+}
+
+function comandoEditor(nombre) {
+  if (nombre === "markdown") return cambiarModo();
+  if (!editor) return;
+  if (nombre === "ia") return parrafoConIa();
+  const c = editor.chain().focus();
+  const acciones = {
+    negrita: () => c.toggleBold(),
+    italica: () => c.toggleItalic(),
+    subrayado: () => c.toggleUnderline(),
+    vinetas: () => c.toggleBulletList(),
+    numeros: () => c.toggleOrderedList(),
+    izquierda: () => c.setTextAlign("left"),
+    centro: () => c.setTextAlign("center"),
+    derecha: () => c.setTextAlign("right"),
+    justificado: () => c.setTextAlign("justify"),
+    tabla: () => c.insertTable({ rows: 3, cols: 3, withHeaderRow: true }),
+    fila: () => c.addRowAfter(),
+    columna: () => c.addColumnAfter(),
+    "quitar-tabla": () => c.deleteTable(),
+    deshacer: () => c.undo(),
+    rehacer: () => c.redo(),
+  };
+  acciones[nombre]?.().run();
+  pintarBarra();
+}
+
+function parrafoConIa() {
+  const actual = modEditor.bloqueActual(editor);
+  // Sucio de verdad: lo que se ve no es lo guardado.
+  if (cuerpoEditado().trim() !== String(doc.datos?.actual?.cuerpo || "").trim()) {
+    $("ed-estado").textContent = "Guarde los cambios primero; así el modelo trabaja sobre lo que usted ve.";
+    return;
+  }
+  if (!actual?.id) {
+    $("ed-estado").textContent = "Ponga el cursor en un párrafo del texto (no en un título) y vuelva a intentarlo.";
+    return;
+  }
+  abrirParrafo(actual.id);
 }
 
 function cancelarEdicion() {
   doc.editando = false;
+  editor?.destroy();
+  editor = null;
   $("doc-hoja-caja").hidden = false;
   $("doc-edicion").hidden = true;
 }
 
 async function guardarEdicion() {
-  const r = await window.vigencia.documentosGuardarTexto(doc.abierto, $("doc-texto").value);
+  let cuerpo;
+  let ids = [];
+  if (doc.modoMarkdown || !editor) {
+    cuerpo = $("doc-texto").value;
+  } else {
+    const r = jsonAEscrito(editor.getJSON());
+    cuerpo = textoDeEscrito(r.escrito);
+    ids = r.ids;
+  }
+  const r = await window.vigencia.documentosGuardarTexto(doc.abierto, cuerpo, ids);
   if (!r?.ok) return estadoChat(r?.error || "No pude guardar la edición.", true);
-  doc.editando = false;
-  await abrirProyecto(doc.abierto);
+  doc.sucio = false;
+  const quedar = !doc.modoMarkdown && editor;
+  await abrirProyecto(doc.abierto, { conservarVista: true });
   await cargarInicio();
+  if (quedar) {
+    // Sigue en el editor con los ids ya sincronizados.
+    await empezarEdicion();
+    $("ed-estado").textContent = r.cambiados ? `Guardado. ${r.cambiados} ${r.cambiados === 1 ? "párrafo cambió" : "párrafos cambiaron"} y quedaron en su historial.` : "Guardado como versión nueva.";
+  }
 }
 
 function tomarPasaje() {
   let elegido = "";
-  if (doc.editando) {
+  if (doc.editando && editor && !doc.modoMarkdown) {
+    const { from, to } = editor.state.selection;
+    elegido = editor.state.doc.textBetween(from, to, " ");
+  } else if (doc.editando) {
     const t = $("doc-texto");
     elegido = t.value.slice(t.selectionStart, t.selectionEnd);
   } else {
@@ -937,7 +1140,7 @@ async function soltarFuentes(archivos) {
   const rutas = [];
   const rechazados = [];
   for (const f of archivos || []) {
-    const ruta = f?.path || "";
+    const ruta = window.vigencia.rutaDeArchivo(f) || f?.path || "";
     const nombre = f?.name || (ruta ? ruta.split(/[/\\]/).pop() : "") || "archivo";
     if (!ruta) {
       rechazados.push(nombre);
@@ -1027,13 +1230,13 @@ function iniciarSoltar() {
   texto.addEventListener("drop", async (e) => {
     if (!tiposDe(e).includes("files")) return;
     e.preventDefault();
-    const primero = [...(e.dataTransfer?.files || [])].find((f) => f?.path && EXTENSIONES_FUENTE.includes(extensionDe(f.name || f.path)));
+    const primero = [...(e.dataTransfer?.files || [])].find((f) => (window.vigencia.rutaDeArchivo(f) || f?.path) && EXTENSIONES_FUENTE.includes(extensionDe(f.name || f.path || "")));
     if (!primero) {
       mostrarError("doc-fuente-error", `Suelte un archivo ${EXTENSIONES_FUENTE.join(", ")}.`);
       return;
     }
     mostrarError("doc-fuente-error", "");
-    const r = await window.vigencia.documentosFuentesImportarRutas([primero.path]);
+    const r = await window.vigencia.documentosFuentesImportarRutas([window.vigencia.rutaDeArchivo(primero) || primero.path]);
     if (!r?.ok) {
       mostrarError("doc-fuente-error", r?.error || "No pude leer ese archivo.");
       return;
@@ -1149,10 +1352,231 @@ export async function abrirDocumentos() {
   else pintarProyecto();
 }
 
+// ---------- Cambiar un párrafo ----------
+
+function abrirParrafo(elegido = "") {
+  const bloques = doc.datos?.bloques || [];
+  if (!bloques.length) {
+    estadoChat("Todavía no hay párrafos para cambiar.", true);
+    return;
+  }
+  const lista = $("bloque-lista");
+  lista.replaceChildren();
+  for (const b of bloques) {
+    const op = document.createElement("option");
+    op.value = b.id;
+    op.textContent = `${b.seccion ? `${b.seccion}: ` : ""}${textoPlano(b.texto).slice(0, 90)}`;
+    lista.append(op);
+  }
+  if (typeof elegido === "string" && elegido) lista.value = elegido;
+  $("bloque-pedido").value = "";
+  $("bloque-estado").textContent = "";
+  $("bloque-diff").hidden = true;
+  $("bloque-aceptar").hidden = true;
+  $("bloque-rechazar").hidden = true;
+  doc.cambio = null;
+  pintarHistorialBloque();
+  ui.mostrarDialogo("dialogo-bloque");
+}
+
+async function pintarHistorialBloque() {
+  const caja = $("bloque-historial");
+  caja.replaceChildren();
+  const r = await window.vigencia.bloqueHistorial($("bloque-lista").value);
+  for (const c of (r?.ok ? r.cambios : []).slice(0, 5)) {
+    caja.append(nodo("p", "ayuda", `${c.estado === "aceptado" ? "Aceptado" : c.estado === "rechazado" ? "Rechazado" : "Pendiente"}: ${c.pedido}`));
+  }
+}
+
+async function pedirParrafo() {
+  const mensaje = String($("bloque-pedido").value || "").trim();
+  if (!mensaje) {
+    $("bloque-estado").textContent = "Escriba qué quiere cambiar.";
+    return;
+  }
+  const datos = { id: doc.abierto, bloque: $("bloque-lista").value, mensaje, modelo: doc.modelo };
+  let confirmado = "";
+  if (String(doc.modelo).startsWith("nube:")) {
+    const previa = await window.vigencia.bloqueRevisar(datos);
+    if (!previa?.ok) {
+      $("bloque-estado").textContent = previa?.error || "No pude preparar el envío.";
+      return;
+    }
+    ui.ocultarDialogo("dialogo-bloque");
+    confirmado = await revisarEnvio(previa);
+    ui.mostrarDialogo("dialogo-bloque");
+    if (!confirmado) {
+      $("bloque-estado").textContent = "No se envió nada.";
+      return;
+    }
+  }
+  $("bloque-estado").textContent = "Pidiendo el párrafo nuevo";
+  $("bloque-pedir").disabled = true;
+  const r = await window.vigencia.bloqueProponer({ ...datos, confirmado });
+  $("bloque-pedir").disabled = false;
+  if (!r?.ok) {
+    $("bloque-estado").textContent = r?.error || "No pude pedir el cambio.";
+    return;
+  }
+  doc.cambio = r.cambio;
+  const caja = $("bloque-diff");
+  caja.replaceChildren();
+  for (const p of r.cambio.diff || []) caja.append(nodo("span", p.op === "igual" ? "" : p.op, p.texto));
+  caja.hidden = false;
+  $("bloque-estado").textContent = "Tachado lo que sale, resaltado lo que entra.";
+  $("bloque-aceptar").hidden = false;
+  $("bloque-rechazar").hidden = false;
+}
+
+async function resolverParrafo(aceptar) {
+  if (!doc.cambio) return;
+  const r = await window.vigencia.bloqueResolver({ cambio: doc.cambio.id, aceptar });
+  doc.cambio = null;
+  $("bloque-aceptar").hidden = true;
+  $("bloque-rechazar").hidden = true;
+  $("bloque-diff").hidden = true;
+  $("bloque-estado").textContent = r?.ok ? (aceptar ? "Cambio aplicado. Quedó una versión nueva." : "Se conservó el párrafo anterior.") : r?.error || "No pude guardar.";
+  await abrirProyecto(doc.abierto, { conservarVista: true });
+  if (doc.editando && aceptar && r?.ok) await empezarEdicion();
+  pintarHistorialBloque();
+}
+
+// ---------- Revisar envío ----------
+
+function revisarEnvio(previa) {
+  const inf = previa.informe || {};
+  $("envio-resumen").textContent = `Va a enviar ${Number(inf.caracteres || 0).toLocaleString("es-CO")} caracteres (cerca de ${Number(inf.tokens || 0).toLocaleString("es-CO")} tokens) a ${inf.modelo || "la nube"}, con su clave. ${inf.expediente ? "Incluye datos del expediente vinculado. " : ""}${inf.agentes ? "Incluye las instrucciones del proyecto. " : ""}Nada sale si pulsa No enviar.`;
+  const lista = $("envio-archivos");
+  lista.replaceChildren();
+  for (const a of inf.archivos || []) {
+    lista.append(nodo("p", "ayuda", `${a.nombre}: ${a.fragmentos} ${a.fragmentos === 1 ? "fragmento" : "fragmentos"}${a.paginas?.length ? `, páginas ${a.paginas.join(", ")}` : ""}`));
+  }
+  for (const f of inf.fuentes || []) lista.append(nodo("p", "ayuda", `Fuente de la biblioteca: ${f}`));
+  if (!lista.children.length) lista.append(nodo("p", "ayuda", "No van archivos ni fuentes."));
+  $("envio-texto").textContent = previa.texto || "";
+  $("envio-texto").hidden = true;
+  $("envio-ver").textContent = "Ver texto exacto";
+  ui.mostrarDialogo("dialogo-revisar-envio");
+  return new Promise((resolve) => {
+    const cerrar = (valor) => {
+      $("envio-enviar").onclick = null;
+      $("envio-cancelar").onclick = null;
+      ui.ocultarDialogo("dialogo-revisar-envio");
+      resolve(valor);
+    };
+    $("envio-enviar").onclick = () => cerrar(inf.hash || "");
+    $("envio-cancelar").onclick = () => cerrar("");
+  });
+}
+
+// ---------- Contexto del proyecto: archivos y AGENTS.md ----------
+
+async function abrirContexto() {
+  if (!doc.abierto) return;
+  $("doc-ctx-estado").textContent = "";
+  const r = await window.vigencia.proyectoAgentesLeer(doc.abierto);
+  doc.plantillaAgentes = r?.plantilla || "";
+  $("doc-ctx-agentes").value = r?.ok ? r.texto : "";
+  $("doc-ctx-agentes").placeholder = doc.plantillaAgentes;
+  await pintarArchivosCtx();
+  ui.mostrarDialogo("dialogo-doc-contexto");
+}
+
+async function pintarArchivosCtx() {
+  const r = await window.vigencia.proyectoArchivos(doc.abierto);
+  const caja = $("doc-ctx-archivos");
+  caja.replaceChildren();
+  const lista = r?.ok ? r.archivos : [];
+  if (!lista.length) caja.append(nodo("p", "ayuda", "Todavía no hay archivos en este proyecto."));
+  for (const a of lista) {
+    const fila = nodo("div", "ctx-archivo");
+    const marca = document.createElement("input");
+    marca.type = "checkbox";
+    marca.checked = Boolean(a.incluido);
+    marca.title = "Incluir en el contexto";
+    marca.addEventListener("change", async () => {
+      await window.vigencia.proyectoArchivoIncluir(doc.abierto, a.id, marca.checked);
+      await abrirProyecto(doc.abierto, { conservarVista: true });
+    });
+    const detalle = [a.estado === "listo" ? "listo" : a.estado, a.paginas ? `${a.paginas} págs.` : "", a.paginas_ocr ? `${a.paginas_ocr} con OCR` : "", `${Number(a.tokens_aprox || 0).toLocaleString("es-CO")} tokens aprox.`].filter(Boolean).join(", ");
+    const nombre = nodo("span", "nombre", `${a.nombre} (${detalle})`);
+    if (a.aviso) nombre.title = a.aviso;
+    const quitar = nodo("button", "boton-texto", "Quitar");
+    quitar.type = "button";
+    quitar.addEventListener("click", async () => {
+      await window.vigencia.proyectoArchivoQuitar(doc.abierto, a.id);
+      await pintarArchivosCtx();
+      await abrirProyecto(doc.abierto, { conservarVista: true });
+    });
+    fila.append(marca, nombre, quitar);
+    caja.append(fila);
+    if (a.aviso) caja.append(nodo("p", "ayuda", a.aviso));
+  }
+}
+
+async function convertirAlProyecto(rutas) {
+  if (!rutas.length || !doc.abierto) return;
+  $("doc-ctx-estado").textContent = `Convirtiendo ${rutas.length} ${rutas.length === 1 ? "archivo" : "archivos"} en este computador...`;
+  const quitar = window.vigencia.alConvertir((p) => {
+    if (p?.fase === "ocr") $("doc-ctx-estado").textContent = `${p.nombre}: leyendo con OCR la página ${p.pagina} de ${p.total}`;
+    else if (p?.fase === "leyendo" && p.total) $("doc-ctx-estado").textContent = `${p.nombre}: página ${p.pagina} de ${p.total}`;
+  });
+  try {
+    const r = await window.vigencia.convertirRutas(rutas, doc.abierto);
+    const errores = (r?.resultados || []).filter((x) => x.error).map((x) => `${x.nombre}: ${x.error}`);
+    $("doc-ctx-estado").textContent = errores.length ? errores.join(" ") : "Listo. Los archivos quedaron en el proyecto.";
+  } finally {
+    quitar();
+  }
+  await pintarArchivosCtx();
+  await abrirProyecto(doc.abierto, { conservarVista: true });
+}
+
+function rutasDe(archivos) {
+  return [...(archivos || [])].map((f) => window.vigencia.rutaDeArchivo(f) || f?.path || "").filter(Boolean);
+}
+
+function iniciarContexto() {
+  $("doc-abrir-ctx").addEventListener("click", abrirContexto);
+  $("doc-ctx-cerrar").addEventListener("click", () => ui.ocultarDialogo("dialogo-doc-contexto"));
+  $("doc-ctx-plantilla").addEventListener("click", () => {
+    if (!$("doc-ctx-agentes").value.trim()) $("doc-ctx-agentes").value = doc.plantillaAgentes || "";
+  });
+  $("doc-ctx-guardar").addEventListener("click", async () => {
+    const r = await window.vigencia.proyectoAgentesGuardar(doc.abierto, $("doc-ctx-agentes").value);
+    $("doc-ctx-estado").textContent = r?.ok ? "Instrucciones guardadas." : r?.error || "No pude guardarlas.";
+  });
+  $("doc-ctx-elegir").addEventListener("click", async () => {
+    const r = await window.vigencia.convertirElegir();
+    await convertirAlProyecto(r?.rutas || []);
+  });
+  const zona = $("doc-ctx-soltar");
+  zona.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    zona.classList.add("sobre");
+  });
+  zona.addEventListener("dragleave", () => zona.classList.remove("sobre"));
+  zona.addEventListener("drop", async (e) => {
+    e.preventDefault();
+    zona.classList.remove("sobre");
+    await convertirAlProyecto(rutasDe(e.dataTransfer?.files));
+  });
+  $("envio-ver").addEventListener("click", () => {
+    const t = $("envio-texto");
+    t.hidden = !t.hidden;
+    $("envio-ver").textContent = t.hidden ? "Ver texto exacto" : "Ocultar texto";
+  });
+  $("doc-solo-local").addEventListener("change", async () => {
+    await cambiarProyecto({ solo_local: $("doc-solo-local").checked });
+    await abrirProyecto(doc.abierto, { conservarVista: true });
+  });
+}
+
 export function iniciarDocumentos(herramientas) {
   if (doc.listo) return;
   doc.listo = true;
   ui = herramientas;
+  iniciarContexto();
   $("doc-nuevo").addEventListener("click", abrirNuevo);
   $("doc-nuevo-2").addEventListener("click", abrirNuevo);
   $("form-doc-nuevo").addEventListener("submit", crearNuevo);
@@ -1189,6 +1613,22 @@ export function iniciarDocumentos(herramientas) {
   $("doc-edicion-guardar").addEventListener("click", guardarEdicion);
   $("doc-word").addEventListener("click", () => exportar("docx"));
   $("doc-pdf").addEventListener("click", () => exportar("pdf"));
+  $("doc-odt").addEventListener("click", () => exportar("odt"));
+  $("doc-parrafo").addEventListener("click", () => abrirParrafo());
+  for (const b of document.querySelectorAll("#ed-barra .ed-btn")) {
+    b.addEventListener("mousedown", (e) => e.preventDefault()); // no perder la selección
+    b.addEventListener("click", () => comandoEditor(b.dataset.ed));
+  }
+  $("ed-estilo").addEventListener("change", (e) => aplicarEstilo(e.target.value));
+  $("ed-pie-quitar").addEventListener("click", () => { $("doc-pie-ia").checked = false; pintarPieEditor(); });
+  $("ed-pie-poner").addEventListener("click", () => { $("doc-pie-ia").checked = true; pintarPieEditor(); });
+  $("doc-pie-ia").addEventListener("change", pintarPieEditor);
+  $("doc-texto").addEventListener("input", () => { doc.sucio = true; });
+  $("bloque-lista").addEventListener("change", pintarHistorialBloque);
+  $("bloque-pedir").addEventListener("click", pedirParrafo);
+  $("bloque-aceptar").addEventListener("click", () => resolverParrafo(true));
+  $("bloque-rechazar").addEventListener("click", () => resolverParrafo(false));
+  $("bloque-cerrar").addEventListener("click", () => ui.ocultarDialogo("dialogo-bloque"));
   $("doc-hoja-caja").addEventListener("mouseup", tomarPasaje);
   $("doc-texto").addEventListener("mouseup", tomarPasaje);
   $("doc-texto").addEventListener("keyup", (e) => { if (e.shiftKey) tomarPasaje(); });

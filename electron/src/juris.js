@@ -17,7 +17,7 @@ import {
 } from "../compartido/juris.js";
 import { Aviso } from "./db.js";
 import { guardarPieza } from "./biblioteca.js";
-import { textoDePdf } from "./pdftexto.js";
+import { textoDePdfCompleto } from "./pdftexto.js";
 
 const UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36";
 const CSJ_BASE = "https://consultajurisprudencial.ramajudicial.gov.co/WebRelatoria/csj/index.xhtml";
@@ -280,7 +280,7 @@ export async function leerCE(token) {
       continue;
     }
     if (!respuesta.ok) continue;
-    const leido = textoDePdf(Buffer.from(await respuesta.arrayBuffer()));
+    const leido = await textoDePdfCompleto(Buffer.from(await respuesta.arrayBuffer()));
     if (leido.ok && leido.texto.trim()) partes.push(leido.texto.trim());
   }
   const texto = partes.join("\n\n===== Siguiente documento =====\n\n").trim().slice(0, 600000);
@@ -302,6 +302,37 @@ export async function leerJuris(sentencia) {
   if (sentencia?.fuente === "ccc" && sentencia.url) return leerCCC(sentencia.url);
   if (sentencia?.fuente === "ce" && sentencia.token) return leerCE(sentencia.token);
   throw new Aviso("Esa sentencia todavía no tiene lectura directa: ábrala en el navegador desde su ficha.");
+}
+
+// Bajar el documento original de la relatoría para convertirlo a Markdown.
+// Solo descarga: no se envía nada del usuario.
+export async function descargarJuris(sentencia) {
+  if (sentencia?.fuente === "ccc" && sentencia.url) {
+    const r = await fetch(String(sentencia.url), { headers: { "user-agent": UA }, signal: AbortSignal.timeout(60000) });
+    if (!r.ok) throw new Aviso(`La Corte Constitucional respondió HTTP ${r.status}. Intente de nuevo.`);
+    const datos = Buffer.from(await r.arrayBuffer());
+    const esPdf = datos.subarray(0, 5).toString("latin1") === "%PDF-";
+    return [{ datos, nombre: `${nombreFuente(sentencia)}.${esPdf ? "pdf" : "html"}` }];
+  }
+  if (sentencia?.fuente === "ce" && sentencia.token) {
+    const sesion = sesionVacia();
+    const url = `${CE_BASE}/PaginasTransversales/VerProvidencia.aspx?tokenDocumento=${encodeURIComponent(String(sentencia.token))}`;
+    const html = await pedir(sesion, url, { cabecerasExtra: { referer: CE_BUSCADOR } });
+    const pdfs = [...new Set([...html.matchAll(/VerProvidenciaViewer\.init\('[^']+',\s*\{"url":"(https:[^"]+?\.pdf\?[^"]+)"/g)].map((m) => m[1].replace(/&amp;/g, "&")))].slice(0, 5);
+    const salida = [];
+    for (const [i, pdf] of pdfs.entries()) {
+      await pausa();
+      try {
+        const r = await fetch(pdf, { headers: { "user-agent": UA }, signal: AbortSignal.timeout(90000) });
+        if (r.ok) salida.push({ datos: Buffer.from(await r.arrayBuffer()), nombre: `${nombreFuente(sentencia)}${pdfs.length > 1 ? ` (${i + 1})` : ""}.pdf` });
+      } catch {
+        /* se intenta el siguiente */
+      }
+    }
+    if (!salida.length) throw new Aviso("Esa providencia no trajo documento para convertir. Ábrala en el navegador.");
+    return salida;
+  }
+  throw new Aviso("Esa sentencia todavía no tiene documento directo: ábrala en el navegador desde su ficha.");
 }
 
 export function guardarJuris(db, sentencia, textoCompleto) {

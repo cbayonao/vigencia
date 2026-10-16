@@ -1,7 +1,46 @@
-const { contextBridge, ipcRenderer } = require("electron");
+const { contextBridge, ipcRenderer, webUtils } = require("electron");
 
 contextBridge.exposeInMainWorld("vigencia", {
   listar: () => ipcRenderer.invoke("listar"),
+  rutaDeArchivo: (archivo) => {
+    try {
+      return webUtils.getPathForFile(archivo) || "";
+    } catch {
+      return "";
+    }
+  },
+  convertirInicio: () => ipcRenderer.invoke("convertir-inicio"),
+  convertirElegir: () => ipcRenderer.invoke("convertir-elegir"),
+  convertirRutas: (rutas, proyectoId, forzarOcr) => ipcRenderer.invoke("convertir-rutas", { rutas, proyectoId, forzarOcr }),
+  convertirReconvertir: (id) => ipcRenderer.invoke("convertir-reconvertir", { id }),
+  convertirCancelar: (id) => ipcRenderer.invoke("convertir-cancelar", { id }),
+  convertirLeer: (id) => ipcRenderer.invoke("convertir-leer", { id }),
+  convertirGuardarEdicion: (id, markdown) => ipcRenderer.invoke("convertir-guardar-edicion", { id, markdown }),
+  convertirGuardarComo: (id) => ipcRenderer.invoke("convertir-guardar-como", { id }),
+  convertirABiblioteca: (id) => ipcRenderer.invoke("convertir-a-biblioteca", { id }),
+  convertirLimpiarCache: () => ipcRenderer.invoke("convertir-limpiar-cache"),
+  convertirOcrEstado: () => ipcRenderer.invoke("convertir-ocr-estado"),
+  convertirOcrInstalar: () => ipcRenderer.invoke("convertir-ocr-instalar"),
+  convertirOcrQuitar: () => ipcRenderer.invoke("convertir-ocr-quitar"),
+  alConvertir: (fn) => {
+    const canal = (_e, dato) => fn(dato);
+    ipcRenderer.on("convertir-progreso", canal);
+    return () => ipcRenderer.removeListener("convertir-progreso", canal);
+  },
+  alOcrProgreso: (fn) => {
+    const canal = (_e, dato) => fn(dato);
+    ipcRenderer.on("convertir-ocr-progreso", canal);
+    return () => ipcRenderer.removeListener("convertir-ocr-progreso", canal);
+  },
+  proyectoArchivos: (proyectoId) => ipcRenderer.invoke("proyecto-archivos", { proyectoId }),
+  proyectoArchivoAgregar: (proyectoId, archivoId) => ipcRenderer.invoke("proyecto-archivo-agregar", { proyectoId, archivoId }),
+  proyectoArchivoQuitar: (proyectoId, archivoId) => ipcRenderer.invoke("proyecto-archivo-quitar", { proyectoId, archivoId }),
+  proyectoArchivoIncluir: (proyectoId, archivoId, incluido) => ipcRenderer.invoke("proyecto-archivo-incluir", { proyectoId, archivoId, incluido }),
+  proyectoAgentesLeer: (proyectoId) => ipcRenderer.invoke("proyecto-agentes-leer", { proyectoId }),
+  proyectoAgentesGuardar: (proyectoId, texto) => ipcRenderer.invoke("proyecto-agentes-guardar", { proyectoId, texto }),
+  proyectoEnvios: (proyectoId) => ipcRenderer.invoke("proyecto-envios", { proyectoId }),
+  documentosRevisarEnvio: (datos) => ipcRenderer.invoke("documentos-revisar-envio", datos),
+  jurisConvertir: (sentencia, proyectoId) => ipcRenderer.invoke("juris-convertir", { sentencia, proyectoId }),
   documentosInicio: () => ipcRenderer.invoke("documentos-inicio"),
   documentosProyecto: (id, modelo) => ipcRenderer.invoke("documentos-proyecto", { id, modelo }),
   documentosCrear: (datos) => ipcRenderer.invoke("documentos-crear", datos),

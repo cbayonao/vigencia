@@ -893,3 +893,17 @@ html[data-tema="oscuro"] .doc-pasaje-ref { background: var(--cobre); }
 .doc-dudas-pie { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .doc-dudas-pie .ayuda { margin: 0; }
 .doc-dudas-enviar { padding: 6px 14px; font-size: 13px; white-space: nowrap; }
+
+/* Convertir a Markdown */
+.juris-md { white-space: pre-wrap; max-height: 420px; overflow: auto; font-family: ui-monospace, monospace; font-size: 12.5px; }
+.zona-soltar { border: 2px dashed var(--cobre, #17456e); border-radius: 10px; padding: 22px; text-align: center; }
+.zona-soltar.sobre { background: var(--cobre-suave, #dce8f4); }
+.conv-fila { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px solid rgba(0,0,0,.08); }
+.conv-barra { height: 4px; background: rgba(0,0,0,.08); border-radius: 2px; overflow: hidden; grid-column: 1 / -1; }
+.conv-barra > i { display: block; height: 100%; background: var(--cobre, #17456e); }
+.conv-paneles { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; min-height: 360px; }
+.conv-paneles iframe, .conv-paneles img, .conv-paneles textarea { width: 100%; height: 100%; min-height: 360px; border: 1px solid rgba(0,0,0,.12); border-radius: 8px; }
+.conv-paneles textarea { font-family: ui-monospace, monospace; font-size: 12.5px; padding: 8px; }
+.envio-texto { white-space: pre-wrap; max-height: 50vh; overflow: auto; font-family: ui-monospace, monospace; font-size: 12px; border: 1px solid rgba(0,0,0,.12); padding: 8px; border-radius: 8px; }
+.ctx-archivo { display: flex; gap: 8px; align-items: center; padding: 4px 0; }
+.ctx-archivo .nombre { flex: 1; }

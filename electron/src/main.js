@@ -19,6 +19,7 @@ import {
   protocol,
   shell,
   Tray,
+  utilityProcess,
 } from "electron";
 import {
   ESPERA_AL_ARRANCAR_MS,
@@ -101,6 +102,7 @@ import { generarBorrador, generarInicial, guardarActivo, guardarModo, importarMo
 import { htmlMemorial } from "./memorial.js";
 import { registrarDocumentos } from "./documentos-ipc.js";
 import { registrarJuris } from "./juris-ipc.js";
+import { registrarConvertir } from "./convertir-ipc.js";
 import { consultarVersion, descargarActualizacion } from "./actualizar.js";
 import { directorioDatos } from "./rutas.js";
 
@@ -127,6 +129,7 @@ const TIPOS = {
 let ventana = null;
 let db = null;
 let datosDir = "";
+let conversor = null;
 let cargaPendiente = null;
 let cargaPp = null;
 let catalogoPp = null;
@@ -782,6 +785,16 @@ if (bloqueo) {
     registrarJuris({
       ipcMain,
       db: () => db,
+      responder,
+      mensajeHumano,
+    });
+    conversor = registrarConvertir({
+      ipcMain,
+      dialog,
+      utilityProcess,
+      db: () => db,
+      datosDir: () => datosDir,
+      ventana: () => ventana,
       responder,
       mensajeHumano,
     });
@@ -1556,6 +1569,7 @@ if (bloqueo) {
   });
   app.on("will-quit", () => {
     programador?.detener();
+    conversor?.cola.cerrar();
     try {
       servidorPdf?.close();
     } catch {

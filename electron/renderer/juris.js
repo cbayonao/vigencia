@@ -198,6 +198,7 @@ function fichaFilas(r) {
 function abrirFicha(r) {
   ju.abierta = r;
   ju.texto = "";
+  ju.convertido = null;
   pintarResultados();
   pintarLector();
   $("juris-detalle").scrollTop = 0;
@@ -242,11 +243,17 @@ function pintarLector() {
   const web = nodo("button", "boton-texto", "Abrir en el navegador");
   web.type = "button";
   web.addEventListener("click", abrirNavegador);
-  acciones.append(leer, guardar, web);
+  const convertir = nodo("button", "boton-linea", ju.convirtiendo ? "Convirtiendo..." : "Convertir a Markdown");
+  convertir.type = "button";
+  convertir.disabled = ju.convirtiendo || !(r.fuente === "ccc" || r.fuente === "ce");
+  convertir.title = "Baja la sentencia, la convierte a Markdown en este computador y la deja lista para cualquier modelo.";
+  convertir.addEventListener("click", convertirSentencia);
+  acciones.append(leer, convertir, guardar, web);
   const nota = nodo("p", "ayuda", "");
   nota.id = "juris-lector-estado";
   tarjetaAcciones.append(acciones, nota);
   detalle.append(tarjetaAcciones);
+  if (ju.convertido) detalle.append(tarjetaConvertido());
   const caja = nodo("div", "juris-texto");
   caja.id = "juris-texto";
   if (ju.texto) caja.textContent = ju.texto;
@@ -414,4 +421,84 @@ export function iniciarJuris() {
   $("juris-mas-filtros").addEventListener("toggle", () => {
     $("juris-mas-filtros-resumen").textContent = $("juris-mas-filtros").open ? "Menos filtros" : "Más filtros";
   });
+}
+
+
+// ---------- Convertir a Markdown ----------
+
+async function convertirSentencia() {
+  if (ju.convirtiendo || !ju.abierta) return;
+  ju.convirtiendo = true;
+  ju.convertido = null;
+  pintarLector();
+  lectorEstado("Bajando la sentencia y convirtiéndola en este computador. Puede tardar si es escaneada.");
+  const r = await window.vigencia.jurisConvertir(ju.abierta);
+  ju.convirtiendo = false;
+  if (!r?.ok) {
+    pintarLector();
+    lectorEstado(r?.error || "No pude convertir la sentencia.", true);
+    return;
+  }
+  const bueno = (r.resultados || []).find((x) => x.archivo?.estado === "listo");
+  if (!bueno) {
+    pintarLector();
+    lectorEstado((r.resultados || []).map((x) => x.error).filter(Boolean)[0] || "No pude convertir la sentencia.", true);
+    return;
+  }
+  const leido = await window.vigencia.convertirLeer(bueno.archivo.id);
+  const proyectos = await window.vigencia.documentosInicio();
+  ju.convertido = {
+    archivos: (r.resultados || []).filter((x) => x.archivo?.estado === "listo").map((x) => x.archivo),
+    markdown: leido?.ok ? leido.markdown : "",
+    proyectos: proyectos?.ok ? proyectos.proyectos || [] : [],
+    cache: Boolean(bueno.cache),
+  };
+  pintarLector();
+  const a = bueno.archivo;
+  const partes = [`Lista en Markdown${bueno.cache ? " (ya estaba convertida)" : ""}`];
+  if (a.paginas) partes.push(`${a.paginas} páginas`);
+  if (a.paginas_ocr) partes.push(`${a.paginas_ocr} leídas con OCR`);
+  partes.push(`cerca de ${Number(a.tokens_aprox || 0).toLocaleString("es-CO")} tokens`);
+  lectorEstado(`${partes.join(", ")}.${a.aviso ? ` ${a.aviso}` : ""}`);
+}
+
+function tarjetaConvertido() {
+  const c = ju.convertido;
+  const tarjeta = nodo("section", "juris-card juris-convertido");
+  tarjeta.append(nodo("h2", "seccion serif", "Sentencia en Markdown"));
+  const fila = nodo("div", "fila-fin juris-acciones");
+  const select = document.createElement("select");
+  select.className = "campo";
+  select.append(new Option(c.proyectos.length ? "Elegir proyecto de Documentos" : "No hay proyectos en Documentos", ""));
+  for (const p of c.proyectos) select.append(new Option(p.nombre, String(p.id)));
+  const agregar = nodo("button", "boton-cobre", "Agregar al proyecto");
+  agregar.type = "button";
+  agregar.disabled = !c.proyectos.length;
+  agregar.addEventListener("click", async () => {
+    const id = Number(select.value);
+    if (!id) return lectorEstado("Elija un proyecto.", true);
+    for (const a of c.archivos) {
+      const r = await window.vigencia.proyectoArchivoAgregar(id, a.id);
+      if (!r?.ok) return lectorEstado(r?.error || "No pude agregarla al proyecto.", true);
+    }
+    lectorEstado("Quedó en los archivos del proyecto. El modelo la usará por fragmentos con su página.");
+  });
+  const biblioteca = nodo("button", "boton-linea", "Guardar en la biblioteca");
+  biblioteca.type = "button";
+  biblioteca.addEventListener("click", async () => {
+    const r = await window.vigencia.convertirABiblioteca(c.archivos[0].id);
+    lectorEstado(r?.ok ? "Guardada en la biblioteca como jurisprudencia." : r?.error || "No pude guardarla.", !r?.ok);
+  });
+  const md = nodo("button", "boton-texto", "Guardar .md");
+  md.type = "button";
+  md.addEventListener("click", async () => {
+    const r = await window.vigencia.convertirGuardarComo(c.archivos[0].id);
+    if (r?.ok) lectorEstado(`Guardado en ${r.ruta}`);
+    else if (!r?.cancelado) lectorEstado(r?.error || "No pude guardarlo.", true);
+  });
+  fila.append(select, agregar, biblioteca, md);
+  const vista = nodo("pre", "juris-texto juris-md");
+  vista.textContent = c.markdown.slice(0, 200000);
+  tarjeta.append(fila, vista);
+  return tarjeta;
 }

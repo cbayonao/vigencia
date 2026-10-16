@@ -231,7 +231,7 @@ export function registrarConvertir({ ipcMain, dialog, utilityProcess, db, datosD
       const documentos = await descargarJuris(s);
       const encabezado = {
         titulo: s.titulo || s.providencia || s.numero || "",
-        corporacion: s.corporacion || s.fuenteNombre || s.fuente || "",
+        corporacion: s.corporacion || { ccc: "Corte Constitucional", ce: "Consejo de Estado", csj: "Corte Suprema de Justicia" }[s.fuente] || "",
         providencia: s.providencia || s.numero || "",
         fecha: s.fecha || "",
         ponente: s.ponente || "",

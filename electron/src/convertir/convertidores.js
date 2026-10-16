@@ -262,7 +262,12 @@ export function htmlAMarkdown(html) {
   if (!turndown) {
     const Turndown = require("turndown");
     turndown = new Turndown({ headingStyle: "atx", bulletListMarker: "-", codeBlockStyle: "fenced", emDelimiter: "*" });
-    turndown.remove(["script", "style", "noscript", "iframe"]);
+    turndown.remove(["script", "style", "noscript", "iframe", "img"]);
+    // Enlaces relativos de la relatoría no sirven fuera del sitio: queda el texto.
+    turndown.addRule("enlaceRelativo", {
+      filter: (n) => n.nodeName === "A" && !/^https?:/i.test(n.getAttribute("href") || ""),
+      replacement: (contenido) => contenido,
+    });
   }
   return turndown.turndown(String(html || "")).replace(/\n{3,}/g, "\n\n").trim();
 }

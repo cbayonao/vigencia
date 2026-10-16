@@ -92,10 +92,15 @@
   },
   "devDependencies": {
     "electron": "44.7.0",
-    "electron-builder": "26.15.3"
+    "electron-builder": "26.15.3",
+    "tesseract.js": "^6.0.1"
   },
   "dependencies": {
-    "node-llama-cpp": "^3.22.1"
+    "mammoth": "^1.13.0",
+    "node-llama-cpp": "^3.22.1",
+    "pdfjs-dist": "^4.10.38",
+    "turndown": "^7.2.4",
+    "xlsx": "file:vendor/xlsx-0.20.3.tgz"
   },
   "allowScripts": {
     "node-llama-cpp@3.22.1": true

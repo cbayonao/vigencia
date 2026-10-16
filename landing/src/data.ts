@@ -1,4 +1,4 @@
-export const VERSION = "3.4.0";
+export const VERSION = "3.5.0";
 export const PRECIO = "$599.900";
 export const DIAS_PRUEBA = 20;
 export const WHATSAPP = "573046408977";

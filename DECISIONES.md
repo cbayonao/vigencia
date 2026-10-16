@@ -44,3 +44,14 @@
 - Respuesta HTTP: 200
 - Preview: {'tipoConsulta': 'NumeroRadicacion', 'procesos': [{'idProceso': 112263593, 'idConexion': 261, 'llaveProceso': '11001400304720220003800', 'fechaProceso': '2022-01-23T00:00:00', 'fechaUltimaActuacion': '2026-08-14T00:00:00', 'despacho': 'JUZGADO 047 CIVIL MUNICIPAL DE BOGOTÁ ', 'departamento': 'BOGOTÁ', 'sujetosProcesales': 'Demandante: FUNDACION CODERISE EN LIQUIDACION | Demandado: CAMILO BAYONA ORDUZ ', 'esPrivado': False, 'cantFilas': -1}], 'parametros': {'numero': '11001400304720220003800', 'nombre': None, 'tipoPersona': None, 'idSujeto': None, 'ponente': None, 'claseProceso': None, 'codificacionDespacho': None, 'soloActivos': False}, 'paginacion': {'cantidadRegistros': 1, 'registrosPagina': 20, 'cantidadPaginas': 1, 'pagina': 1, 'paginas': None}}
 - Decision: Radicado 11001400304720220003800: resultado de la consulta = ok. (Pendiente de lógica de negocio)
+
+## Convertir a Markdown, memoria y párrafos (octubre 2026)
+
+- Todo local. La única red es la descarga del OCR que el usuario pide (paquetes npm con integridad sha512 y el idioma español de jsdelivr); al reconocer, tesseract usa la carpeta local y `cacheMethod: "none"`.
+- Un solo proceso conversor con cola en orden, no tres en paralelo como decía el plan: pdfjs y tesseract ya usan bastante memoria y la cola se puede cancelar.
+- Solo local vale 1 también en proyectos existentes: quien usaba la nube debe apagarlo a propósito.
+- La vista del original no se muestra en la ventana: la CSP (`frame-src`, `style-src 'self'`) bloquea iframes de file://. Se muestra ruta, motor y calidad.
+- Recuperación BM25 en JS; FTS5 solo filtra cuando hay más de 400 trozos. Sin embeddings.
+- La memoria del documento se arma sin modelos (reglas fijas) para que no dependa de cuál se use; tope 1200 caracteres en local y 4000 en nube.
+- Ids de bloque estables por texto igual o parecido. Aceptar un cambio verifica que el párrafo siga igual a la propuesta; si no, pide repetirlo.
+- Electron 44 quitó `File.path`: el arrastre usa `webUtils.getPathForFile`.

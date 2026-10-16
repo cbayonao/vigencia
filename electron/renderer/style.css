@@ -905,8 +905,10 @@ html[data-tema="oscuro"] .doc-pasaje-ref { background: var(--cobre); }
 .conv-paneles iframe, .conv-paneles img, .conv-paneles textarea { width: 100%; height: 100%; min-height: 360px; border: 1px solid rgba(0,0,0,.12); border-radius: 8px; }
 .conv-paneles textarea { font-family: ui-monospace, monospace; font-size: 12.5px; padding: 8px; }
 .envio-texto { white-space: pre-wrap; max-height: 50vh; overflow: auto; font-family: ui-monospace, monospace; font-size: 12px; border: 1px solid rgba(0,0,0,.12); padding: 8px; border-radius: 8px; }
-.ctx-archivo { display: flex; gap: 8px; align-items: center; padding: 4px 0; }
-.ctx-archivo .nombre { flex: 1; }
+.ctx-archivo { display: flex; gap: 8px; align-items: center; padding: 4px 0; width: 100%; }
+.ctx-archivo input[type="checkbox"] { flex: none; width: auto; margin: 0; }
+.ctx-archivo .nombre { flex: 1 1 auto; min-width: 0; font-size: 14px; line-height: 1.4; font-weight: 400; overflow-wrap: anywhere; }
+.ctx-archivo .boton-texto { flex: none; }
 .conv-cuerpo { display: block; overflow: auto; padding: 16px; }
 
 .bloque-diff { border: 1px solid var(--linea, #ccc); padding: 10px; margin: 8px 0; line-height: 1.6; max-height: 40vh; overflow: auto; }

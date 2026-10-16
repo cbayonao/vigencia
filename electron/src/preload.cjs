@@ -55,7 +55,7 @@ contextBridge.exposeInMainWorld("vigencia", {
   documentosVersion: (id) => ipcRenderer.invoke("documentos-version", { id }),
   documentosDiferencias: (antes, despues) => ipcRenderer.invoke("documentos-diferencias", { antes, despues }),
   documentosRestaurar: (id) => ipcRenderer.invoke("documentos-restaurar", { id }),
-  documentosGuardarTexto: (id, cuerpo) => ipcRenderer.invoke("documentos-guardar-texto", { id, cuerpo }),
+  documentosGuardarTexto: (id, cuerpo, ids) => ipcRenderer.invoke("documentos-guardar-texto", { id, cuerpo, ids }),
   documentosConversar: (datos) => ipcRenderer.invoke("documentos-conversar", datos),
   alDocumento: (fn) => {
     const canal = (_evento, dato) => fn(dato);

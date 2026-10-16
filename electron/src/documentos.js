@@ -15,7 +15,7 @@ import { listarPiezas } from "./biblioteca.js";
 import { contextoExpediente, modeloParaDocumento, textoParaDocumento } from "./ia.js";
 import { fechaInforme } from "./informe.js";
 import { bloqueMemoria } from "../compartido/memoria.js";
-import { anotarVuelta, bloquesDelProyecto, guardarPropuesta, historialBloque, leerMemoria, prepararCambioBloque, resolverCambio, sincronizar } from "./memoria.js";
+import { anotarVuelta, bloquesDelProyecto, guardarEdicionUsuario, guardarPropuesta, historialBloque, leerMemoria, prepararCambioBloque, resolverCambio, sincronizar } from "./memoria.js";
 import { agentesParaContexto, archivosDelProyecto, candidatosFts, leerAgentes, trozosDeArchivos } from "./conversiones.js";
 
 const TIPOS = new Set(TIPOS_DOCUMENTO.map((t) => t.id));
@@ -255,7 +255,10 @@ export function guardarVersion(db, proyectoId, { cuerpo, autor = "modelo", model
 export function restaurarVersion(db, versionId) {
   const v = uno(db, "SELECT * FROM doc_version WHERE id = ?", [Number(versionId) || 0]);
   if (!v) throw new Aviso("Esa versión ya no está.");
-  return guardarVersion(db, v.proyecto_id, { cuerpo: v.cuerpo, autor: "restaurada", modelo: v.modelo, origen: v.origen, nota: `Restaurada de la versión ${v.numero}` });
+  const nueva = guardarVersion(db, v.proyecto_id, { cuerpo: v.cuerpo, autor: "restaurada", modelo: v.modelo, origen: v.origen, nota: `Restaurada de la versión ${v.numero}` });
+  sincronizar(db, v.proyecto_id, nueva);
+  anotarVuelta(db, v.proyecto_id, { cuerpo: nueva.cuerpo, decision: `Restaurada la versión ${v.numero}` });
+  return nueva;
 }
 
 function agregarMensaje(db, proyectoId, { rol, texto: cuerpo, versionId = null, dudas = null, origen = "local" }) {
@@ -557,4 +560,8 @@ function resumenAvisos(avisos) {
 export function escritoDeVersion(version) {
   const escrito = escritoDeTexto(version?.cuerpo || "");
   return { asunto: escrito.asunto, secciones: escrito.secciones, origen: version?.origen === "nube" ? "nube" : "local" };
+}
+
+export function guardarEdicionDocumento(db, proyectoId, cuerpo, ids = []) {
+  return guardarEdicionUsuario(db, { proyectoId, cuerpo, ids, guardarVersion });
 }

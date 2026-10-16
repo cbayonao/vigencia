@@ -8,7 +8,7 @@ import { listarProcesos } from "./db.js";
 import { borrarPieza, buscarFuentes, etiquetasUsadas, guardarPieza, leerPieza } from "./biblioteca.js";
 import {
   actualizarProyecto, borrarPerfil, borrarProyecto, conversar, crearProyecto, duplicarProyecto, elegirFuentes,
-  escritoDeVersion, guardarPerfil, guardarVersion, leerProyecto, leerVersion, listarPerfiles, listarProyectos,
+  escritoDeVersion, guardarEdicionDocumento, guardarPerfil, guardarVersion, leerProyecto, leerVersion, listarPerfiles, listarProyectos,
   modeloDelProyecto, restaurarVersion,
 } from "./documentos.js";
 import { listarModelos } from "./ia.js";
@@ -56,9 +56,10 @@ export function registrarDocumentos({ ipcMain, dialog, db, datosDir, ventana, re
     return { diferencias: diferencias(a?.cuerpo || "", b.cuerpo), antes: a?.numero || 0, despues: b.numero };
   }));
   ipcMain.handle("documentos-restaurar", (_e, dato) => responder(() => ({ version: restaurarVersion(base(), dato?.id) })));
-  ipcMain.handle("documentos-guardar-texto", (_e, dato) => responder(() => ({
-    version: guardarVersion(base(), dato?.id, { cuerpo: dato?.cuerpo, autor: "usuario", nota: "Edición directa" }),
-  })));
+  ipcMain.handle("documentos-guardar-texto", (_e, dato) => responder(() => {
+    const r = guardarEdicionDocumento(base(), dato?.id, dato?.cuerpo, Array.isArray(dato?.ids) ? dato.ids.map((x) => (x ? String(x) : null)) : []);
+    return { version: r.version, cambiados: r.cambiados };
+  }));
   ipcMain.handle("documentos-conversar", async (evento, dato) => {
     try {
       const resultado = await conversar({

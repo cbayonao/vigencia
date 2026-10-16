@@ -1,4 +1,5 @@
 import { deflateRawSync, inflateRawSync } from "node:zlib";
+import { leerParrafo, tramos } from "../compartido/formato.js";
 
 const TABLA = (() => {
   const tabla = new Uint32Array(256);
@@ -68,38 +69,39 @@ function zip(archivos) {
   return Buffer.concat([...locales, centralBuf, end]);
 }
 
+
 export const PIE_IA = "Generado con IA. Favor revisar.";
 
-// Negrita (**x**) e itálica (*x*) del Markdown del documento a tramos.
-export function tramos(texto) {
-  const salida = [];
-  const re = /(\*\*[^*]+\*\*|\*[^*\s][^*]*\*)/g;
-  let ultimo = 0;
-  let m;
-  const t = String(texto ?? "");
-  while ((m = re.exec(t))) {
-    if (m.index > ultimo) salida.push({ texto: t.slice(ultimo, m.index) });
-    const negrita = m[0].startsWith("**");
-    salida.push({ texto: m[0].slice(negrita ? 2 : 1, negrita ? -2 : -1), negrita, italica: !negrita });
-    ultimo = m.index + m[0].length;
-  }
-  if (ultimo < t.length) salida.push({ texto: t.slice(ultimo) });
-  return salida.length ? salida : [{ texto: "" }];
+// Párrafos con formato (ver compartido/formato.js): negrita, itálica,
+// subrayado, alineación, subtítulo, cita, viñeta, numeral y tabla.
+export { tramos };
+
+const JC = { centro: "center", derecha: "right", izquierda: "left", justificado: "both" };
+
+function runs(texto) {
+  return tramos(texto).map((r) => {
+    const marcas = `${r.negrita ? "<w:b/>" : ""}${r.italica ? "<w:i/>" : ""}${r.subrayado ? '<w:u w:val="single"/>' : ""}`;
+    return `<w:r>${marcas ? `<w:rPr>${marcas}</w:rPr>` : ""}<w:t xml:space="preserve">${xml(r.texto)}</w:t></w:r>`;
+  }).join("");
+}
+
+function tablaDocx(filas) {
+  const ancho = Math.max(1, ...filas.map((f) => f.length));
+  const borde = '<w:tblBorders><w:top w:val="single" w:sz="4" w:color="8FA5BA"/><w:left w:val="single" w:sz="4" w:color="8FA5BA"/><w:bottom w:val="single" w:sz="4" w:color="8FA5BA"/><w:right w:val="single" w:sz="4" w:color="8FA5BA"/><w:insideH w:val="single" w:sz="4" w:color="8FA5BA"/><w:insideV w:val="single" w:sz="4" w:color="8FA5BA"/></w:tblBorders>';
+  const grid = `<w:tblGrid>${Array(ancho).fill(`<w:gridCol w:w="${Math.floor(9600 / ancho)}"/>`).join("")}</w:tblGrid>`;
+  const cuerpo = filas.map((f, i) => `<w:tr>${Array.from({ length: ancho }, (_, k) => `<w:tc><w:tcPr><w:tcW w:w="${Math.floor(9600 / ancho)}" w:type="dxa"/>${i === 0 ? '<w:shd w:val="clear" w:color="auto" w:fill="EEF2F6"/>' : ""}</w:tcPr><w:p><w:pPr><w:pStyle w:val="Celda"/></w:pPr>${runs(i === 0 ? `**${f[k] ?? ""}**` : f[k] ?? "")}</w:p></w:tc>`).join("")}</w:tr>`).join("");
+  return `<w:tbl><w:tblPr><w:tblW w:w="5000" w:type="pct"/>${borde}</w:tblPr>${grid}${cuerpo}</w:tbl><w:p/>`;
 }
 
 function parrafo(texto, estilo) {
-  let t = String(texto ?? "");
-  let estiloFinal = estilo;
-  if (!estilo && /^\s*[-*•]\s+/.test(t)) {
-    estiloFinal = "Lista";
-    t = `\u2022\t${t.replace(/^\s*[-*•]\s+/, "")}`;
-  }
-  const marca = estiloFinal ? `<w:pPr><w:pStyle w:val="${estiloFinal}"/></w:pPr>` : "";
-  const runs = tramos(t).map((r) => {
-    const rpr = r.negrita || r.italica ? `<w:rPr>${r.negrita ? "<w:b/>" : ""}${r.italica ? "<w:i/>" : ""}</w:rPr>` : "";
-    return `<w:r>${rpr}<w:t xml:space="preserve">${xml(r.texto)}</w:t></w:r>`;
-  }).join("");
-  return `<w:p>${marca}${runs}</w:p>`;
+  if (estilo) return `<w:p><w:pPr><w:pStyle w:val="${estilo}"/></w:pPr>${runs(texto)}</w:p>`;
+  const p = leerParrafo(texto);
+  if (p.tipo === "tabla") return tablaDocx(p.filas);
+  const est = { subtitulo: "Subtitulo", cita: "Cita", vineta: "Lista", numeral: "Lista", firma: "Firma" }[p.tipo] || "";
+  const pre = p.tipo === "vineta" ? "\u2022\t" : p.tipo === "numeral" ? `${p.numero}.\t` : "";
+  const jc = JC[p.alineacion] ? `<w:jc w:val="${JC[p.alineacion]}"/>` : "";
+  const ppr = est || jc ? `<w:pPr>${est ? `<w:pStyle w:val="${est}"/>` : ""}${jc}</w:pPr>` : "";
+  return `<w:p>${ppr}${pre ? `<w:r><w:t xml:space="preserve">${pre}</w:t></w:r>` : ""}${runs(p.texto)}</w:p>`;
 }
 
 const TITULOS_DE_CARTA = new Set([
@@ -162,7 +164,8 @@ const ESTILOS = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
   <w:style w:type="paragraph" w:default="1" w:styleId="Normal">
     <w:name w:val="Normal"/>
-    <w:rPr><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr>
+    <w:pPr><w:jc w:val="both"/><w:spacing w:after="120" w:line="300" w:lineRule="auto"/></w:pPr>
+    <w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:cs="Times New Roman"/><w:sz w:val="24"/><w:szCs w:val="24"/></w:rPr>
   </w:style>
   <w:style w:type="paragraph" w:styleId="Titulo">
     <w:name w:val="Title"/>
@@ -180,6 +183,29 @@ const ESTILOS = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     <w:name w:val="List Paragraph"/>
     <w:basedOn w:val="Normal"/>
     <w:pPr><w:ind w:left="720" w:hanging="360"/></w:pPr>
+  </w:style>
+  <w:style w:type="paragraph" w:styleId="Subtitulo">
+    <w:name w:val="heading 2"/>
+    <w:basedOn w:val="Normal"/>
+    <w:pPr><w:keepNext/><w:spacing w:before="200" w:after="60"/></w:pPr>
+    <w:rPr><w:b/><w:i/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr>
+  </w:style>
+  <w:style w:type="paragraph" w:styleId="Cita">
+    <w:name w:val="Quote"/>
+    <w:basedOn w:val="Normal"/>
+    <w:pPr><w:ind w:left="1134" w:right="567"/><w:jc w:val="both"/><w:spacing w:before="120" w:after="120" w:line="240" w:lineRule="auto"/></w:pPr>
+    <w:rPr><w:i/><w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr>
+  </w:style>
+  <w:style w:type="paragraph" w:styleId="Firma">
+    <w:name w:val="Signature"/>
+    <w:basedOn w:val="Normal"/>
+    <w:pPr><w:jc w:val="center"/><w:spacing w:before="480"/></w:pPr>
+  </w:style>
+  <w:style w:type="paragraph" w:styleId="Celda">
+    <w:name w:val="Table Contents"/>
+    <w:basedOn w:val="Normal"/>
+    <w:pPr><w:spacing w:before="40" w:after="40"/><w:jc w:val="left"/></w:pPr>
+    <w:rPr><w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr>
   </w:style>
   <w:style w:type="paragraph" w:styleId="Pie">
     <w:name w:val="footer"/>
@@ -298,19 +324,41 @@ export function docxDeEscrito(escrito, { pie = true } = {}) {
 
 // ---------- OpenDocument (.odt) para LibreOffice ----------
 
+function spansOdt(texto) {
+  return tramos(texto).map((r) => {
+    const n = `${r.negrita ? "N" : ""}${r.italica ? "I" : ""}${r.subrayado ? "U" : ""}`;
+    return n ? `<text:span text:style-name="T${n}">${xml(r.texto)}</text:span>` : xml(r.texto);
+  }).join("");
+}
+
+const AL_ODT = { centro: "Centro", derecha: "Derecha", izquierda: "Izquierda", justificado: "" };
+
 function parrafoOdt(texto, estilo) {
-  let t = String(texto ?? "");
-  let e = estilo || "Cuerpo";
-  if (!estilo && /^\s*[-*•]\s+/.test(t)) {
-    e = "Lista";
-    t = `\u2022 ${t.replace(/^\s*[-*•]\s+/, "")}`;
+  if (estilo) {
+    const spans = spansOdt(texto);
+    return estilo === "Seccion" ? `<text:h text:style-name="Seccion" text:outline-level="1">${spans}</text:h>` : `<text:p text:style-name="${estilo}">${spans}</text:p>`;
   }
-  const spans = tramos(t).map((r) => (r.negrita ? `<text:span text:style-name="N">${xml(r.texto)}</text:span>` : r.italica ? `<text:span text:style-name="I">${xml(r.texto)}</text:span>` : xml(r.texto))).join("");
-  return e === "Seccion" ? `<text:h text:style-name="Seccion" text:outline-level="1">${spans}</text:h>` : `<text:p text:style-name="${e}">${spans}</text:p>`;
+  const p = leerParrafo(texto);
+  if (p.tipo === "tabla") {
+    const ancho = Math.max(1, ...p.filas.map((f) => f.length));
+    const filas = p.filas.map((f, i) => `<table:table-row>${Array.from({ length: ancho }, (_, k) => `<table:table-cell table:style-name="Celda" office:value-type="string"><text:p text:style-name="${i === 0 ? "CeldaCab" : "CeldaTexto"}">${spansOdt(f[k] ?? "")}</text:p></table:table-cell>`).join("")}</table:table-row>`).join("");
+    return `<table:table table:style-name="Tabla"><table:table-column table:number-columns-repeated="${ancho}"/>${filas}</table:table>`;
+  }
+  const spans = spansOdt(p.texto);
+  if (p.tipo === "subtitulo") return `<text:h text:style-name="Subtitulo" text:outline-level="2">${spans}</text:h>`;
+  const base = { cita: "Cita", vineta: "Lista", numeral: "Lista", firma: "Firma" }[p.tipo] || "Cuerpo";
+  const est = AL_ODT[p.alineacion] && p.tipo !== "firma" ? `${base}${AL_ODT[p.alineacion]}` : base;
+  const pre = p.tipo === "vineta" ? "\u2022 " : p.tipo === "numeral" ? `${p.numero}. ` : "";
+  return `<text:p text:style-name="${est}">${xml(pre)}${spans}</text:p>`;
+}
+
+function estilosAlineadosOdt() {
+  const lados = { Centro: "center", Derecha: "end", Izquierda: "start" };
+  return ["Cuerpo", "Cita", "Lista"].flatMap((b) => Object.entries(lados).map(([n, v]) => `<style:style style:name="${b}${n}" style:family="paragraph" style:parent-style-name="${b}"><style:paragraph-properties fo:text-align="${v}"/></style:style>`)).join("\n    ");
 }
 
 export function odtDeEscrito(escrito, { pie = true } = {}) {
-  const ns = 'xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:version="1.3"';
+  const ns = 'xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" office:version="1.3"';
   const cuerpo = [];
   if (escrito.asunto) cuerpo.push(`<text:p text:style-name="Titulo">${xml(escrito.asunto)}</text:p>`);
   for (const seccion of escrito.secciones || []) {
@@ -320,8 +368,9 @@ export function odtDeEscrito(escrito, { pie = true } = {}) {
   const contenido = `<?xml version="1.0" encoding="UTF-8"?>
 <office:document-content ${ns}>
   <office:automatic-styles>
-    <style:style style:name="N" style:family="text"><style:text-properties fo:font-weight="bold"/></style:style>
-    <style:style style:name="I" style:family="text"><style:text-properties fo:font-style="italic"/></style:style>
+    ${["N", "I", "U", "NI", "NU", "IU", "NIU"].map((n) => `<style:style style:name="T${n}" style:family="text"><style:text-properties${n.includes("N") ? ' fo:font-weight="bold"' : ""}${n.includes("I") ? ' fo:font-style="italic"' : ""}${n.includes("U") ? ' style:text-underline-style="solid" style:text-underline-width="auto" style:text-underline-color="font-color"' : ""}/></style:style>`).join("\n    ")}
+    <style:style style:name="Tabla" style:family="table"><style:table-properties style:width="16.5cm" table:align="margins"/></style:style>
+    <style:style style:name="Celda" style:family="table-cell"><style:table-cell-properties fo:padding="0.1cm" fo:border="0.5pt solid #8fa5ba"/></style:style>
   </office:automatic-styles>
   <office:body><office:text>
     ${cuerpo.join("\n    ")}
@@ -334,6 +383,12 @@ export function odtDeEscrito(escrito, { pie = true } = {}) {
     <style:style style:name="Titulo" style:family="paragraph"><style:paragraph-properties fo:margin-bottom="0.35cm"/><style:text-properties fo:font-size="16pt" fo:font-weight="bold"/></style:style>
     <style:style style:name="Seccion" style:family="paragraph"><style:paragraph-properties fo:margin-top="0.5cm" fo:margin-bottom="0.15cm"/><style:text-properties fo:font-size="12pt" fo:font-weight="bold"/></style:style>
     <style:style style:name="Lista" style:family="paragraph" style:parent-style-name="Cuerpo"><style:paragraph-properties fo:margin-left="1cm" fo:text-indent="-0.5cm"/></style:style>
+    <style:style style:name="Subtitulo" style:family="paragraph"><style:paragraph-properties fo:margin-top="0.35cm" fo:margin-bottom="0.1cm"/><style:text-properties fo:font-size="11pt" fo:font-weight="bold" fo:font-style="italic"/></style:style>
+    <style:style style:name="Cita" style:family="paragraph" style:parent-style-name="Cuerpo"><style:paragraph-properties fo:margin-left="2cm" fo:margin-right="1cm"/><style:text-properties fo:font-size="10pt" fo:font-style="italic"/></style:style>
+    <style:style style:name="Firma" style:family="paragraph" style:parent-style-name="Cuerpo"><style:paragraph-properties fo:text-align="center" fo:margin-top="0.8cm"/></style:style>
+    <style:style style:name="CeldaTexto" style:family="paragraph"><style:text-properties fo:font-size="10pt"/></style:style>
+    <style:style style:name="CeldaCab" style:family="paragraph"><style:text-properties fo:font-size="10pt" fo:font-weight="bold"/></style:style>
+    ${estilosAlineadosOdt()}
     <style:style style:name="Pie" style:family="paragraph"><style:paragraph-properties fo:text-align="center"/><style:text-properties fo:font-size="9pt" fo:font-style="italic"/></style:style>
   </office:styles>
   <office:automatic-styles>

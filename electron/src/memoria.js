@@ -31,10 +31,10 @@ export function bloquesDelProyecto(db, proyectoId) {
 }
 
 // Tras cada versión nueva: los párrafos conservan su id si no cambiaron.
-export function sincronizar(db, proyectoId, version) {
+export function sincronizar(db, proyectoId, version, preferidos = []) {
   if (!version?.cuerpo) return [];
   const previos = bloquesDelProyecto(db, proyectoId);
-  const nuevos = sincronizarBloques(previos, version.cuerpo, () => `b${crypto.randomBytes(5).toString("hex")}`);
+  const nuevos = sincronizarBloques(previos, version.cuerpo, () => `b${crypto.randomBytes(5).toString("hex")}`, preferidos);
   transaccion(db, () => {
     run(db, "DELETE FROM doc_bloque WHERE proyecto_id = ?", [proyectoId]);
     const ins = db.prepare("INSERT INTO doc_bloque (id, proyecto_id, orden, seccion, texto, version_id, actualizado_en) VALUES (?, ?, ?, ?, ?, ?, ?)");
@@ -100,4 +100,24 @@ export function resolverCambio(db, { id, aceptar, guardarVersion, ultimaVersion 
   sincronizar(db, c.proyecto_id, { ...v, cuerpo: nuevo });
   anotarVuelta(db, c.proyecto_id, { cuerpo: nuevo, decision: `Aceptado en ${bloque.seccion || "el documento"}: ${c.pedido}` });
   return { cambio: leerCambio(db, id), version: v };
+}
+
+// Edición a mano en el editor: versión nueva, ids que trae el editor,
+// historial por párrafo (origen manual) y memoria.
+export function guardarEdicionUsuario(db, { proyectoId, cuerpo, ids = [], guardarVersion }) {
+  const previos = bloquesDelProyecto(db, proyectoId);
+  const v = guardarVersion(db, proyectoId, { cuerpo, autor: "usuario", nota: "Edición directa" });
+  const texto = v.cuerpo ?? cuerpo;
+  const unicos = ids.map((id, i) => (id && ids.indexOf(id) === i ? id : null));
+  const nuevos = sincronizar(db, proyectoId, { ...v, cuerpo: texto }, unicos);
+  const antes = new Map(previos.map((b) => [b.id, b.texto]));
+  let cambiados = 0;
+  for (const b of nuevos) {
+    if (!antes.has(b.id) || antes.get(b.id) === b.texto) continue;
+    cambiados++;
+    run(db, `INSERT INTO doc_bloque_cambio (proyecto_id, bloque_id, antes, despues, pedido, estado, modelo, origen, version_id, creado_en, resuelto_en)
+      VALUES (?, ?, ?, ?, 'Edición a mano', 'aceptado', '', 'manual', ?, ?, ?)`, [proyectoId, b.id, antes.get(b.id), b.texto, v.id, ahora(), ahora()]);
+  }
+  anotarVuelta(db, proyectoId, { cuerpo: texto, decision: cambiados ? `Editado a mano: ${cambiados} ${cambiados === 1 ? "párrafo" : "párrafos"}` : "" });
+  return { version: v, bloques: nuevos, cambiados };
 }

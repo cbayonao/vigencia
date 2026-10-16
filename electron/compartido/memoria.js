@@ -1,6 +1,7 @@
 // Memoria del documento y bloques con id estable. Lógica pura.
 // La memoria sobrevive a reinicios y a cambios de modelo: vive en SQLite y
 // entra al encargo de cualquier modelo, local o de nube.
+import { escribirParrafo, leerParrafo } from "./formato.js";
 import { escritoDeTexto, normalizar, terminos, textoDeEscrito } from "./documentos.js";
 
 export function memoriaVacia() {
@@ -87,11 +88,13 @@ function parecido(a, b) {
 
 // Asigna ids estables: el mismo texto conserva su id; uno parecido en la
 // misma sección también (fue editado); lo demás recibe id nuevo.
-export function sincronizarBloques(previos, cuerpo, nuevoId) {
+export function sincronizarBloques(previos, cuerpo, nuevoId, preferidos = []) {
   const libres = [...(previos || [])];
   const salida = [];
   for (const [orden, b] of bloquesDeCuerpo(cuerpo).entries()) {
-    let i = libres.findIndex((x) => x.texto === b.texto);
+    // El editor sabe qué párrafo es cuál aunque se haya reescrito entero.
+    let i = preferidos[orden] ? libres.findIndex((x) => x.id === preferidos[orden]) : -1;
+    if (i < 0) i = libres.findIndex((x) => x.texto === b.texto);
     if (i < 0) {
       let mejor = -1;
       let puntaje = 0.45;
@@ -117,7 +120,11 @@ export function aplicarBloque(cuerpo, bloque, nuevo) {
   if (!s || s.parrafos?.[bloque.p] == null) return null;
   const limpio = String(nuevo || "").replace(/^```[a-z]*\n?|```$/g, "").trim().replace(/^["«]|["»]$/g, "").replace(/\n\s*\n/g, " ");
   if (!limpio) return null;
-  s.parrafos[bloque.p] = limpio;
+  // Si el modelo devolvió solo el texto, el párrafo conserva su forma (viñeta, cita, alineación).
+  const antes = leerParrafo(s.parrafos[bloque.p]);
+  const nuevoP = leerParrafo(limpio);
+  s.parrafos[bloque.p] = nuevoP.tipo === "parrafo" && !nuevoP.alineacion && antes.tipo !== "tabla" && antes.tipo !== "firma"
+    ? escribirParrafo({ ...antes, texto: nuevoP.texto }) : limpio;
   return textoDeEscrito(e);
 }
 

@@ -42,6 +42,10 @@
         <span class="sistema-sigla">DO</span>
         <span class="sistema-textos sistemas-texto"><span class="sistema-nombre">Documentos</span><span class="sistema-fuente">Redacción con IA</span></span>
       </button>
+      <button type="button" class="sistema sistema-documentos" id="sistema-convertir" title="Convertir a Markdown, en este computador">
+        <span class="sistema-sigla">MD</span>
+        <span class="sistema-textos sistemas-texto"><span class="sistema-nombre">Convertir</span><span class="sistema-fuente">A Markdown, sin internet</span></span>
+      </button>
       <div class="sistemas-separador" aria-hidden="true"></div>
       <div class="sistemas-lista" id="sistemas-lista"></div>
       <button type="button" class="sistemas-ajustar" id="sistemas-ajustar" title="Elegir qué sistemas aparecen">
@@ -275,6 +279,44 @@
           </div>
           <div id="juris-ficha"></div>
         </main>
+      </div>
+    </div>
+    <div class="pantalla" id="pantalla-convertir" hidden>
+      <header class="barra">
+        <div>
+          <p class="kicker">Herramienta</p>
+          <h1 class="serif">Convertir a Markdown</h1>
+        </div>
+        <div class="botones">
+          <button type="button" class="boton-texto" id="conv-limpiar">Limpiar caché</button>
+          <button type="button" class="boton-linea" id="conv-elegir">Elegir archivos</button>
+        </div>
+      </header>
+      <div class="cuerpo conv-cuerpo">
+        <div class="zona-soltar" id="conv-soltar">Suelte aquí uno o varios archivos: PDF, imágenes, Word (.docx), Excel, ODS, CSV, HTML, TXT o MD. Todo se convierte en este computador, sin internet.
+          <div><label class="ayuda"><input type="checkbox" id="conv-forzar-ocr"> Leer con OCR aunque el PDF traiga texto</label></div>
+        </div>
+        <p class="ayuda" id="conv-ocr"></p>
+        <div id="conv-cola"></div>
+        <h2 class="seccion serif">Convertidos</h2>
+        <div id="conv-lista"></div>
+        <section id="conv-vista" hidden>
+          <h2 class="seccion serif" id="conv-vista-titulo"></h2>
+          <div class="fila-fin">
+            <select id="conv-proyecto" class="campo"></select>
+            <button type="button" class="boton-linea" id="conv-a-proyecto">Agregar al proyecto</button>
+            <button type="button" class="boton-linea" id="conv-a-biblioteca">Agregar a la biblioteca</button>
+            <button type="button" class="boton-texto" id="conv-copiar">Copiar Markdown</button>
+            <button type="button" class="boton-texto" id="conv-guardar-como">Guardar .md</button>
+            <button type="button" class="boton-texto" id="conv-reocr">Reconvertir con OCR</button>
+            <button type="button" class="boton-cobre" id="conv-guardar">Guardar edición</button>
+          </div>
+          <p class="ayuda" id="conv-vista-estado"></p>
+          <div class="conv-paneles">
+            <div id="conv-original"></div>
+            <textarea id="conv-md" spellcheck="false" aria-label="Markdown"></textarea>
+          </div>
+        </section>
       </div>
     </div>
     <div class="pantalla" id="pantalla-documentos" hidden>
@@ -609,6 +651,13 @@
         <button type="button" class="boton-linea" id="motor-copiar" hidden>Copiar detalle</button>
       </div>
       <pre class="registro" id="motor-detalle" hidden></pre>
+      <h3 class="modelos-sub">Reconocimiento de texto (OCR)</h3>
+      <p class="nota">Lee PDF escaneados e imágenes en español. No viene en el instalador: se descarga una sola vez (unos 35 MB) y después funciona sin internet. Nada de sus documentos sale del computador.</p>
+      <div class="fila-modelo">
+        <p class="ayuda" id="ocr-estado">Revisando el OCR...</p>
+        <button type="button" class="boton-cobre" id="ocr-instalar">Instalar OCR en español</button>
+        <button type="button" class="boton-texto" id="ocr-quitar" hidden>Quitar OCR</button>
+      </div>
       <h3 class="modelos-sub">Modelos locales (en este computador)</h3>
       <p class="nota">Se descargan una sola vez de Hugging Face y después trabajan sin internet.</p>
       <p class="ayuda error" id="modelos-error" hidden></p>

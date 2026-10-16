@@ -907,3 +907,4 @@ html[data-tema="oscuro"] .doc-pasaje-ref { background: var(--cobre); }
 .envio-texto { white-space: pre-wrap; max-height: 50vh; overflow: auto; font-family: ui-monospace, monospace; font-size: 12px; border: 1px solid rgba(0,0,0,.12); padding: 8px; border-radius: 8px; }
 .ctx-archivo { display: flex; gap: 8px; align-items: center; padding: 4px 0; }
 .ctx-archivo .nombre { flex: 1; }
+.conv-cuerpo { display: block; overflow: auto; padding: 16px; }

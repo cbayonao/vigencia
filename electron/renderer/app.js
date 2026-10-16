@@ -28,6 +28,7 @@ import { coincideBusqueda, especialidadDe } from "../compartido/pp.js";
 import { planAbierto } from "../compartido/plan.js";
 import { CAPAS_DOCUMENTOS, abrirDocumentos, iniciarDocumentos, refrescarModelosDocumentos } from "./documentos.js";
 import { abrirJuris, iniciarJuris } from "./juris.js";
+import { abrirConvertir, iniciarConvertir, pintarOcr } from "./convertir.js";
 import { abrirComentarios, iniciarComentarios } from "./comentarios.js";
 
 const $ = (id) => document.getElementById(id);
@@ -1771,6 +1772,7 @@ $("config-importar").addEventListener("click", async () => {
   await cargarModelosEscrito();
 });
 async function abrirConfigModelos() {
+  pintarOcr();
   await pintarModelos();
   await pintarGastoCorto();
   mostrarDialogo("dialogo-modelos");
@@ -2956,6 +2958,7 @@ function guardarLocal(clave, valor) {
 function pintarSistemas() {
   const documentos = $("sistema-documentos");
   documentos.classList.toggle("activo", estado.sistema === "documentos");
+  $("sistema-convertir").classList.toggle("activo", estado.sistema === "convertir");
   if (estado.sistema === "documentos") documentos.setAttribute("aria-current", "page");
   else documentos.removeAttribute("aria-current");
   const lista = $("sistemas-lista");
@@ -2982,11 +2985,22 @@ function pintarSistemas() {
 function elegirDocumentos() {
   estado.sistema = "documentos";
   cerrarCombos();
-  for (const id of ["pantalla-consulta", "pantalla-pp", "pantalla-spoa", "pantalla-samai", "pantalla-juris", "pantalla-construccion"]) $(id).hidden = true;
+  for (const id of ["pantalla-consulta", "pantalla-pp", "pantalla-spoa", "pantalla-samai", "pantalla-juris", "pantalla-construccion", "pantalla-convertir"]) $(id).hidden = true;
   $("pantalla-documentos").hidden = false;
   document.title = "Documentos";
   pintarSistemas();
   abrirDocumentos();
+}
+
+function elegirConvertir() {
+  estado.sistema = "convertir";
+  cerrarCombos();
+  for (const id of ["pantalla-consulta", "pantalla-pp", "pantalla-spoa", "pantalla-samai", "pantalla-juris", "pantalla-construccion", "pantalla-documentos"]) $(id).hidden = true;
+  $("pantalla-convertir").hidden = false;
+  document.title = "Convertir a Markdown";
+  pintarSistemas();
+  $("sistema-convertir").classList.add("activo");
+  abrirConvertir();
 }
 
 function elegirSistema(id) {
@@ -2994,7 +3008,13 @@ function elegirSistema(id) {
     elegirDocumentos();
     return;
   }
+  if (id === "convertir") {
+    elegirConvertir();
+    return;
+  }
   $("pantalla-documentos").hidden = true;
+  $("pantalla-convertir").hidden = true;
+  $("sistema-convertir").classList.remove("activo");
   const sistema = sistemaDe(sistemaElegible(id, estado.ocultos));
   estado.sistema = sistema.id;
   cerrarCombos();
@@ -3925,7 +3945,9 @@ $("samai-clase").addEventListener("change", aplicarFiltrosSamai);
 $("samai-texto").addEventListener("input", aplicarFiltrosSamai);
 
 $("sistema-documentos").addEventListener("click", () => elegirSistema("documentos"));
+$("sistema-convertir").addEventListener("click", () => elegirSistema("convertir"));
 iniciarDocumentos({ mostrarDialogo, ocultarDialogo, menuDesplegable, abrirConfigModelos });
+iniciarConvertir({ abrirConfigModelos });
 iniciarJuris();
 iniciarComentarios({ mostrarDialogo, ocultarDialogo });
 $("abrir-comentarios").addEventListener("click", abrirComentarios);

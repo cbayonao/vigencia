@@ -403,8 +403,51 @@
           <div class="doc-vivo" id="doc-vivo" hidden></div>
           <div id="doc-hoja-caja"><p class="ayuda doc-papel-vacio">Aquí se ve el documento mientras se escribe.</p></div>
           <div class="doc-edicion" id="doc-edicion" hidden>
-            <p class="ayuda">Edite el texto. Las secciones empiezan con ## y la primera línea puede ser Asunto: título. Seleccione un pasaje para pedir que solo esa parte cambie.</p>
-            <textarea id="doc-texto" spellcheck="true" aria-label="Texto del documento"></textarea>
+            <div class="ed-barra" id="ed-barra" role="toolbar" aria-label="Formato del documento">
+              <select id="ed-estilo" aria-label="Estilo del párrafo" title="Estilo del párrafo">
+                <option value="parrafo">Párrafo</option>
+                <option value="seccion">Título de sección</option>
+                <option value="subtitulo">Subtítulo</option>
+                <option value="cita">Cita textual</option>
+                <option value="firma">Firma</option>
+              </select>
+              <span class="ed-grupo">
+                <button type="button" class="ed-btn ed-n" data-ed="negrita" title="Negrita (Ctrl+B)" aria-label="Negrita">N</button>
+                <button type="button" class="ed-btn ed-k" data-ed="italica" title="Cursiva (Ctrl+I)" aria-label="Cursiva">K</button>
+                <button type="button" class="ed-btn ed-s" data-ed="subrayado" title="Subrayado (Ctrl+U)" aria-label="Subrayado">S</button>
+              </span>
+              <span class="ed-grupo">
+                <button type="button" class="ed-btn" data-ed="vinetas" title="Lista con viñetas">Viñetas</button>
+                <button type="button" class="ed-btn" data-ed="numeros" title="Lista numerada">Numerales</button>
+              </span>
+              <span class="ed-grupo" aria-label="Alineación">
+                <button type="button" class="ed-btn" data-ed="izquierda" title="Alinear a la izquierda">Izq.</button>
+                <button type="button" class="ed-btn" data-ed="centro" title="Centrar">Centro</button>
+                <button type="button" class="ed-btn" data-ed="derecha" title="Alinear a la derecha">Der.</button>
+                <button type="button" class="ed-btn" data-ed="justificado" title="Justificar">Justif.</button>
+              </span>
+              <span class="ed-grupo">
+                <button type="button" class="ed-btn" data-ed="tabla" title="Insertar una tabla de 3 por 3">Tabla</button>
+                <button type="button" class="ed-btn ed-en-tabla" data-ed="fila" title="Agregar fila debajo" hidden>+ Fila</button>
+                <button type="button" class="ed-btn ed-en-tabla" data-ed="columna" title="Agregar columna a la derecha" hidden>+ Columna</button>
+                <button type="button" class="ed-btn ed-en-tabla" data-ed="quitar-tabla" title="Quitar la tabla" hidden>Quitar tabla</button>
+              </span>
+              <span class="ed-grupo">
+                <button type="button" class="ed-btn" data-ed="deshacer" title="Deshacer (Ctrl+Z)">Deshacer</button>
+                <button type="button" class="ed-btn" data-ed="rehacer" title="Rehacer (Ctrl+Y)">Rehacer</button>
+              </span>
+              <span class="ed-grupo ed-fin">
+                <button type="button" class="ed-btn ed-ia" data-ed="ia" title="El modelo reescribe solo el párrafo donde está el cursor">Cambiar este párrafo con IA</button>
+                <button type="button" class="ed-btn" data-ed="markdown" title="Ver y editar el Markdown que se guarda">Markdown</button>
+              </span>
+            </div>
+            <div class="ed-papel" id="ed-papel"><div id="doc-editor"></div>
+              <div class="ed-pie" id="ed-pie"><span>Generado con IA. Favor revisar.</span><button type="button" class="boton-texto" id="ed-pie-quitar" title="El pie no saldrá en Word, ODT ni PDF">Quitar pie</button></div>
+              <p class="ed-pie-off ayuda" id="ed-pie-off" hidden>Sin pie de IA. <button type="button" class="boton-texto" id="ed-pie-poner">Poner pie</button></p>
+            </div>
+            <p class="ayuda" id="ed-ayuda-md" hidden>Markdown que se guarda: ## sección, #### subtítulo, &gt; cita, - viñeta, 1. numeral, **negrita**, *cursiva*, ++subrayado++, {centro} al inicio del párrafo.</p>
+            <textarea id="doc-texto" spellcheck="true" aria-label="Texto del documento en Markdown" hidden></textarea>
+            <p class="ayuda" id="ed-estado"></p>
             <div class="fila-fin">
               <button type="button" class="boton-texto" id="doc-edicion-cancelar">Cancelar</button>
               <button type="button" class="boton-cobre" id="doc-edicion-guardar">Guardar como versión nueva</button>

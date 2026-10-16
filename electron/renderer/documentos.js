@@ -1,6 +1,8 @@
 // Pantalla Documentos: proyectos, conversación, hoja viva, versiones,
 // biblioteca de fuentes y perfiles. Todo pasa por window.vigencia.
-import { contarAvisos, diferencias, escritoDeTexto, estimarTokens } from "../compartido/documentos.js";
+import { contarAvisos, diferencias, escritoDeTexto, estimarTokens, textoDeEscrito } from "../compartido/documentos.js";
+import { escritoAJson, jsonAEscrito, parrafoHtml, textoPlano } from "../compartido/formato.js";
+import { bloquesDeCuerpo } from "../compartido/memoria.js";
 
 const $ = (id) => document.getElementById(id);
 const doc = {
@@ -353,6 +355,8 @@ function conMarcas(contenedor, valor) {
 
 function hojaDe(cuerpo, origen) {
   const escrito = escritoDeTexto(cuerpo);
+  const ids = cuerpo === doc.datos?.actual?.cuerpo ? idsDe(cuerpo) : [];
+  let orden = 0;
   const hoja = nodo("article", "doc-hoja doc-hoja-viva");
   hoja.append(nodo("p", "marca", "Vista del documento"));
   hoja.append(nodo("h1", "", escrito.asunto));
@@ -362,7 +366,7 @@ function hojaDe(cuerpo, origen) {
     let n = 0;
     for (const p of s.parrafos) {
       n += 1;
-      sec.append(parrafoDe(s.titulo, n, p));
+      sec.append(parrafoDe(s.titulo, n, p, ids[orden++]));
     }
     hoja.append(sec);
   }
@@ -375,13 +379,14 @@ function hojaDe(cuerpo, origen) {
 // Cada párrafo de la hoja trae sus acciones: corregirlo solo a él o
 // citarlo en el mensaje. Es el corazón del editor: el abogado apunta a un
 // pedazo pequeño en vez de reescribir todo.
-function parrafoDe(seccion, numero, texto) {
+function parrafoDe(seccion, numero, texto, bloqueId = "") {
   const caja = nodo("div", "doc-parrafo");
   const ref = `${seccion} · ¶${numero}`;
   caja.dataset.pasaje = String(texto || "");
   caja.dataset.ref = ref;
-  const el = nodo("p", /___/.test(texto) ? "firma" : "");
-  conMarcas(el, texto);
+  const el = nodo("div", "doc-parrafo-cuerpo");
+  // parrafoHtml escapa todo el texto; solo agrega etiquetas de formato.
+  el.innerHTML = parrafoHtml(texto);
   const acciones = nodo("div", "doc-parrafo-acciones");
   const corregir = nodo("button", "doc-parrafo-btn", "✎ Corregir solo este");
   corregir.type = "button";
@@ -394,6 +399,13 @@ function parrafoDe(seccion, numero, texto) {
   citar.setAttribute("aria-label", `Citar el párrafo ${numero} de ${seccion} en el mensaje`);
   citar.addEventListener("click", () => citarParrafo(texto, ref));
   acciones.append(corregir, citar);
+  if (bloqueId) {
+    const ia = nodo("button", "doc-parrafo-btn", "Cambiar con IA");
+    ia.type = "button";
+    ia.title = "El modelo propone un cambio solo para este párrafo; usted ve antes y después";
+    ia.addEventListener("click", () => abrirParrafo(bloqueId));
+    acciones.append(ia);
+  }
   caja.append(el, acciones);
   if (doc.pasaje && String(texto) === doc.pasaje) caja.classList.add("elegido");
   return caja;
@@ -527,7 +539,7 @@ async function enviar(evento) {
   $("doc-enviar").disabled = true;
   const nube = String(doc.modelo).startsWith("nube:");
   estadoChat(nube ? "Pidiendo el texto al proveedor con su clave" : "Redactando en este computador");
-  const documento = doc.editando ? $("doc-texto").value : null;
+  const documento = cuerpoEditado();
   // Eco inmediato: el mensaje se ve en el chat sin esperar la respuesta.
   const eco = nodo("div", "doc-msj doc-msj-usuario");
   eco.append(nodo("p", "doc-msj-texto", mensaje));
@@ -651,31 +663,194 @@ async function exportar(formato) {
 
 // ---------- Edición directa y pasaje ----------
 
-function empezarEdicion() {
+// El editor (TipTap, empaquetado en vendor/editor.js) trabaja sobre los
+// mismos párrafos con id que usa Cambiar un párrafo y la memoria.
+let modEditor = null;
+let editor = null;
+
+function idsDe(cuerpo) {
+  const bloques = doc.datos?.bloques || [];
+  return bloques.length === bloquesDeCuerpo(cuerpo).length ? bloques.map((b) => b.id) : [];
+}
+
+function cuerpoEditado() {
+  if (!doc.editando) return null;
+  if (doc.modoMarkdown || !editor) return $("doc-texto").value;
+  return textoDeEscrito(jsonAEscrito(editor.getJSON()).escrito);
+}
+
+async function empezarEdicion() {
   doc.editando = true;
-  $("doc-texto").value = doc.datos.actual.cuerpo;
+  doc.modoMarkdown = false;
+  doc.sucio = false;
   $("doc-hoja-caja").hidden = true;
   $("doc-edicion").hidden = false;
-  $("doc-texto").focus();
+  $("ed-estado").textContent = "";
+  const cuerpo = doc.datos.actual.cuerpo;
+  try {
+    modEditor ||= await import("./vendor/editor.js");
+  } catch {
+    // Sin el editor se edita el Markdown, que es lo que se guarda.
+    doc.modoMarkdown = true;
+  }
+  editor?.destroy();
+  editor = null;
+  if (!doc.modoMarkdown) {
+    $("doc-editor").replaceChildren();
+    editor = modEditor.crearEditor($("doc-editor"), {
+      contenido: escritoAJson(escritoDeTexto(cuerpo), idsDe(cuerpo)),
+      alCambiar: () => { doc.sucio = true; pintarBarra(); },
+      alMover: pintarBarra,
+    });
+    editor.commands.focus("start");
+  }
+  $("doc-texto").value = cuerpo;
+  mostrarModo();
+  pintarPieEditor();
+  pintarBarra();
+}
+
+function mostrarModo() {
+  const md = doc.modoMarkdown;
+  $("ed-papel").hidden = md;
+  $("doc-texto").hidden = !md;
+  $("ed-ayuda-md").hidden = !md;
+  for (const b of document.querySelectorAll("#ed-barra .ed-btn, #ed-estilo")) {
+    if (b.dataset.ed !== "markdown") b.disabled = md;
+  }
+  document.querySelector('[data-ed="markdown"]').textContent = md ? "Vista de documento" : "Markdown";
+}
+
+function cambiarModo() {
+  if (!editor && doc.modoMarkdown) return;
+  if (doc.modoMarkdown) {
+    editor.commands.setContent(escritoAJson(escritoDeTexto($("doc-texto").value), idsDe($("doc-texto").value)));
+    doc.modoMarkdown = false;
+  } else {
+    $("doc-texto").value = cuerpoEditado();
+    doc.modoMarkdown = true;
+  }
+  mostrarModo();
+}
+
+function pintarPieEditor() {
+  const on = $("doc-pie-ia").checked;
+  $("ed-pie").hidden = !on;
+  $("ed-pie-off").hidden = on;
+}
+
+const ESTILO_DE = (ed) => {
+  if (ed.isActive("heading", { level: 2 })) return "seccion";
+  if (ed.isActive("heading", { level: 3 })) return "subtitulo";
+  if (ed.isActive("blockquote")) return "cita";
+  if (ed.isActive({ textAlign: "center" }) && /_{3,}/.test(ed.state.selection.$from.parent.textContent)) return "firma";
+  return "parrafo";
+};
+
+function pintarBarra() {
+  if (!editor) return;
+  const activo = (nombre, valor) => document.querySelector(`[data-ed="${nombre}"]`)?.classList.toggle("activo", Boolean(valor));
+  activo("negrita", editor.isActive("bold"));
+  activo("italica", editor.isActive("italic"));
+  activo("subrayado", editor.isActive("underline"));
+  activo("vinetas", editor.isActive("bulletList"));
+  activo("numeros", editor.isActive("orderedList"));
+  for (const [n, v] of [["izquierda", "left"], ["centro", "center"], ["derecha", "right"], ["justificado", "justify"]]) activo(n, editor.isActive({ textAlign: v }));
+  $("ed-estilo").value = ESTILO_DE(editor);
+  const enTabla = editor.isActive("table");
+  for (const b of document.querySelectorAll(".ed-en-tabla")) b.hidden = !enTabla;
+  for (const el of document.querySelectorAll("#doc-editor .ed-actual")) el.classList.remove("ed-actual");
+  const actual = modEditor.bloqueActual(editor);
+  if (actual?.id) document.querySelector(`#doc-editor [data-bloque="${CSS.escape(actual.id)}"]`)?.classList.add("ed-actual");
+}
+
+function aplicarEstilo(valor) {
+  const c = editor.chain().focus();
+  if (editor.isActive("blockquote") && valor !== "cita") c.lift("blockquote");
+  if (valor === "seccion") c.setHeading({ level: 2 });
+  else if (valor === "subtitulo") c.setHeading({ level: 3 });
+  else if (valor === "cita") c.setParagraph().setBlockquote();
+  else if (valor === "firma") c.setParagraph().setTextAlign("center");
+  else c.setParagraph();
+  c.run();
+}
+
+function comandoEditor(nombre) {
+  if (nombre === "markdown") return cambiarModo();
+  if (!editor) return;
+  if (nombre === "ia") return parrafoConIa();
+  const c = editor.chain().focus();
+  const acciones = {
+    negrita: () => c.toggleBold(),
+    italica: () => c.toggleItalic(),
+    subrayado: () => c.toggleUnderline(),
+    vinetas: () => c.toggleBulletList(),
+    numeros: () => c.toggleOrderedList(),
+    izquierda: () => c.setTextAlign("left"),
+    centro: () => c.setTextAlign("center"),
+    derecha: () => c.setTextAlign("right"),
+    justificado: () => c.setTextAlign("justify"),
+    tabla: () => c.insertTable({ rows: 3, cols: 3, withHeaderRow: true }),
+    fila: () => c.addRowAfter(),
+    columna: () => c.addColumnAfter(),
+    "quitar-tabla": () => c.deleteTable(),
+    deshacer: () => c.undo(),
+    rehacer: () => c.redo(),
+  };
+  acciones[nombre]?.().run();
+  pintarBarra();
+}
+
+function parrafoConIa() {
+  const actual = modEditor.bloqueActual(editor);
+  if (doc.sucio) {
+    $("ed-estado").textContent = "Guarde los cambios primero; así el modelo trabaja sobre lo que usted ve.";
+    return;
+  }
+  if (!actual?.id) {
+    $("ed-estado").textContent = "Ponga el cursor en un párrafo del texto (no en un título) y vuelva a intentarlo.";
+    return;
+  }
+  abrirParrafo(actual.id);
 }
 
 function cancelarEdicion() {
   doc.editando = false;
+  editor?.destroy();
+  editor = null;
   $("doc-hoja-caja").hidden = false;
   $("doc-edicion").hidden = true;
 }
 
 async function guardarEdicion() {
-  const r = await window.vigencia.documentosGuardarTexto(doc.abierto, $("doc-texto").value);
+  let cuerpo;
+  let ids = [];
+  if (doc.modoMarkdown || !editor) {
+    cuerpo = $("doc-texto").value;
+  } else {
+    const r = jsonAEscrito(editor.getJSON());
+    cuerpo = textoDeEscrito(r.escrito);
+    ids = r.ids;
+  }
+  const r = await window.vigencia.documentosGuardarTexto(doc.abierto, cuerpo, ids);
   if (!r?.ok) return estadoChat(r?.error || "No pude guardar la edición.", true);
-  doc.editando = false;
-  await abrirProyecto(doc.abierto);
+  doc.sucio = false;
+  const quedar = !doc.modoMarkdown && editor;
+  await abrirProyecto(doc.abierto, { conservarVista: true });
   await cargarInicio();
+  if (quedar) {
+    // Sigue en el editor con los ids ya sincronizados.
+    await empezarEdicion();
+    $("ed-estado").textContent = r.cambiados ? `Guardado. ${r.cambiados} ${r.cambiados === 1 ? "párrafo cambió" : "párrafos cambiaron"} y quedaron en su historial.` : "Guardado como versión nueva.";
+  }
 }
 
 function tomarPasaje() {
   let elegido = "";
-  if (doc.editando) {
+  if (doc.editando && editor && !doc.modoMarkdown) {
+    const { from, to } = editor.state.selection;
+    elegido = editor.state.doc.textBetween(from, to, " ");
+  } else if (doc.editando) {
     const t = $("doc-texto");
     elegido = t.value.slice(t.selectionStart, t.selectionEnd);
   } else {
@@ -1178,7 +1353,7 @@ export async function abrirDocumentos() {
 
 // ---------- Cambiar un párrafo ----------
 
-function abrirParrafo() {
+function abrirParrafo(elegido = "") {
   const bloques = doc.datos?.bloques || [];
   if (!bloques.length) {
     estadoChat("Todavía no hay párrafos para cambiar.", true);
@@ -1189,9 +1364,10 @@ function abrirParrafo() {
   for (const b of bloques) {
     const op = document.createElement("option");
     op.value = b.id;
-    op.textContent = `${b.seccion ? `${b.seccion}: ` : ""}${b.texto.slice(0, 90)}`;
+    op.textContent = `${b.seccion ? `${b.seccion}: ` : ""}${textoPlano(b.texto).slice(0, 90)}`;
     lista.append(op);
   }
+  if (typeof elegido === "string" && elegido) lista.value = elegido;
   $("bloque-pedido").value = "";
   $("bloque-estado").textContent = "";
   $("bloque-diff").hidden = true;
@@ -1260,6 +1436,7 @@ async function resolverParrafo(aceptar) {
   $("bloque-diff").hidden = true;
   $("bloque-estado").textContent = r?.ok ? (aceptar ? "Cambio aplicado. Quedó una versión nueva." : "Se conservó el párrafo anterior.") : r?.error || "No pude guardar.";
   await abrirProyecto(doc.abierto, { conservarVista: true });
+  if (doc.editando && aceptar && r?.ok) await empezarEdicion();
   pintarHistorialBloque();
 }
 
@@ -1436,7 +1613,16 @@ export function iniciarDocumentos(herramientas) {
   $("doc-word").addEventListener("click", () => exportar("docx"));
   $("doc-pdf").addEventListener("click", () => exportar("pdf"));
   $("doc-odt").addEventListener("click", () => exportar("odt"));
-  $("doc-parrafo").addEventListener("click", abrirParrafo);
+  $("doc-parrafo").addEventListener("click", () => abrirParrafo());
+  for (const b of document.querySelectorAll("#ed-barra .ed-btn")) {
+    b.addEventListener("mousedown", (e) => e.preventDefault()); // no perder la selección
+    b.addEventListener("click", () => comandoEditor(b.dataset.ed));
+  }
+  $("ed-estilo").addEventListener("change", (e) => aplicarEstilo(e.target.value));
+  $("ed-pie-quitar").addEventListener("click", () => { $("doc-pie-ia").checked = false; pintarPieEditor(); });
+  $("ed-pie-poner").addEventListener("click", () => { $("doc-pie-ia").checked = true; pintarPieEditor(); });
+  $("doc-pie-ia").addEventListener("change", pintarPieEditor);
+  $("doc-texto").addEventListener("input", () => { doc.sucio = true; });
   $("bloque-lista").addEventListener("change", pintarHistorialBloque);
   $("bloque-pedir").addEventListener("click", pedirParrafo);
   $("bloque-aceptar").addEventListener("click", () => resolverParrafo(true));

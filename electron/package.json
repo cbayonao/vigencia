@@ -17,7 +17,8 @@
     "dist:win": "node script/traer-win.mjs && node script/nsis-sin-wine.mjs && electron-builder --win nsis",
     "postdist:win": "node script/verificar-motor.mjs dist/win-unpacked win-x64",
     "dist:mac": "electron-builder --mac dmg",
-    "postdist:mac": "node script/verificar-motor.mjs dist mac-arm64-metal"
+    "postdist:mac": "node script/verificar-motor.mjs dist mac-arm64-metal",
+    "editor": "esbuild editor/editor.js --bundle --format=esm --minify --legal-comments=eof --outfile=renderer/vendor/editor.js"
   },
   "build": {
     "appId": "co.vigencia.app",
@@ -91,8 +92,15 @@
     }
   },
   "devDependencies": {
+    "@tiptap/core": "^3.32.0",
+    "@tiptap/extension-table": "^3.32.0",
+    "@tiptap/extension-text-align": "^3.32.0",
+    "@tiptap/extensions": "^3.32.0",
+    "@tiptap/pm": "^3.32.0",
+    "@tiptap/starter-kit": "^3.32.0",
     "electron": "44.7.0",
     "electron-builder": "26.15.3",
+    "esbuild": "^0.28.2",
     "tesseract.js": "^6.0.1"
   },
   "dependencies": {

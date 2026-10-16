@@ -554,7 +554,7 @@ function respuestaInservible(valor) {
   return limpio.length < 400 && /lo siento|no puedo (cumplir|ayudar|redactar)|como modelo de lenguaje/i.test(limpio);
 }
 
-async function textoDelModelo({ datosDir, elegido, encargo, onProgreso }) {
+async function textoDelModelo({ datosDir, elegido, encargo, onProgreso, maxTokens }) {
   if (elegido.id.startsWith("nube:")) {
     const proveedor = elegido.id.slice("nube:".length);
     const tiendaDato = leerTienda(datosDir);
@@ -571,7 +571,7 @@ async function textoDelModelo({ datosDir, elegido, encargo, onProgreso }) {
       modelo,
       base: nube.base,
       texto: encargo,
-      maxTokens: 2048,
+      maxTokens: maxTokens?.nube || 2048,
       onToken: (fragmento) => {
         acumulado += fragmento;
         emitirEscrito(onProgreso, acumulado);
@@ -604,7 +604,7 @@ async function textoDelModelo({ datosDir, elegido, encargo, onProgreso }) {
       });
       let acumulado = "";
       const respuesta = await sesion.prompt(encargo, {
-        maxTokens: 1536,
+        maxTokens: maxTokens?.local || 1536,
         temperature: 0.3,
         onTextChunk: (fragmento) => {
           acumulado += String(fragmento || "");
@@ -862,4 +862,22 @@ export async function generarInicial({ datosDir, tipo, datos = {}, hoy, modeloId
     });
   }
   return conVista(resultado, ficha, hoy);
+}
+
+// Documentos usa el mismo camino que el escrito: GGUF local o nube con la
+// clave del usuario. Devuelve null con el modelo Sencillo.
+export function modeloParaDocumento(datosDir, modeloId) {
+  const elegido = elegirModelo(datosDir, modeloId);
+  return { id: elegido.id, nombre: elegido.nombre, usa: usaModelo(elegido), origen: elegido.id.startsWith("nube:") ? "nube" : "local" };
+}
+
+export async function textoParaDocumento({ datosDir, modeloId, encargo, onProgreso }) {
+  const elegido = elegirModelo(datosDir, modeloId);
+  if (!usaModelo(elegido)) return null;
+  try {
+    return await textoDelModelo({ datosDir, elegido, encargo, onProgreso, maxTokens: { nube: 4096, local: 2048 } });
+  } catch (error) {
+    if (elegido.id.startsWith("gguf:")) await soltarMotor();
+    throw error;
+  }
 }

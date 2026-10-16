@@ -94,6 +94,7 @@ import { fichaDeDetalle, redactarEscrito } from "../compartido/redactor.js";
 import { activarPieza, borrarPieza, guardarPieza, listarPiezas } from "./biblioteca.js";
 import { generarBorrador, generarInicial, guardarActivo, guardarModo, importarModelo, listarModelos, descargarModelo, modelosRecomendados, leerNubes, guardarNube } from "./ia.js";
 import { htmlMemorial } from "./memorial.js";
+import { registrarDocumentos } from "./documentos-ipc.js";
 import { consultarVersion, descargarActualizacion } from "./actualizar.js";
 import { directorioDatos } from "./rutas.js";
 
@@ -762,6 +763,15 @@ if (bloqueo) {
         }
       }
       enviar("corrida", dato);
+    });
+    registrarDocumentos({
+      ipcMain,
+      dialog,
+      db: () => db,
+      datosDir: () => datosDir,
+      ventana: () => ventana,
+      responder,
+      mensajeHumano,
     });
     ipcMain.handle("listar", () => responder(() => ({
       procesos: listarProcesos(db),

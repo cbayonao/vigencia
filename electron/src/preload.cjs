@@ -2,6 +2,31 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("vigencia", {
   listar: () => ipcRenderer.invoke("listar"),
+  documentosInicio: () => ipcRenderer.invoke("documentos-inicio"),
+  documentosProyecto: (id, modelo) => ipcRenderer.invoke("documentos-proyecto", { id, modelo }),
+  documentosCrear: (datos) => ipcRenderer.invoke("documentos-crear", datos),
+  documentosActualizar: (id, cambios) => ipcRenderer.invoke("documentos-actualizar", { id, cambios }),
+  documentosDuplicar: (id) => ipcRenderer.invoke("documentos-duplicar", { id }),
+  documentosBorrar: (id) => ipcRenderer.invoke("documentos-borrar", { id }),
+  documentosFuentes: (id, fuentes) => ipcRenderer.invoke("documentos-fuentes", { id, fuentes }),
+  documentosVersion: (id) => ipcRenderer.invoke("documentos-version", { id }),
+  documentosDiferencias: (antes, despues) => ipcRenderer.invoke("documentos-diferencias", { antes, despues }),
+  documentosRestaurar: (id) => ipcRenderer.invoke("documentos-restaurar", { id }),
+  documentosGuardarTexto: (id, cuerpo) => ipcRenderer.invoke("documentos-guardar-texto", { id, cuerpo }),
+  documentosConversar: (datos) => ipcRenderer.invoke("documentos-conversar", datos),
+  alDocumento: (fn) => {
+    const canal = (_evento, dato) => fn(dato);
+    ipcRenderer.on("documentos-progreso", canal);
+    return () => ipcRenderer.removeListener("documentos-progreso", canal);
+  },
+  documentosPerfilGuardar: (datos) => ipcRenderer.invoke("documentos-perfil-guardar", datos),
+  documentosPerfilBorrar: (id) => ipcRenderer.invoke("documentos-perfil-borrar", { id }),
+  documentosFuentesBuscar: (filtro) => ipcRenderer.invoke("documentos-fuentes-buscar", filtro),
+  documentosFuenteLeer: (id) => ipcRenderer.invoke("documentos-fuente-leer", { id }),
+  documentosFuenteGuardar: (datos) => ipcRenderer.invoke("documentos-fuente-guardar", datos),
+  documentosFuenteBorrar: (id) => ipcRenderer.invoke("documentos-fuente-borrar", { id }),
+  documentosFuenteImportar: () => ipcRenderer.invoke("documentos-fuente-importar"),
+  documentosExportar: (version, formato) => ipcRenderer.invoke("documentos-exportar", { version, formato }),
   detalle: (id) => ipcRenderer.invoke("detalle", id),
   guardarCliente: (datos) => ipcRenderer.invoke("guardar-cliente", datos),
   borrarCliente: (id) => ipcRenderer.invoke("borrar-cliente", id),

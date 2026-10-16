@@ -150,11 +150,17 @@ export function fragmentosRelevantes(fuentes, consulta, { presupuesto = 6000, ta
     if (d.trozo.entero) puntaje += 0.5;
     d.puntaje = puntaje;
   }
-  const ordenados = [...docs].sort((x, y) => y.puntaje - x.puntaje || x.trozo.orden - y.trozo.orden);
+  // Una fuente corta (una nota, un estilo) entra entera antes que los
+  // trozos: cuesta poco y suele ser una instrucción del usuario.
+  const ordenados = [...docs].sort((x, y) => (y.trozo.entero - x.trozo.entero) || y.puntaje - x.puntaje || x.trozo.orden - y.trozo.orden);
+  const mejor = Math.max(0, ...docs.filter((d) => !d.trozo.entero).map((d) => d.puntaje));
+  const piso = mejor * 0.25;
   const elegidos = [];
   let usado = 0;
   for (const d of ordenados) {
-    if (pregunta.length && d.puntaje <= 0 && !d.trozo.entero && elegidos.length) continue;
+    // Un trozo que apenas coincide no gasta contexto; sin consulta útil se
+    // toma el comienzo de cada fuente.
+    if (!d.trozo.entero && mejor > 0 && d.puntaje < piso) continue;
     const largo = d.trozo.texto.length;
     if (usado + largo > presupuesto) continue;
     elegidos.push({ ...d.trozo, puntaje: Number(d.puntaje.toFixed(4)) });
@@ -245,6 +251,7 @@ export function contarAvisos(secciones) {
 // ---------- Diferencias entre versiones ----------
 
 export function parrafosDe(cuerpo) {
+  if (!String(cuerpo || "").trim()) return [];
   const escrito = escritoDeTexto(cuerpo);
   const lista = [];
   if (escrito.asunto) lista.push({ seccion: "Asunto", texto: escrito.asunto });

@@ -25,6 +25,7 @@ import {
   sistemasVisibles,
 } from "../compartido/sistemas.js";
 import { coincideBusqueda, especialidadDe } from "../compartido/pp.js";
+import { CAPAS_DOCUMENTOS, abrirDocumentos, iniciarDocumentos, refrescarModelosDocumentos } from "./documentos.js";
 
 const $ = (id) => document.getElementById(id);
 const estado = {
@@ -312,6 +313,7 @@ const CAPAS = [
   "dialogo-actualizar",
   "dialogo-sistemas",
   "dialogo-pp-doc",
+  ...CAPAS_DOCUMENTOS,
 ];
 
 function cerrarMenuOpciones() {
@@ -1536,7 +1538,7 @@ document.addEventListener("keydown", (evento) => {
   }
   if (evento.key === "Escape") {
     if (cima === "dialogo-cliente") cerrarFormulario();
-    else if (cima === "dialogo-ajustes" || cima === "dialogo-csv" || cima === "dialogo-borrar" || cima === "dialogo-eliminar" || cima === "dialogo-escrito" || cima === "dialogo-modelos" || cima === "dialogo-iniciar" || cima === "dialogo-informe" || cima === "dialogo-asignar" || cima === "dialogo-directorio" || cima === "dialogo-biblioteca" || cima === "dialogo-pieza" || cima === "dialogo-actualizar" || cima === "dialogo-sistemas" || cima === "dialogo-pp-doc") ocultarDialogo(cima);
+    else if (cima === "dialogo-ajustes" || cima === "dialogo-csv" || cima === "dialogo-borrar" || cima === "dialogo-eliminar" || cima === "dialogo-escrito" || cima === "dialogo-modelos" || cima === "dialogo-iniciar" || cima === "dialogo-informe" || cima === "dialogo-asignar" || cima === "dialogo-directorio" || cima === "dialogo-biblioteca" || cima === "dialogo-pieza" || cima === "dialogo-actualizar" || cima === "dialogo-sistemas" || cima === "dialogo-pp-doc" || CAPAS_DOCUMENTOS.includes(cima)) ocultarDialogo(cima);
     else if (cima === "dialogo-busqueda" && !$("dialogo-cerrar").hidden) ocultarDialogo(cima);
     return;
   }
@@ -2196,6 +2198,7 @@ window.vigencia.alSamaiNovedades(() => {
 window.vigencia.alActualizacion((info) => abrirActualizacion(info));
 $("modelos-cerrar").addEventListener("click", () => {
   ocultarDialogo("dialogo-modelos");
+  refrescarModelosDocumentos();
   if (dialogoAlFrente() === "dialogo-escrito") $("escrito-prompt").focus();
 });
 $("escrito-prompt").addEventListener("input", () => {
@@ -2872,6 +2875,10 @@ function guardarLocal(clave, valor) {
 }
 
 function pintarSistemas() {
+  const documentos = $("sistema-documentos");
+  documentos.classList.toggle("activo", estado.sistema === "documentos");
+  if (estado.sistema === "documentos") documentos.setAttribute("aria-current", "page");
+  else documentos.removeAttribute("aria-current");
   const lista = $("sistemas-lista");
   lista.replaceChildren();
   for (const sistema of sistemasVisibles(estado.ocultos)) {
@@ -2893,7 +2900,22 @@ function pintarSistemas() {
   }
 }
 
+function elegirDocumentos() {
+  estado.sistema = "documentos";
+  cerrarCombos();
+  for (const id of ["pantalla-consulta", "pantalla-pp", "pantalla-spoa", "pantalla-samai", "pantalla-construccion"]) $(id).hidden = true;
+  $("pantalla-documentos").hidden = false;
+  document.title = "Documentos";
+  pintarSistemas();
+  abrirDocumentos();
+}
+
 function elegirSistema(id) {
+  if (id === "documentos") {
+    elegirDocumentos();
+    return;
+  }
+  $("pantalla-documentos").hidden = true;
   const sistema = sistemaDe(sistemaElegible(id, estado.ocultos));
   estado.sistema = sistema.id;
   cerrarCombos();
@@ -3750,3 +3772,6 @@ async function verSamaiGuardado(guid) {
 
 $("samai-clase").addEventListener("change", aplicarFiltrosSamai);
 $("samai-texto").addEventListener("input", aplicarFiltrosSamai);
+
+$("sistema-documentos").addEventListener("click", () => elegirSistema("documentos"));
+iniciarDocumentos({ mostrarDialogo, ocultarDialogo, menuDesplegable, abrirConfigModelos });

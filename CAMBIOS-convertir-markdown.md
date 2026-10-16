@@ -14,13 +14,19 @@ Versión base 3.4.0. Todo local, sin push.
 - Migraciones 13 a 16, probadas en copias de una base real (v10 y v12 a v16), dos veces seguidas, sin pérdida de filas.
 - Arreglos de paso: importar por arrastre fallaba (variable base tapaba la base); Electron 44 quitó File.path.
 
+- Editor enriquecido del documento (TipTap 3, licencia MIT, empaquetado local en electron/renderer/vendor/editor.js con `npm run editor`; sin internet y compatible con la CSP). Estilos: Párrafo, Título de sección, Subtítulo, Cita textual, Firma; negrita, cursiva, subrayado, viñetas, numerales, tablas (agregar fila o columna, quitar), alineación izquierda, centro, derecha y justificado, deshacer y rehacer. Hoja tamaño carta con letra Times.
+- El editor guarda en Markdown (formato en compartido/formato.js): ## sección, #### subtítulo, > cita, - viñeta, 1. numeral, tabla con |, **negrita**, *cursiva*, ++subrayado++, {centro} {derecha} {izquierda} {justificado} al inicio del párrafo. Botón Markdown para ver o editar ese texto.
+- Cada párrafo del editor lleva su id de bloque (data-bloque). Guardar conserva los ids aunque el párrafo se reescriba entero, deja historial por párrafo (origen manual) y anota en la memoria "Editado a mano". Partir un párrafo con Enter crea un bloque nuevo.
+- "Cambiar este párrafo con IA" en la barra del editor y "Cambiar con IA" en cada párrafo de la vista abren el diálogo con ese párrafo elegido. Si el modelo devuelve solo el texto, el párrafo conserva su forma (viñeta, numeral, cita, alineación).
+- Word, ODT y PDF respetan todo el formato (tablas con borde, cita con sangría, subtítulo, subrayado, alineación). El pie "Generado con IA. Favor revisar." se ve al final del editor con "Quitar pie" y "Poner pie", va unido a la casilla del exportar y sigue siendo un pie normal en Word y LibreOffice. Word de Documentos ahora lleva el título arriba.
+- Restaurar una versión también sincroniza los párrafos y la memoria.
+- Probado a mano con el modelo local llama 3.2 1B: documento de tutela, formato en el editor (27 ids conservados más una tabla nueva), Cambiar este párrafo con IA en una pretensión, diff, Aceptar (versión 3, mismo id, numeral conservado, memoria actualizada). El 3B no cupo en la ventana de contexto de este equipo. Capturas en ~/vigencia-capturas.
+
 ## Pendiente (diseño)
-### Editor enriquecido
-- Vista de edición tipo documento sobre los mismos bloques: cada párrafo es un elemento contenteditable con data-bloque igual al id de doc_bloque; títulos como bloques de sección. Barra mínima: negrita, itálica, viñetas, título. Se guarda como Markdown (** * - ##), que es lo que ya entienden docx.js, odt y PDF, así no hay dos formatos.
-- Al guardar, sincronizar() conserva los ids; los párrafos tocados a mano quedan en la memoria como "editado a mano" y en doc_bloque_cambio con origen "manual" y estado aceptado.
-- Botón en cada párrafo: Cambiar con IA, que abre el diálogo actual ya elegido.
-- Pie de IA en la vista: línea final propia que el usuario puede borrar; si la borra, la casilla del exportar arranca apagada.
-- Sin librería externa grande al principio (CSP style-src 'self' obliga a clases, no estilos en línea).
+- Listas anidadas: se guardan planas (cada viñeta es un párrafo). Para anidar haría falta sangría en el Markdown ("  - ").
+- Celdas combinadas en tablas: el Markdown no las representa; el editor permite combinarlas pero al guardar quedan separadas.
+- Notas al pie, encabezado con membrete y numeración de páginas en el editor.
+- Ver el documento en páginas separadas dentro del editor (hoy es una hoja continua).
 ### Otros
 - Embeddings y skills: fuera del MVP.
 - Vista del original dentro de la app (bloqueada por la CSP; opción: abrir con el visor del sistema).
@@ -28,4 +34,5 @@ Versión base 3.4.0. Todo local, sin push.
 - Cambiar un párrafo en la nube reutiliza Revisar envío; falta probarlo a mano con una clave real.
 
 ## Pruebas
-cd electron && npm test   (199 pasan)
+cd electron && npm test   (206 pasan)
+npm run editor   (vuelve a armar renderer/vendor/editor.js si cambia electron/editor/editor.js)

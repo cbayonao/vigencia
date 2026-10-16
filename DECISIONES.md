@@ -55,3 +55,7 @@
 - La memoria del documento se arma sin modelos (reglas fijas) para que no dependa de cuál se use; tope 1200 caracteres en local y 4000 en nube.
 - Ids de bloque estables por texto igual o parecido. Aceptar un cambio verifica que el párrafo siga igual a la propuesta; si no, pide repetirlo.
 - Electron 44 quitó `File.path`: el arrastre usa `webUtils.getPathForFile`.
+- Editor: TipTap 3 sobre ProseMirror (MIT, mantenido). Se empaqueta un solo archivo local con esbuild para no depender de node_modules en la ventana ni de internet. El documento sigue guardándose en Markdown (no HTML ni JSON) para que la memoria, Cambiar un párrafo, los modelos y las exportaciones lean lo mismo.
+- Formato propio y mínimo en Markdown: ++subrayado++ y {centro} al inicio del párrafo. #### es subtítulo porque ## y ### ya parten secciones en el lector de respuestas.
+- Las filas seguidas de una tabla son un solo párrafo (un bloque con id).
+- Una línea solo de guiones bajos se sigue leyendo como separador y se descarta; la firma necesita texto en la misma línea (Firma: ______).

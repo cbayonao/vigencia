@@ -4,6 +4,15 @@
 // listo o error. No abre conexiones de red.
 import { convertirRuta } from "./convertidores.js";
 
+// pdfjs decide si está en Node mirando process.type: en un utilityProcess
+// vale "utility" y pdfjs cree que hay DOM ("document is not defined"). Aquí
+// no hay ventana, así que se le dice que es Node.
+try {
+  Object.defineProperty(process, "type", { value: undefined, configurable: true, writable: true });
+} catch {
+  /* si no se puede, convertidores.js falla con un error claro */
+}
+
 const puerto = process.parentPort;
 const senales = new Map();
 

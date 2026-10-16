@@ -115,7 +115,7 @@ function cuerpoDocumentoHtml(secciones) {
   }).join("");
 }
 
-export function htmlDocumento({ asunto, secciones, origen }) {
+export function htmlDocumento({ asunto, secciones, origen }, { pie = true } = {}) {
   return `<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -128,6 +128,7 @@ export function htmlDocumento({ asunto, secciones, origen }) {
     <h1>${html(asunto || "Documento")}</h1>
     ${cuerpoDocumentoHtml(secciones)}
     ${pieHtml(origen)}
+    ${pie ? '<p class="pie">Generado con IA. Favor revisar.</p>' : ""}
   </div>
 </body>
 </html>`;

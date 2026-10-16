@@ -72,7 +72,7 @@ contextBridge.exposeInMainWorld("vigencia", {
   jurisBuscar: (datos) => ipcRenderer.invoke("juris-buscar", datos),
   jurisLeer: (sentencia) => ipcRenderer.invoke("juris-leer", { sentencia }),
   jurisGuardar: (sentencia, texto) => ipcRenderer.invoke("juris-guardar", { sentencia, texto }),
-  documentosExportar: (version, formato) => ipcRenderer.invoke("documentos-exportar", { version, formato }),
+  documentosExportar: (version, formato, pie = true) => ipcRenderer.invoke("documentos-exportar", { version, formato, pie }),
   detalle: (id) => ipcRenderer.invoke("detalle", id),
   guardarCliente: (datos) => ipcRenderer.invoke("guardar-cliente", datos),
   borrarCliente: (id) => ipcRenderer.invoke("borrar-cliente", id),

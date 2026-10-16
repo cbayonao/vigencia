@@ -644,7 +644,7 @@ async function restaurar_(id) {
 async function exportar(formato) {
   const id = doc.versionVista || doc.datos?.actual?.id;
   if (!id) return;
-  const r = await window.vigencia.documentosExportar(id, formato);
+  const r = await window.vigencia.documentosExportar(id, formato, $("doc-pie-ia").checked);
   if (r?.ok) estadoChat(`Guardado en ${r.ruta}`);
   else if (!r?.cancelado) estadoChat(r?.error || "No pude guardar el archivo.", true);
 }
@@ -1348,6 +1348,7 @@ export function iniciarDocumentos(herramientas) {
   $("doc-edicion-guardar").addEventListener("click", guardarEdicion);
   $("doc-word").addEventListener("click", () => exportar("docx"));
   $("doc-pdf").addEventListener("click", () => exportar("pdf"));
+  $("doc-odt").addEventListener("click", () => exportar("odt"));
   $("doc-hoja-caja").addEventListener("mouseup", tomarPasaje);
   $("doc-texto").addEventListener("mouseup", tomarPasaje);
   $("doc-texto").addEventListener("keyup", (e) => { if (e.shiftKey) tomarPasaje(); });

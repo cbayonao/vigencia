@@ -12,7 +12,7 @@ import {
   modeloDelProyecto, restaurarVersion,
 } from "./documentos.js";
 import { listarModelos } from "./ia.js";
-import { docxDeEscrito } from "./docx.js";
+import { docxDeEscrito, odtDeEscrito } from "./docx.js";
 import { leerArchivoFuente } from "./importar.js";
 import { htmlDocumento } from "./memorial.js";
 import { pdfDesdeHtml } from "./pdf.js";
@@ -145,7 +145,7 @@ export function registrarDocumentos({ ipcMain, dialog, db, datosDir, ventana, re
     const elegido = await dialog.showSaveDialog(ventana(), {
       title: titulo,
       defaultPath: nombreArchivo(nombre, extension),
-      filters: [{ name: extension === "pdf" ? "PDF" : "Word", extensions: [extension] }],
+      filters: [{ name: { pdf: "PDF", odt: "OpenDocument" }[extension] || "Word", extensions: [extension] }],
     });
     if (elegido.canceled || !elegido.filePath) return { ok: false, cancelado: true };
     let ruta = elegido.filePath;
@@ -157,11 +157,13 @@ export function registrarDocumentos({ ipcMain, dialog, db, datosDir, ventana, re
     try {
       const version = leerVersion(base(), dato?.version);
       const escrito = escritoDeVersion(version);
+      const pie = dato?.pie !== false;
       if (dato?.formato === "pdf") {
-        const pdf = await pdfDesdeHtml(htmlDocumento(escrito), ventana());
+        const pdf = await pdfDesdeHtml(htmlDocumento(escrito, { pie }), ventana());
         return await guardarComo("Descargar el documento en PDF", escrito.asunto, "pdf", pdf);
       }
-      return await guardarComo("Guardar el documento en Word", escrito.asunto, "docx", docxDeEscrito(escrito));
+      if (dato?.formato === "odt") return await guardarComo("Guardar el documento para LibreOffice", escrito.asunto, "odt", odtDeEscrito(escrito, { pie }));
+      return await guardarComo("Guardar el documento en Word", escrito.asunto, "docx", docxDeEscrito(escrito, { pie }));
     } catch (error) {
       return { ok: false, error: mensajeHumano(error) };
     }

@@ -76,6 +76,12 @@ export function terminos(valor) {
 
 // Parte el texto en trozos de cerca de `tamano` caracteres, por párrafos;
 // un párrafo más largo se corta por frases. Cada trozo guarda su orden.
+// Tokens aproximados para español: ~4 caracteres por token. Sirve para
+// mostrarle al usuario cuánto le cuesta cada fuente a la IA, no para cobrar.
+export function estimarTokens(texto) {
+  return Math.max(1, Math.ceil(String(texto || "").replace(/\s+/g, " ").trim().length / 4));
+}
+
 export function trocear(textoFuente, { tamano = 1200, solape = 150 } = {}) {
   const limpio = String(textoFuente || "").replace(/\r\n/g, "\n").trim();
   if (!limpio) return [];

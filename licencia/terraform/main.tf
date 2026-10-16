@@ -48,6 +48,23 @@ variable "wompi_events_secret" {
   default   = ""
 }
 
+variable "comentarios_clave" {
+  description = "Clave del equipo para leer y moderar comentarios en la página de administración."
+  type        = string
+  sensitive   = true
+}
+
+resource "aws_dynamodb_table" "comentarios" {
+  name         = "vigencia-comentarios"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "id"
+
+  attribute {
+    name = "id"
+    type = "S"
+  }
+}
+
 resource "aws_dynamodb_table" "licencias" {
   name         = "vigencia-licencias"
   billing_mode = "PAY_PER_REQUEST"
@@ -115,14 +132,21 @@ resource "aws_iam_role_policy" "tabla" {
   role = aws_iam_role.lambda.id
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [{
-      Effect = "Allow"
-      Action = ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:Query"]
-      Resource = [
-        aws_dynamodb_table.licencias.arn,
-        "${aws_dynamodb_table.licencias.arn}/index/*",
-      ]
-    }]
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:Query"]
+        Resource = [
+          aws_dynamodb_table.licencias.arn,
+          "${aws_dynamodb_table.licencias.arn}/index/*",
+        ]
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["dynamodb:PutItem", "dynamodb:Scan", "dynamodb:UpdateItem"]
+        Resource = [aws_dynamodb_table.comentarios.arn]
+      },
+    ]
   })
 }
 
@@ -151,6 +175,8 @@ resource "aws_lambda_function" "licencia" {
   environment {
     variables = {
       TABLA_LICENCIAS        = aws_dynamodb_table.licencias.name
+      TABLA_COMENTARIOS      = aws_dynamodb_table.comentarios.name
+      COMENTARIOS_CLAVE      = var.comentarios_clave
       URL_PUBLICA            = aws_apigatewayv2_api.licencia.api_endpoint
       LICENCIA_PRIVADA_B64   = try(base64encode(file("${path.module}/../claves/licencia-privada.pem")), "")
       WOMPI_ENV              = var.wompi_env
@@ -171,6 +197,13 @@ resource "aws_lambda_function" "licencia" {
 resource "aws_apigatewayv2_api" "licencia" {
   name          = "vigencia-licencia"
   protocol_type = "HTTP"
+
+  cors_configuration {
+    allow_origins = ["https://vigencia.askleia.co"]
+    allow_methods = ["GET", "POST", "OPTIONS"]
+    allow_headers = ["content-type", "x-clave"]
+    max_age       = 3600
+  }
 }
 
 resource "aws_apigatewayv2_integration" "lambda" {

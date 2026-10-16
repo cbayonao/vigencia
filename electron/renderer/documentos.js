@@ -1,6 +1,6 @@
 // Pantalla Documentos: proyectos, conversación, hoja viva, versiones,
 // biblioteca de fuentes y perfiles. Todo pasa por window.vigencia.
-import { contarAvisos, diferencias, escritoDeTexto } from "../compartido/documentos.js";
+import { contarAvisos, diferencias, escritoDeTexto, estimarTokens } from "../compartido/documentos.js";
 
 const $ = (id) => document.getElementById(id);
 const doc = {
@@ -13,6 +13,7 @@ const doc = {
   modelo: "",
   editando: false,
   pasaje: "",
+  pasajeRef: "",
   enviando: false,
   bibMarcadas: new Set(),
   bibFiltro: { texto: "", clase: "", etiqueta: "" },
@@ -109,7 +110,10 @@ function llenarModelos(select, actual, conPreferido = false) {
   const items = modelos.map((m) => opcion(m.id, m.nombre));
   if (conPreferido) items.unshift(opcion("", "El que esté activo en Modelos de IA"));
   select.replaceChildren(...items);
-  select.value = actual && modelos.some((m) => m.id === actual) ? actual : (conPreferido ? "" : doc.inicio?.modelos?.activo || "sencillo");
+  const metaDisponible = !conPreferido && modelos.some((m) => m.id === "nube:meta");
+  select.value = actual && modelos.some((m) => m.id === actual)
+    ? actual
+    : (conPreferido ? "" : metaDisponible ? "nube:meta" : (doc.inicio?.modelos?.activo || "sencillo"));
 }
 
 // ---------- Proyecto abierto ----------
@@ -123,6 +127,7 @@ async function abrirProyecto(id, { conservarVista = false } = {}) {
   if (doc.abierto !== id) {
     doc.modelo = "";
     doc.pasaje = "";
+    doc.pasajeRef = "";
     doc.editando = false;
   }
   doc.abierto = id;
@@ -130,12 +135,36 @@ async function abrirProyecto(id, { conservarVista = false } = {}) {
   if (!doc.modelo) doc.modelo = r.modelo?.id || "";
   if (!conservarVista) doc.versionVista = r.actual?.id || null;
   pintarProyecto();
+  pintarContexto();
   pintarLista();
 }
 
 function modeloElegido() {
   const modelos = doc.inicio?.modelos?.modelos || [];
   return modelos.find((m) => m.id === doc.modelo) || null;
+}
+
+async function pintarContexto() {
+  const caja = $("doc-contexto");
+  if (!doc.abierto) {
+    caja.textContent = "Sin llamadas a la nube todavía.";
+    return;
+  }
+  let r = null;
+  try {
+    r = await window.vigencia.gastoUltimo(doc.abierto);
+  } catch {
+    r = { ok: false };
+  }
+  if (!r?.ok || !r.hay) {
+    caja.textContent = "Sin llamadas a la nube todavía.";
+    return;
+  }
+  const total = (Number(r.entrada) || 0) + (Number(r.salida) || 0);
+  const tokens = `${total.toLocaleString("es-CO")} de ${Number(r.ventana).toLocaleString("es-CO")} tokens`;
+  caja.textContent = r.porcentaje == null
+    ? `Última llamada: ${tokens}.`
+    : `Contexto usado: ~${r.porcentaje}% (${tokens}).`;
 }
 
 function pintarPrivacidad() {
@@ -160,6 +189,7 @@ function pintarProyecto() {
   if (!d) {
     $("doc-hoja-caja").replaceChildren(nodo("p", "ayuda doc-papel-vacio", "Aquí se ve el documento mientras se escribe."));
     $("doc-avisos").hidden = true;
+    $("doc-pista-pasaje").hidden = true;
     return;
   }
   $("doc-titulo").textContent = d.proyecto.nombre;
@@ -206,11 +236,7 @@ function pintarMensajes() {
   for (const m of lista) {
     const burbuja = nodo("div", `doc-msj doc-msj-${m.rol}`);
     burbuja.append(nodo("p", "doc-msj-texto", m.texto));
-    if (m.dudas?.length) {
-      const ol = nodo("ol", "doc-dudas");
-      for (const p of m.dudas) ol.append(nodo("li", "", p));
-      burbuja.append(ol, nodo("p", "ayuda", "Responda en un solo mensaje y el asistente redacta con esa respuesta."));
-    }
+    if (m.dudas?.length) burbuja.append(bloqueDudas(m));
     const pie = [fechaCorta(m.creado_en)];
     if (m.rol === "asistente" && m.origen === "nube") pie.push("respondido en la nube");
     burbuja.append(nodo("span", "doc-msj-pie", pie.join(", ")));
@@ -223,6 +249,61 @@ function pintarMensajes() {
     caja.append(burbuja);
   }
   caja.scrollTop = caja.scrollHeight;
+}
+
+// Las dudas de la IA se responden aquí mismo, pregunta por pregunta, con
+// un clic: como responder un comentario en un editor, sin redactar el
+// mensaje a mano.
+function bloqueDudas(m) {
+  const caja = nodo("div", "doc-dudas-caja");
+  caja.append(nodo("p", "doc-dudas-titulo", "Antes de redactar necesito saber:"));
+  const campos = [];
+  m.dudas.forEach((pregunta, i) => {
+    const fila = nodo("label", "doc-duda");
+    fila.append(nodo("span", "doc-dudas-num", `${i + 1}`));
+    const cuerpo = nodo("span", "doc-duda-cuerpo");
+    cuerpo.append(nodo("span", "doc-duda-pregunta", pregunta));
+    const campo = document.createElement("input");
+    campo.type = "text";
+    campo.placeholder = "Su respuesta";
+    campo.setAttribute("aria-label", `Respuesta a: ${pregunta}`);
+    campo.autocomplete = "off";
+    cuerpo.append(campo);
+    fila.append(cuerpo);
+    caja.append(fila);
+    campos.push(campo);
+  });
+  const pie = nodo("div", "doc-dudas-pie");
+  const ayuda = nodo("span", "ayuda", "Responda y el asistente redacta.");
+  const boton = nodo("button", "boton-cobre doc-dudas-enviar", "Responder y redactar");
+  boton.type = "button";
+  const responder = () => {
+    const lineas = [];
+    m.dudas.forEach((pregunta, i) => {
+      const r = campos[i].value.trim();
+      if (r) lineas.push(`${i + 1}. ${pregunta}\nRespuesta: ${r}`);
+    });
+    if (!lineas.length) {
+      estadoChat("Responda al menos una pregunta para seguir.", true);
+      campos[0]?.focus();
+      return;
+    }
+    if (lineas.length < m.dudas.length) lineas.push("(Las demás preguntas quedan como [Dato pendiente].)");
+    $("doc-mensaje").value = lineas.join("\n\n");
+    enviar();
+  };
+  boton.addEventListener("click", responder);
+  for (const campo of campos) {
+    campo.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        responder();
+      }
+    });
+  }
+  pie.append(ayuda, boton);
+  caja.append(pie);
+  return caja;
 }
 
 function pintarVersiones() {
@@ -269,10 +350,10 @@ function hojaDe(cuerpo, origen) {
   for (const s of escrito.secciones) {
     const sec = nodo("section");
     if (!["Escrito", "Texto", "Destinatario", "Referencia", "Cierre"].includes(s.titulo)) sec.append(nodo("h2", "", s.titulo));
+    let n = 0;
     for (const p of s.parrafos) {
-      const el = nodo("p", /___/.test(p) ? "firma" : "");
-      conMarcas(el, p);
-      sec.append(el);
+      n += 1;
+      sec.append(parrafoDe(s.titulo, n, p));
     }
     hoja.append(sec);
   }
@@ -282,6 +363,70 @@ function hojaDe(cuerpo, origen) {
   return { hoja, escrito };
 }
 
+// Cada párrafo de la hoja trae sus acciones: corregirlo solo a él o
+// citarlo en el mensaje. Es el corazón del editor: el abogado apunta a un
+// pedazo pequeño en vez de reescribir todo.
+function parrafoDe(seccion, numero, texto) {
+  const caja = nodo("div", "doc-parrafo");
+  const ref = `${seccion} · ¶${numero}`;
+  caja.dataset.pasaje = String(texto || "");
+  caja.dataset.ref = ref;
+  const el = nodo("p", /___/.test(texto) ? "firma" : "");
+  conMarcas(el, texto);
+  const acciones = nodo("div", "doc-parrafo-acciones");
+  const corregir = nodo("button", "doc-parrafo-btn", "✎ Corregir solo este");
+  corregir.type = "button";
+  corregir.title = `Corregir solo este párrafo (${ref})`;
+  corregir.setAttribute("aria-label", `Corregir solo el párrafo ${numero} de ${seccion}`);
+  corregir.addEventListener("click", () => elegirPasaje(texto, ref));
+  const citar = nodo("button", "doc-parrafo-btn", "❝ Citar");
+  citar.type = "button";
+  citar.title = "Traer este párrafo a su mensaje";
+  citar.setAttribute("aria-label", `Citar el párrafo ${numero} de ${seccion} en el mensaje`);
+  citar.addEventListener("click", () => citarParrafo(texto, ref));
+  acciones.append(corregir, citar);
+  caja.append(el, acciones);
+  if (doc.pasaje && String(texto) === doc.pasaje) caja.classList.add("elegido");
+  return caja;
+}
+
+const PLACEHOLDER_MENSAJE = "Pida el documento o un cambio: hazlo más corto, agrega la sentencia que le aporto, cambia el tono";
+
+function elegirPasaje(texto, ref = "") {
+  const limpio = String(texto || "").trim();
+  if (limpio.length < 12) {
+    estadoChat("Ese párrafo es muy corto para corregirlo solo.", true);
+    return;
+  }
+  if (doc.versionVista !== doc.datos?.actual?.id) {
+    estadoChat("Vea la versión actual para corregir un párrafo.", true);
+    return;
+  }
+  doc.pasaje = limpio;
+  doc.pasajeRef = ref || "Pasaje elegido";
+  pintarPasaje();
+  pintarHojaElegido();
+  $("doc-mensaje").placeholder = "Diga cómo corregir ese párrafo: más corto, más formal, agregue la cita…";
+  $("doc-mensaje").focus();
+}
+
+function citarParrafo(texto, ref = "") {
+  const limpio = String(texto || "").trim();
+  if (!limpio) return;
+  const cita = limpio.length > 280 ? `${limpio.slice(0, 280)} [...]` : limpio;
+  const caja = $("doc-mensaje");
+  const prefijo = caja.value && !caja.value.endsWith("\n") ? "\n" : "";
+  caja.value = `${caja.value}${prefijo}> ${ref ? `(${ref}) ` : ""}${cita}\n`;
+  caja.focus();
+  estadoChat(`Párrafo ${ref || "elegido"} traído a su mensaje.`);
+}
+
+function pintarHojaElegido() {
+  for (const caja of document.querySelectorAll("#doc-hoja-caja .doc-parrafo")) {
+    caja.classList.toggle("elegido", Boolean(doc.pasaje) && caja.dataset.pasaje === doc.pasaje);
+  }
+}
+
 async function pintarHoja() {
   const d = doc.datos;
   const caja = $("doc-hoja-caja");
@@ -289,6 +434,7 @@ async function pintarHoja() {
     caja.replaceChildren(nodo("p", "ayuda doc-papel-vacio", "Aquí se ve el documento mientras se escribe. Todavía no hay versiones."));
     $("doc-avisos").hidden = true;
     $("doc-herramientas").hidden = true;
+    $("doc-pista-pasaje").hidden = true;
     return;
   }
   $("doc-herramientas").hidden = false;
@@ -311,6 +457,8 @@ async function pintarHoja() {
     caja.replaceChildren(hoja);
   }
   pintarAvisos(contarAvisos(escrito.secciones));
+  $("doc-pista-pasaje").hidden = false;
+  pintarHojaElegido();
   $("doc-editar").disabled = v.id !== d.actual.id;
   $("doc-comparar").disabled = v.numero <= 1;
   $("doc-hoja-caja").hidden = doc.editando;
@@ -331,7 +479,18 @@ function pintarAvisos(avisos) {
 
 function pintarPasaje() {
   $("doc-pasaje").hidden = !doc.pasaje;
-  $("doc-pasaje-texto").textContent = doc.pasaje.length > 140 ? `${doc.pasaje.slice(0, 140)} [...]` : doc.pasaje;
+  $("doc-pasaje-ref").hidden = !doc.pasaje;
+  $("doc-pasaje-ref").textContent = doc.pasajeRef || "Pasaje";
+  const muestra = doc.pasaje.length > 140 ? `${doc.pasaje.slice(0, 140)} [...]` : doc.pasaje;
+  $("doc-pasaje-texto").textContent = doc.pasaje ? `${muestra} (${doc.pasaje.length} caracteres)` : "";
+}
+
+function quitarPasaje() {
+  doc.pasaje = "";
+  doc.pasajeRef = "";
+  pintarPasaje();
+  pintarHojaElegido();
+  $("doc-mensaje").placeholder = PLACEHOLDER_MENSAJE;
 }
 
 // ---------- Enviar un mensaje ----------
@@ -360,6 +519,14 @@ async function enviar(evento) {
   const nube = String(doc.modelo).startsWith("nube:");
   estadoChat(nube ? "Pidiendo el texto al proveedor con su clave" : "Redactando en este computador");
   const documento = doc.editando ? $("doc-texto").value : null;
+  // Eco inmediato: el mensaje se ve en el chat sin esperar la respuesta.
+  const eco = nodo("div", "doc-msj doc-msj-usuario");
+  eco.append(nodo("p", "doc-msj-texto", mensaje));
+  const vacio = document.querySelector("#doc-mensajes .doc-mensajes-vacio");
+  if (vacio) vacio.remove();
+  $("doc-mensajes").append(eco);
+  $("doc-mensajes").scrollTop = $("doc-mensajes").scrollHeight;
+  $("doc-mensaje").value = "";
   const quitar = window.vigencia.alDocumento((dato) => {
     if (dato?.proyectoId === doc.abierto) vivo(dato.texto || "");
   });
@@ -372,16 +539,19 @@ async function enviar(evento) {
       documento,
     });
     if (!r?.ok) {
+      eco.remove();
       estadoChat(r?.error || "No pude enviar el mensaje.", true);
       return;
     }
-    $("doc-mensaje").value = "";
     doc.pasaje = "";
+    doc.pasajeRef = "";
     doc.editando = false;
     doc.datos = { ...r };
+    $("doc-mensaje").placeholder = PLACEHOLDER_MENSAJE;
     doc.versionVista = r.actual?.id || null;
     estadoChat(r.error ? "El modelo no respondió." : "");
     pintarProyecto();
+    pintarContexto();
     await cargarInicio();
   } finally {
     quitar();
@@ -488,7 +658,10 @@ function tomarPasaje() {
   elegido = elegido.trim();
   if (elegido.length >= 12 && doc.versionVista === doc.datos?.actual?.id) {
     doc.pasaje = elegido;
+    doc.pasajeRef = "Selección";
     pintarPasaje();
+    pintarHojaElegido();
+    $("doc-mensaje").placeholder = "Diga cómo corregir ese pasaje: más corto, más formal, agregue la cita…";
   }
 }
 
@@ -608,6 +781,9 @@ function nombreClase(id) {
 async function abrirBiblioteca() {
   doc.bibMarcadas = new Set(doc.datos?.fuentes || []);
   $("doc-bib-usar").hidden = !doc.datos;
+  const soltado = $("doc-bib-soltar-estado");
+  soltado.hidden = true;
+  soltado.textContent = "";
   $("doc-bib-clase").replaceChildren(opcion("", "Todas las clases"), ...(doc.inicio?.clases || []).map((c) => opcion(c.id, c.nombre)));
   $("doc-bib-clase").value = doc.bibFiltro.clase;
   await pintarBiblioteca();
@@ -641,7 +817,7 @@ async function pintarBiblioteca() {
     }
     const textos = nodo("div", "doc-bib-textos");
     textos.append(nodo("strong", "", f.nombre));
-    const meta = [nombreClase(f.clase), `${f.largo.toLocaleString("es-CO")} caracteres`];
+    const meta = [nombreClase(f.clase), `${f.largo.toLocaleString("es-CO")} caracteres (≈ ${Math.max(1, Math.ceil(f.largo / 4)).toLocaleString("es-CO")} tokens)`];
     if (f.etiquetas.length) meta.push(f.etiquetas.join(", "));
     if (f.origen) meta.push(f.origen);
     textos.append(nodo("span", "doc-tarjeta-meta", meta.join(", ")), nodo("span", "doc-bib-muestra", f.muestra));
@@ -706,9 +882,11 @@ async function abrirFuente(id = null, previo = null) {
 
 function largoFuente() {
   const n = $("doc-fuente-texto").value.length;
+  const tokens = estimarTokens($("doc-fuente-texto").value).toLocaleString("es-CO");
+  const base = `${n.toLocaleString("es-CO")} caracteres (≈ ${tokens} tokens)`;
   $("doc-fuente-largo").textContent = n > 20000
-    ? `${n.toLocaleString("es-CO")} caracteres. Es larga: al modelo solo viajan los fragmentos que sirven para cada mensaje.`
-    : `${n.toLocaleString("es-CO")} caracteres.`;
+    ? `${base}. Es larga: al modelo solo viajan los fragmentos que sirven para cada mensaje.`
+    : `${base}.`;
 }
 
 async function guardarFuente(evento) {
@@ -736,6 +914,140 @@ async function importarFuente() {
   }
   const clase = /sentencia|t-\d|c-\d|su-\d/i.test(r.nombre) ? "jurisprudencia" : (/ley|decreto|c[oó]digo/i.test(r.nombre) ? "ley" : "nota");
   await abrirFuente(null, { nombre: r.nombre.slice(0, 120), clase, etiquetas: [], texto: r.texto, origen: r.archivo });
+}
+
+// ---------- Arrastrar y soltar fuentes ----------
+
+const EXTENSIONES_FUENTE = [".txt", ".md", ".docx", ".pdf"];
+
+function estadoSoltar(mensaje, error = false) {
+  const el = $("doc-bib-soltar-estado");
+  el.hidden = !mensaje;
+  el.textContent = mensaje || "";
+  el.classList.toggle("error", error);
+}
+
+function extensionDe(nombre) {
+  const base = String(nombre || "").toLowerCase();
+  const i = base.lastIndexOf(".");
+  return i >= 0 ? base.slice(i) : "";
+}
+
+async function soltarFuentes(archivos) {
+  const rutas = [];
+  const rechazados = [];
+  for (const f of archivos || []) {
+    const ruta = f?.path || "";
+    const nombre = f?.name || (ruta ? ruta.split(/[/\\]/).pop() : "") || "archivo";
+    if (!ruta) {
+      rechazados.push(nombre);
+      continue;
+    }
+    if (!EXTENSIONES_FUENTE.includes(extensionDe(nombre))) {
+      rechazados.push(nombre);
+      continue;
+    }
+    rutas.push(ruta);
+  }
+  if (!rutas.length) {
+    estadoSoltar(`Ningún archivo sirve: use ${EXTENSIONES_FUENTE.join(", ")}.${rechazados.length ? ` No entró: ${rechazados.join(", ")}.` : ""}`, true);
+    return;
+  }
+  $("doc-bib-soltar").classList.add("ocupada");
+  estadoSoltar(`Leyendo ${rutas.length} ${rutas.length === 1 ? "archivo" : "archivos"}…`);
+  try {
+    const r = await window.vigencia.documentosFuentesImportarRutas(rutas);
+    if (!r?.ok) {
+      estadoSoltar(r?.error || "No pude leer esos archivos.", true);
+      return;
+    }
+    for (const f of r.fuentes || []) doc.bibMarcadas.add(f.id);
+    await pintarBiblioteca();
+    const partes = [];
+    if (r.fuentes?.length) partes.push(`${r.fuentes.length} ${r.fuentes.length === 1 ? "fuente agregada y marcada" : "fuentes agregadas y marcadas"}`);
+    if (r.errores?.length) partes.push(`${r.errores.length} fallaron: ${r.errores.map((x) => x.archivo).join(", ")}`);
+    if (rechazados.length) partes.push(`no entraron: ${rechazados.join(", ")}`);
+    let mensaje = `${partes.join(". ")}.`;
+    if (doc.datos && r.fuentes?.length) mensaje += " Pulse Usar las marcadas.";
+    estadoSoltar(mensaje, Boolean(r.errores?.length));
+  } finally {
+    $("doc-bib-soltar").classList.remove("ocupada");
+  }
+}
+
+function tiposDe(e) {
+  try {
+    return [...(e.dataTransfer?.types || [])].map((t) => String(t).toLowerCase());
+  } catch {
+    return [];
+  }
+}
+
+function iniciarSoltar() {
+  const zona = $("doc-bib-soltar");
+  const dialogo = $("dialogo-doc-biblioteca");
+  if (!zona || !dialogo) return;
+  let contador = 0;
+  dialogo.addEventListener("dragenter", (e) => {
+    if (!tiposDe(e).includes("files")) return;
+    contador += 1;
+    zona.classList.add("arrastrando");
+  });
+  dialogo.addEventListener("dragleave", () => {
+    contador = Math.max(0, contador - 1);
+    if (!contador) zona.classList.remove("arrastrando");
+  });
+  dialogo.addEventListener("dragover", (e) => {
+    if (tiposDe(e).includes("files")) e.preventDefault();
+  });
+  dialogo.addEventListener("drop", async (e) => {
+    if (!tiposDe(e).includes("files")) return;
+    e.preventDefault();
+    contador = 0;
+    zona.classList.remove("arrastrando");
+    const archivos = [...(e.dataTransfer?.files || [])];
+    if (archivos.length) await soltarFuentes(archivos);
+  });
+  // La zona también funciona con clic y teclado: abre el importador.
+  zona.addEventListener("click", (e) => {
+    if (e.target === zona || e.target.closest(".doc-soltar-texto, .doc-soltar-icono")) importarFuente();
+  });
+  zona.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      importarFuente();
+    }
+  });
+  // Soltar un archivo sobre el texto de una fuente lo importa y lo abre
+  // para revisarlo antes de guardar.
+  const texto = $("doc-fuente-texto");
+  texto.addEventListener("dragover", (e) => {
+    if (tiposDe(e).includes("files")) e.preventDefault();
+  });
+  texto.addEventListener("drop", async (e) => {
+    if (!tiposDe(e).includes("files")) return;
+    e.preventDefault();
+    const primero = [...(e.dataTransfer?.files || [])].find((f) => f?.path && EXTENSIONES_FUENTE.includes(extensionDe(f.name || f.path)));
+    if (!primero) {
+      mostrarError("doc-fuente-error", `Suelte un archivo ${EXTENSIONES_FUENTE.join(", ")}.`);
+      return;
+    }
+    mostrarError("doc-fuente-error", "");
+    const r = await window.vigencia.documentosFuentesImportarRutas([primero.path]);
+    if (!r?.ok) {
+      mostrarError("doc-fuente-error", r?.error || "No pude leer ese archivo.");
+      return;
+    }
+    const id = r.fuentes?.[0]?.id;
+    if (!id) {
+      mostrarError("doc-fuente-error", r.errores?.[0]?.error || "No pude leer ese archivo.");
+      return;
+    }
+    if (doc.datos) doc.bibMarcadas.add(id);
+    await cargarInicio();
+    if (!$("dialogo-doc-biblioteca").hidden) await pintarBiblioteca();
+    await abrirFuente(id);
+  });
 }
 
 // ---------- Perfiles ----------
@@ -880,13 +1192,14 @@ export function iniciarDocumentos(herramientas) {
   $("doc-hoja-caja").addEventListener("mouseup", tomarPasaje);
   $("doc-texto").addEventListener("mouseup", tomarPasaje);
   $("doc-texto").addEventListener("keyup", (e) => { if (e.shiftKey) tomarPasaje(); });
-  $("doc-pasaje-quitar").addEventListener("click", () => { doc.pasaje = ""; pintarPasaje(); });
+  $("doc-pasaje-quitar").addEventListener("click", quitarPasaje);
   $("doc-bib-buscar").addEventListener("input", () => { doc.bibFiltro.texto = $("doc-bib-buscar").value; pintarBiblioteca(); });
   $("doc-bib-clase").addEventListener("change", () => { doc.bibFiltro.clase = $("doc-bib-clase").value; pintarBiblioteca(); });
   $("doc-bib-etiqueta").addEventListener("change", () => { doc.bibFiltro.etiqueta = $("doc-bib-etiqueta").value; pintarBiblioteca(); });
   $("doc-bib-cerrar").addEventListener("click", () => ui.ocultarDialogo("dialogo-doc-biblioteca"));
   $("doc-bib-nueva").addEventListener("click", () => abrirFuente());
   $("doc-bib-importar").addEventListener("click", importarFuente);
+  iniciarSoltar();
   $("doc-bib-usar").addEventListener("click", usarMarcadas);
   $("form-doc-fuente").addEventListener("submit", guardarFuente);
   $("doc-fuente-cancelar").addEventListener("click", () => ui.ocultarDialogo("dialogo-doc-fuente"));

@@ -32,7 +32,9 @@ import { ahora, decidirActualizar, nombreCliente, normalizarRadicado } from "../
 import { nombreArchivoPdf } from "../compartido/pp.js";
 import { columnasDeRadicado } from "./csv.js";
 import { activarCodigo, confirmarPlan, fotoLicencia, iniciarPlan, leerPlan } from "./licencia.js";
+import { enviarComentario, listarComentarios } from "./comentarios.js";
 import { urlServicio } from "../compartido/licencia.js";
+import { planAbierto } from "../compartido/plan.js";
 import {
   Aviso,
   abrirBase,
@@ -66,6 +68,9 @@ import {
   guardarUltimoTurno,
   guardarSamaiCaso,
   guardarSpCaso,
+  guardarUso,
+  resumenGastos,
+  ultimoGasto,
   samaiCaso,
   samaiCasos,
   samaiOlvidar,
@@ -95,6 +100,7 @@ import { activarPieza, borrarPieza, guardarPieza, listarPiezas } from "./bibliot
 import { generarBorrador, generarInicial, guardarActivo, guardarModo, importarModelo, listarModelos, descargarModelo, modelosRecomendados, leerNubes, guardarNube } from "./ia.js";
 import { htmlMemorial } from "./memorial.js";
 import { registrarDocumentos } from "./documentos-ipc.js";
+import { registrarJuris } from "./juris-ipc.js";
 import { consultarVersion, descargarActualizacion } from "./actualizar.js";
 import { directorioDatos } from "./rutas.js";
 
@@ -560,7 +566,7 @@ function publicarAutomatica() {
 
 
 function planVigente() {
-  return fotoLicencia(datosDir).estado === "vigente";
+  return planAbierto(fotoLicencia(datosDir).estado);
 }
 
 function planCerrado() {
@@ -773,6 +779,12 @@ if (bloqueo) {
       responder,
       mensajeHumano,
     });
+    registrarJuris({
+      ipcMain,
+      db: () => db,
+      responder,
+      mensajeHumano,
+    });
     ipcMain.handle("listar", () => responder(() => ({
       procesos: listarProcesos(db),
       clientes: listarClientes(db),
@@ -973,8 +985,11 @@ if (bloqueo) {
     ipcMain.handle("modelos-nube", () => responder(() => ({ nubes: leerNubes(datosDir) })));
     ipcMain.handle("modelos-guardar-nube", (_evento, dato) => responder(() => guardarNube(datosDir, dato || {})));
     ipcMain.handle("modelos-probar", async (_evento, dato) => {
+      let mensajePrueba = () => "";
       try {
-        const { chatNube, PROVEEDORES } = await import("./nube.js");
+        const nube = await import("./nube.js");
+        const { chatNube, PROVEEDORES } = nube;
+        mensajePrueba = nube.mensajePrueba;
         const definicion = PROVEEDORES[dato?.proveedor];
         if (!definicion) return { ok: false, error: "Ese proveedor no está soportado." };
         const key = String(dato?.key || "").trim();
@@ -988,18 +1003,45 @@ if (bloqueo) {
           base: dato?.base,
           texto: "Responde únicamente con la palabra: ok",
           maxTokens: 512,
+          onUso: (uso) => guardarUso(db, { ...uso, proveedor: dato.proveedor, modelo, motivo: "prueba" }),
         });
         if (!texto.trim()) return { ok: false, error: "El proveedor respondió vacío." };
         return { ok: true, muestra: texto.trim().slice(0, 120) };
       } catch (error) {
-        let mensaje = mensajeHumano(error);
+        let mensaje = mensajePrueba(error) || mensajeHumano(error);
         if (dato?.proveedor === "meta" && /clave no fue aceptada/i.test(mensaje)) {
-          mensaje += " Las claves de Meta tienen la forma LLM|…|… : cópiela completa del panel, sin espacios ni comillas alrededor.";
+          mensaje += " Revise que la copió completa, sin espacios ni comillas.";
         }
         return { ok: false, error: mensaje };
       }
     });
     ipcMain.handle("modelos-recomendados", () => responder(() => ({ modelos: modelosRecomendados(datosDir) })));
+    ipcMain.handle("gasto-resumen", () => responder(() => {
+      const mes = new Date();
+      const inicioMes = `${mes.getFullYear()}-${String(mes.getMonth() + 1).padStart(2, "0")}-01`;
+      return {
+        todo: resumenGastos(db, {}),
+        mes: resumenGastos(db, { desde: inicioMes }),
+      };
+    }));
+    ipcMain.handle("gasto-ultimo", async (_evento, dato) => {
+      try {
+        const nube = await import("./nube.js");
+        const ultimo = ultimoGasto(db, Number(dato?.proyectoId) || 0);
+        if (!ultimo) return { ok: true, hay: false };
+        const ventana = nube.contextoDe(ultimo.modelo);
+        const total = (Number(ultimo.entrada) || 0) + (Number(ultimo.salida) || 0);
+        return {
+          ok: true,
+          hay: true,
+          ...ultimo,
+          ventana,
+          porcentaje: ventana ? Math.min(100, Math.round((total / ventana) * 1000) / 10) : null,
+        };
+      } catch (error) {
+        return { ok: false, error: mensajeHumano(error) };
+      }
+    });
     ipcMain.handle("pp-deptos", () => responder(() => {
       sembrarPpSiFalta();
       return { deptos: ppDeptos(db) };
@@ -1237,6 +1279,7 @@ if (bloqueo) {
               /* la ventana se cerró */
             }
           },
+          onUso: (uso) => guardarUso(db, { ...uso, motivo: "inicial" }),
         });
         return { ok: true, ...borrador };
       } catch (error) {
@@ -1314,6 +1357,7 @@ if (bloqueo) {
               /* la ventana se cerró */
             }
           },
+          onUso: (uso) => guardarUso(db, { ...uso, motivo: "escrito" }),
         });
         return { ok: true, ...borrador };
       } catch (error) {
@@ -1436,6 +1480,21 @@ if (bloqueo) {
       const resultado = activarCodigo({ dir: datosDir, codigo });
       if (resultado.estado === "vigente") programador?.reprogramar();
       return resultado;
+    });
+    ipcMain.handle("comentarios-listar", async () => {
+      try {
+        return { ok: true, comentarios: await listarComentarios() };
+      } catch (error) {
+        return { ok: false, error: mensajeHumano(error) };
+      }
+    });
+    ipcMain.handle("comentarios-enviar", async (_evento, dato) => {
+      try {
+        await enviarComentario(dato || {});
+        return { ok: true };
+      } catch (error) {
+        return { ok: false, error: mensajeHumano(error) };
+      }
     });
     ipcMain.handle("salir", () => {
       salir();

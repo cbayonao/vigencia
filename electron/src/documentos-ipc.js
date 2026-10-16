@@ -110,6 +110,32 @@ export function registrarDocumentos({ ipcMain, dialog, db, datosDir, ventana, re
       return { ok: false, error: mensajeHumano(error) };
     }
   });
+  // Arrastrar y soltar: recibe rutas del renderer (File.path) y guarda cada
+  // archivo como fuente de la biblioteca. No asocia al proyecto: el renderer
+  // marca los ids devueltos y el usuario pulsa Usar las marcadas.
+  ipcMain.handle("documentos-fuentes-importar-rutas", (_e, dato) => responder(() => {
+    const rutas = Array.isArray(dato?.rutas) ? dato.rutas.slice(0, 20) : [];
+    if (!rutas.length) return { fuentes: [], errores: [] };
+    const fuentes = [];
+    const errores = [];
+    for (const ruta of rutas) {
+      const base = path.basename(String(ruta || ""));
+      try {
+        const leido = leerArchivoFuente(String(ruta || ""));
+        if (!leido.ok) {
+          errores.push({ archivo: base || String(ruta || ""), error: leido.error });
+          continue;
+        }
+        const nombre = String(leido.nombre || base).slice(0, 120);
+        const clase = /sentencia|t-\d|c-\d|su-\d/i.test(nombre) ? "jurisprudencia" : (/ley|decreto|c[oó]digo/i.test(nombre) ? "ley" : "nota");
+        const guardada = guardarPieza(base(), { nombre, clase, etiquetas: [], texto: leido.texto, origen: base });
+        fuentes.push({ id: guardada.id, nombre: guardada.nombre });
+      } catch (error) {
+        errores.push({ archivo: base || String(ruta || ""), error: mensajeHumano(error) });
+      }
+    }
+    return { fuentes, errores };
+  }));
   async function guardarComo(titulo, nombre, extension, bytes) {
     const elegido = await dialog.showSaveDialog(ventana(), {
       title: titulo,

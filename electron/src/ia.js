@@ -15,6 +15,10 @@ import { PROVEEDORES, chatNube } from "./nube.js";
 
 export const MODELO_SENCILLO = "sencillo";
 
+// Instrucción fija para Muse en documentos: rol y formato; los hechos y
+// las citas los mandan los lineamientos del encargo, no esto.
+export const INSTRUCCION_DOCUMENTO_META = "Eres un abogado litigante en Colombia que redacta memoriales. Sigue los lineamientos del encargo al pie de la letra: no inventes hechos, partes, actuaciones ni citas, y marca lo pendiente en lugar de rellenarlo.";
+
 // Modelos verificados en Hugging Face (oct 2026): repositorio y archivo
 // exactos, licencia permisiva o de comunidad y tamaño apto para CPU local.
 export const RECOMENDADOS = [
@@ -296,6 +300,8 @@ export function leerNubes(datosDir) {
       base: id === "custom" ? (nube.base || "") : definicion.base,
       tieneClave: Boolean(nube.key),
       huellaClave: nube.key ? `${nube.key.slice(0, 8)}… (${nube.key.length} caracteres)` : "",
+      claveAyuda: definicion.claveAyuda || "",
+      clavePrefijos: definicion.clavePrefijos || [],
       editableBase: id === "custom",
     };
   });
@@ -554,7 +560,7 @@ function respuestaInservible(valor) {
   return limpio.length < 400 && /lo siento|no puedo (cumplir|ayudar|redactar)|como modelo de lenguaje/i.test(limpio);
 }
 
-async function textoDelModelo({ datosDir, elegido, encargo, onProgreso, maxTokens }) {
+async function textoDelModelo({ datosDir, elegido, encargo, onProgreso, maxTokens, onUso = null }) {
   if (elegido.id.startsWith("nube:")) {
     const proveedor = elegido.id.slice("nube:".length);
     const tiendaDato = leerTienda(datosDir);
@@ -572,6 +578,14 @@ async function textoDelModelo({ datosDir, elegido, encargo, onProgreso, maxToken
       base: nube.base,
       texto: encargo,
       maxTokens: maxTokens?.nube || 2048,
+      instrucciones: proveedor === "meta" ? INSTRUCCION_DOCUMENTO_META : "",
+      onUso: (uso) => {
+        try {
+          onUso?.({ ...uso, proveedor, modelo });
+        } catch {
+          /* medir no tumba la redacción */
+        }
+      },
       onToken: (fragmento) => {
         acumulado += fragmento;
         emitirEscrito(onProgreso, acumulado);
@@ -680,9 +694,9 @@ function usaModelo(elegido) {
   return Boolean(elegido?.id?.startsWith("nube:") || elegido?.id?.startsWith("gguf:"));
 }
 
-async function conEncargo({ datosDir, elegido, encargo, fuentes, onProgreso, plantilla, aclaracion }) {
+async function conEncargo({ datosDir, elegido, encargo, fuentes, onProgreso, plantilla, aclaracion, onUso = null }) {
   try {
-    const pedido = await textoDelModelo({ datosDir, elegido, encargo, onProgreso });
+    const pedido = await textoDelModelo({ datosDir, elegido, encargo, onProgreso, onUso });
     const escrito = documentoDeModelo(pedido, fuentes, Boolean(aclaracion));
     if (escrito.dudas) {
       return {
@@ -734,7 +748,7 @@ function conVista(resultado, ficha, hoy) {
   };
 }
 
-export async function generarBorrador({ datosDir, proceso, prompt, hoy, modeloId, onProgreso, piezas, excluir, aclaracion, referencia, presenta, ejemplo }) {
+export async function generarBorrador({ datosDir, proceso, prompt, hoy, modeloId, onProgreso, piezas, excluir, aclaracion, referencia, presenta, ejemplo, onUso = null }) {
   const pedido = texto(prompt);
   if (!pedido) {
     const error = new Error("Escriba qué debe decir el escrito.");
@@ -781,6 +795,7 @@ export async function generarBorrador({ datosDir, proceso, prompt, hoy, modeloId
       onProgreso,
       plantilla,
       aclaracion: vuelta,
+      onUso,
     });
   }
   return conVista(resultado, ficha, hoy);
@@ -812,7 +827,7 @@ function materialInicial(tipo, datos) {
   return lineas.join("\n");
 }
 
-export async function generarInicial({ datosDir, tipo, datos = {}, hoy, modeloId, onProgreso, piezas, excluir, aclaracion }) {
+export async function generarInicial({ datosDir, tipo, datos = {}, hoy, modeloId, onProgreso, piezas, excluir, aclaracion, onUso = null }) {
   const definicion = TIPOS_INICIALES[tipo];
   if (!definicion) {
     throw new Aviso("Elija si inicia demanda, tutela o derecho de petición.");
@@ -859,6 +874,7 @@ export async function generarInicial({ datosDir, tipo, datos = {}, hoy, modeloId
       onProgreso,
       plantilla: base,
       aclaracion: vuelta,
+      onUso,
     });
   }
   return conVista(resultado, ficha, hoy);
@@ -871,11 +887,11 @@ export function modeloParaDocumento(datosDir, modeloId) {
   return { id: elegido.id, nombre: elegido.nombre, usa: usaModelo(elegido), origen: elegido.id.startsWith("nube:") ? "nube" : "local" };
 }
 
-export async function textoParaDocumento({ datosDir, modeloId, encargo, onProgreso }) {
+export async function textoParaDocumento({ datosDir, modeloId, encargo, onProgreso, onUso = null }) {
   const elegido = elegirModelo(datosDir, modeloId);
   if (!usaModelo(elegido)) return null;
   try {
-    return await textoDelModelo({ datosDir, elegido, encargo, onProgreso, maxTokens: { nube: 4096, local: 2048 } });
+    return await textoDelModelo({ datosDir, elegido, encargo, onProgreso, maxTokens: { nube: 4096, local: 2048 }, onUso });
   } catch (error) {
     if (elegido.id.startsWith("gguf:")) await soltarMotor();
     throw error;

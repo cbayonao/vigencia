@@ -305,3 +305,47 @@ test("el PDF con texto simple se lee y uno sin texto avisa", () => {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("los tokens se estiman a 4 caracteres por token", async () => {
+  const { estimarTokens } = await import("../compartido/documentos.js");
+  assert.equal(estimarTokens(""), 1);
+  assert.equal(estimarTokens("abcd"), 1);
+  assert.equal(estimarTokens("abcdefgh"), 2);
+  assert.ok(estimarTokens(" vols ".repeat(100)) > 100);
+});
+
+test("el gasto guarda tokens y costo por proyecto", async () => {
+  const { abrirBase, guardarGasto, resumenGastos } = await import("../src/db.js");
+  const { default: fs } = await import("node:fs");
+  const { default: os } = await import("node:os");
+  const { default: path } = await import("node:path");
+  const ruta = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "vigencia-gasto-")), "base.sqlite");
+  const db = abrirBase(ruta);
+  guardarGasto(db, { proveedor: "meta", modelo: "muse-spark-1.3", motivo: "documento", proyectoId: 7, entrada: 1000000, salida: 1000000, costo: 5.5 });
+  guardarGasto(db, { proveedor: "meta", modelo: "muse-spark-1.3", motivo: "prueba", proyectoId: null, entrada: 0, salida: 0, costo: 0 });
+  guardarGasto(db, { entrada: -5, salida: "x" });
+  const r = resumenGastos(db, {});
+  assert.equal(r.totales.llamadas, 1);
+  assert.equal(r.totales.entrada, 1000000);
+  assert.equal(r.totales.costo, 5.5);
+  assert.equal(r.porProveedor.length, 1);
+  assert.equal(r.porProyecto.length, 1);
+  assert.equal(r.porProyecto[0].proyecto, 7);
+  assert.equal(r.recientes.length, 1);
+  db.close();
+});
+
+test("el último gasto del proyecto trae sus tokens", async () => {
+  const { abrirBase, guardarGasto, ultimoGasto } = await import("../src/db.js");
+  const { default: fs } = await import("node:fs");
+  const { default: os } = await import("node:os");
+  const { default: path } = await import("node:path");
+  const ruta = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "vigencia-gasto2-")), "base.sqlite");
+  const db = abrirBase(ruta);
+  assert.equal(ultimoGasto(db, 9), null);
+  guardarGasto(db, { proveedor: "meta", modelo: "muse-spark-1.3", motivo: "documento", proyectoId: 9, entrada: 800000, salida: 80000, costo: 1.34 });
+  const u = ultimoGasto(db, 9);
+  assert.equal(u.entrada + u.salida, 880000);
+  assert.equal(ultimoGasto(db, 10), null);
+  db.close();
+});

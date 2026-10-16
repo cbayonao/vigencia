@@ -50,8 +50,46 @@ function respuesta(status, body) {
   return { status, body };
 }
 
+const TIPOS_COMENTARIO = new Set(["sugerencia", "bug", "otro"]);
+
+function tiendaComentariosMemoria() {
+  const items = new Map();
+  return {
+    async guardar(item) {
+      items.set(item.id, item);
+    },
+    async visibles() {
+      return [...items.values()].filter((c) => c.visible)
+        .sort((a, b) => String(b.creado).localeCompare(String(a.creado)));
+    },
+    async todos() {
+      return [...items.values()]
+        .sort((a, b) => String(b.creado).localeCompare(String(a.creado)));
+    },
+    async cambiarVisible(id, visible) {
+      const previo = items.get(String(id || ""));
+      if (previo) items.set(previo.id, { ...previo, visible: Boolean(visible) });
+    },
+  };
+}
+
+function comentarioLimpio(body) {
+  if (body && typeof body === "object" && Object.keys(body).some((k) => /honeypot|trampa|website|url/i.test(k) && String(body[k] || "").trim())) {
+    return { error: "No pasó la revisión." };
+  }
+  const trampa = String(body?.trampa || "").trim();
+  if (trampa) return { error: "No pasó la revisión." };
+  const nombre = String(body?.nombre || "").replace(/\s+/g, " ").trim().slice(0, 60);
+  const tipo = TIPOS_COMENTARIO.has(body?.tipo) ? body.tipo : "otro";
+  const texto = String(body?.texto || "").replace(/\s+/g, " ").trim().slice(0, 1000);
+  if (texto.length < 3) return { error: "El comentario es muy corto." };
+  return { nombre, tipo, texto };
+}
+
 export function crearServicio({
   tienda = tiendaMemoria(),
+  comentarios = tiendaComentariosMemoria(),
+  claveAdmin = "",
   wompi,
   privada,
   publicaBase = "",
@@ -87,7 +125,7 @@ export function crearServicio({
     return cerrarPago(item, item.pendiente);
   }
 
-  async function atender({ method, path, query = {}, body = null }) {
+  async function atender({ method, path, query = {}, headers = {}, body = null }) {
     const ruta = String(path || "/").replace(/\/$/, "") || "/";
     const verbo = String(method || "GET").toUpperCase();
 
@@ -148,6 +186,48 @@ export function crearServicio({
         redirect,
       });
       return respuesta(200, { estado: foto.estado, url, referencia, precioTexto: textoPrecio() });
+    }
+
+    // Comentarios de la app: se guardan pendientes y el equipo los aprueba.
+    if (verbo === "POST" && ruta === "/comentarios") {
+      const limpio = comentarioLimpio(body);
+      if (limpio.error) return respuesta(400, { error: limpio.error });
+      const item = {
+        id: `${ahora().toISOString()}_${azar()}`,
+        nombre: limpio.nombre,
+        tipo: limpio.tipo,
+        texto: limpio.texto,
+        creado: ahora().toISOString(),
+        visible: false,
+      };
+      await comentarios.guardar(item);
+      return respuesta(200, { ok: true, id: item.id });
+    }
+
+    if (verbo === "GET" && ruta === "/comentarios") {
+      const lista = await comentarios.visibles(50);
+      return respuesta(200, {
+        comentarios: lista.map((c) => ({
+          id: c.id, nombre: c.nombre, tipo: c.tipo, texto: c.texto, creado: c.creado,
+        })),
+      });
+    }
+
+    const cabeceras = Object.fromEntries(
+      Object.entries(headers || {}).map(([k, v]) => [String(k).toLowerCase(), v]),
+    );
+    const esAdmin = Boolean(claveAdmin) && (
+      String(query.clave || "") === claveAdmin
+      || String(body?.clave || "") === claveAdmin
+      || String(cabeceras["x-clave"] || "") === claveAdmin
+    );
+    if (ruta === "/admin/comentarios") {
+      if (!esAdmin) return respuesta(401, { error: "Sin permiso." });
+      if (verbo === "GET") return respuesta(200, { comentarios: await comentarios.todos(100) });
+      if (verbo === "POST") {
+        await comentarios.cambiarVisible(body?.id, body?.visible);
+        return respuesta(200, { ok: true });
+      }
     }
 
     if (verbo === "POST" && ruta === "/evento") {

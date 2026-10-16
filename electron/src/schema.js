@@ -517,4 +517,25 @@ export const MIGRACIONES = [
       }
     },
   },
+  {
+    version: 12,
+    nombre: "gasto de nube",
+    up(db) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS gasto_nube (
+          id INTEGER PRIMARY KEY,
+          fecha TEXT NOT NULL,
+          proveedor TEXT NOT NULL DEFAULT '',
+          modelo TEXT NOT NULL DEFAULT '',
+          motivo TEXT NOT NULL DEFAULT '',
+          proyecto_id INTEGER,
+          entrada INTEGER NOT NULL DEFAULT 0,
+          salida INTEGER NOT NULL DEFAULT 0,
+          costo_usd REAL NOT NULL DEFAULT 0
+        );
+        CREATE INDEX IF NOT EXISTS gasto_nube_fecha ON gasto_nube(fecha);
+        CREATE INDEX IF NOT EXISTS gasto_nube_proyecto ON gasto_nube(proyecto_id);
+      `);
+    },
+  },
 ];

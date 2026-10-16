@@ -1,6 +1,6 @@
 # Vigencia
 
-El plan cuesta $599.900 por un año. El año empieza cuando el pago queda confirmado. Hasta entonces, y otra vez cuando el año se cumple, la aplicación solo muestra la página de pago. Los expedientes siguen en el computador.
+Todo el que instala tiene **20 días gratis**, sin tarjeta y sin internet: la prueba empieza al abrir la app por primera vez y vale para todo. Cuando se acaban, el plan cuesta $599.900 por un año. El año empieza cuando el pago queda confirmado. Hasta entonces, y otra vez cuando el año se cumple, la aplicación solo muestra la página de pago. Los expedientes siguen en el computador. Borrar `licencia.json` reinicia la prueba con otro identificador (y una llave anterior deja de servir).
 
 Hay dos formas de abrir una máquina: pagando con Wompi, o con una llave hecha a mano. La llave dura 10 años y solo abre la máquina para la que se creó.
 
@@ -8,7 +8,7 @@ Hay dos formas de abrir una máquina: pagando con Wompi, o con una llave hecha a
 
 Este es el camino normal.
 
-1. Abre Vigencia. Aparece **Iniciar el plan**. Si el año ya se cumplió, el botón dice **Pagar el otro año**.
+1. Abre Vigencia. Durante la prueba entras directo (la cinta dice cuántos días quedan y **Plan** abre el pago). Si la prueba se acabó, aparece **Iniciar el plan**. Si el año ya se cumplió, el botón dice **Pagar el otro año**.
 2. Pulsa ese botón. Se abre el pago de Wompi.
 3. Paga $599.900.
 4. Vuelve a Vigencia y pulsa **Ya pagué**.

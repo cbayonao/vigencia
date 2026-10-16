@@ -25,7 +25,10 @@ import {
   sistemasVisibles,
 } from "../compartido/sistemas.js";
 import { coincideBusqueda, especialidadDe } from "../compartido/pp.js";
+import { planAbierto } from "../compartido/plan.js";
 import { CAPAS_DOCUMENTOS, abrirDocumentos, iniciarDocumentos, refrescarModelosDocumentos } from "./documentos.js";
+import { abrirJuris, iniciarJuris } from "./juris.js";
+import { abrirComentarios, iniciarComentarios } from "./comentarios.js";
 
 const $ = (id) => document.getElementById(id);
 const estado = {
@@ -313,6 +316,8 @@ const CAPAS = [
   "dialogo-actualizar",
   "dialogo-sistemas",
   "dialogo-pp-doc",
+  "dialogo-gasto",
+  "dialogo-comentarios",
   ...CAPAS_DOCUMENTOS,
 ];
 
@@ -1538,7 +1543,7 @@ document.addEventListener("keydown", (evento) => {
   }
   if (evento.key === "Escape") {
     if (cima === "dialogo-cliente") cerrarFormulario();
-    else if (cima === "dialogo-ajustes" || cima === "dialogo-csv" || cima === "dialogo-borrar" || cima === "dialogo-eliminar" || cima === "dialogo-escrito" || cima === "dialogo-modelos" || cima === "dialogo-iniciar" || cima === "dialogo-informe" || cima === "dialogo-asignar" || cima === "dialogo-directorio" || cima === "dialogo-biblioteca" || cima === "dialogo-pieza" || cima === "dialogo-actualizar" || cima === "dialogo-sistemas" || cima === "dialogo-pp-doc" || CAPAS_DOCUMENTOS.includes(cima)) ocultarDialogo(cima);
+    else if (cima === "dialogo-ajustes" || cima === "dialogo-csv" || cima === "dialogo-borrar" || cima === "dialogo-eliminar" || cima === "dialogo-escrito" || cima === "dialogo-modelos" || cima === "dialogo-iniciar" || cima === "dialogo-informe" || cima === "dialogo-asignar" || cima === "dialogo-directorio" || cima === "dialogo-biblioteca" || cima === "dialogo-pieza" || cima === "dialogo-actualizar" || cima === "dialogo-sistemas" || cima === "dialogo-pp-doc" || cima === "dialogo-gasto" || CAPAS_DOCUMENTOS.includes(cima)) ocultarDialogo(cima);
     else if (cima === "dialogo-busqueda" && !$("dialogo-cerrar").hidden) ocultarDialogo(cima);
     return;
   }
@@ -1767,9 +1772,59 @@ $("config-importar").addEventListener("click", async () => {
 });
 async function abrirConfigModelos() {
   await pintarModelos();
+  await pintarGastoCorto();
   mostrarDialogo("dialogo-modelos");
   $("modelos-cerrar").focus();
 }
+
+function dolares(valor) {
+  const n = Number(valor) || 0;
+  if (n > 0 && n < 0.01) return "< 0.01 USD";
+  return `${n.toLocaleString("es-CO", { maximumFractionDigits: 2 })} USD`;
+}
+
+function pintarGastoResumen(bloque, caja) {
+  caja.replaceChildren();
+  const t = bloque?.totales || {};
+  const linea = nodo("p", "ayuda", `${Number(t.llamadas) || 0} llamadas · ${Number(t.entrada || 0).toLocaleString("es-CO")} de entrada + ${Number(t.salida || 0).toLocaleString("es-CO")} de salida · ${dolares(t.costo)}`);
+  caja.append(linea);
+  for (const fila of bloque?.porProveedor || []) {
+    const p = nodo("p", "ayuda", `${fila.proveedor || "?"} · ${fila.modelo || "?"}: ${fila.llamadas} · ${dolares(fila.costo)}`);
+    caja.append(p);
+  }
+  for (const fila of (bloque?.recientes || []).slice(0, 20)) {
+    const p = nodo("p", "ayuda", `${String(fila.fecha || "").slice(0, 16).replace("T", " ")} · ${fila.proveedor || "?"} · ${fila.modelo || "?"} · ${fila.motivo || ""} · ${dolares(fila.costo)}`);
+    caja.append(p);
+  }
+}
+
+async function pintarGastoCorto() {
+  try {
+    const r = await window.vigencia.gastoResumen();
+    if (!r?.ok) return;
+    const t = r.mes?.totales || {};
+    $("gasto-resumen-corto").textContent = (Number(t.llamadas) || 0)
+      ? `Este mes: ${t.llamadas} llamadas · ${dolares(t.costo)}.`
+      : "Sin llamadas a la nube todavía.";
+  } catch {
+    /* la ventana ya no escucha */
+  }
+}
+
+async function abrirGasto(mes) {
+  try {
+    const r = await window.vigencia.gastoResumen();
+    if (!r?.ok) return;
+    pintarGastoResumen(mes ? r.mes : r.todo, $("gasto-tablas"));
+    mostrarDialogo("dialogo-gasto");
+  } catch {
+    /* la ventana ya no escucha */
+  }
+}
+$("gasto-ver").addEventListener("click", () => abrirGasto(true));
+$("gasto-mes").addEventListener("click", () => abrirGasto(true));
+$("gasto-todo").addEventListener("click", () => abrirGasto(false));
+$("gasto-cerrar").addEventListener("click", () => ocultarDialogo("dialogo-gasto"));
 
 function tarjetaModelo(item) {
   const tarjeta = nodo("article", "persona");
@@ -1871,7 +1926,31 @@ function tarjetaNube(nube) {
   campoClave.setAttribute("aria-label", `Clave de ${nube.nombre}`);
   campoClave.autocomplete = "off";
   form.append(campoClave);
+  const verClave = nodo("button", "boton-texto", "Mostrar");
+  verClave.type = "button";
+  verClave.title = "Muestra la clave escrita para revisarla";
+  verClave.addEventListener("click", () => {
+    const visible = campoClave.type === "text";
+    campoClave.type = visible ? "password" : "text";
+    verClave.textContent = visible ? "Mostrar" : "Ocultar";
+  });
+  form.append(verClave);
   info.append(form);
+  const pistaClave = nodo("p", "ayuda", nube.claveAyuda ? `La clave ${nube.claveAyuda}` : "");
+  pistaClave.hidden = !nube.claveAyuda;
+  info.append(pistaClave);
+  const revisarForma = () => {
+    const valor = campoClave.value.trim();
+    if (!valor || !(nube.clavePrefijos || []).length) {
+      pistaClave.hidden = !nube.claveAyuda;
+      pistaClave.textContent = nube.claveAyuda ? `La clave ${nube.claveAyuda}` : "";
+      return;
+    }
+    const bien = nube.clavePrefijos.some((p) => valor.startsWith(p));
+    pistaClave.hidden = false;
+    pistaClave.textContent = bien ? "Formato válido. Pulse Probar para confirmar con el proveedor." : `Esa forma no coincide: la clave ${nube.claveAyuda}`;
+  };
+  campoClave.addEventListener("input", revisarForma);
   const estadoLinea = nodo("p", "modelo-estado", nube.tieneClave ? `Clave guardada en este computador${nube.huellaClave ? ` (${nube.huellaClave})` : ""}.` : "");
   estadoLinea.hidden = !nube.tieneClave;
   info.append(estadoLinea);
@@ -2903,7 +2982,7 @@ function pintarSistemas() {
 function elegirDocumentos() {
   estado.sistema = "documentos";
   cerrarCombos();
-  for (const id of ["pantalla-consulta", "pantalla-pp", "pantalla-spoa", "pantalla-samai", "pantalla-construccion"]) $(id).hidden = true;
+  for (const id of ["pantalla-consulta", "pantalla-pp", "pantalla-spoa", "pantalla-samai", "pantalla-juris", "pantalla-construccion"]) $(id).hidden = true;
   $("pantalla-documentos").hidden = false;
   document.title = "Documentos";
   pintarSistemas();
@@ -2923,18 +3002,21 @@ function elegirSistema(id) {
   const pp = sistema.id === "micrositio";
   const spoa = sistema.id === "spoa";
   const samai = sistema.id === "samai";
+  const juris = sistema.id === "juris";
   $("pantalla-consulta").hidden = !propia;
   $("pantalla-pp").hidden = !pp;
   $("pantalla-spoa").hidden = !spoa;
   $("pantalla-samai").hidden = !samai;
-  $("pantalla-construccion").hidden = propia || pp || spoa || samai;
-  if (!propia && !pp && !spoa && !samai) {
+  $("pantalla-juris").hidden = !juris;
+  $("pantalla-construccion").hidden = propia || pp || spoa || samai || juris;
+  if (!propia && !pp && !spoa && !samai && !juris) {
     $("obra-sistema").textContent = sistema.fuente ? `${sistema.nombre} · ${sistema.fuente}` : sistema.nombre;
     $("obra-texto").textContent = `Estamos construyendo la consulta de ${sistema.nombre}. Mientras tanto, sus expedientes siguen en la consulta nacional unificada.`;
   }
   if (pp) abrirPp();
   if (spoa) pintarSpCasos();
   if (samai) abrirSamai();
+  if (juris) abrirJuris();
   document.title = `${propia ? "Procesos" : sistema.nombre} · Vigencia`;
   pintarSistemas();
 }
@@ -3115,24 +3197,76 @@ window.vigencia.alAbrirCambios((ids) => {
 window.vigencia.alCorrida(aplicarCorrida);
 
 let aplicacionLista = false;
+let estadoPlan = "";
+let datoPlan = null;
 
 function pintarPuerta(info) {
-  const abierta = info?.estado === "vigente";
+  estadoPlan = info?.estado || "";
+  datoPlan = info || null;
+  const abierta = planAbierto(info?.estado);
   $("licencia").hidden = abierta;
   $("aplicacion").hidden = !abierta;
+  const banner = $("aviso-prueba");
+  banner.hidden = info?.estado !== "prueba";
+  if (info?.estado === "prueba") {
+    const n = Number(info?.diasRestantes) || 0;
+    banner.textContent = `Prueba gratis: ${n} ${n === 1 ? "día" : "días"} restantes · Ver el plan`;
+  }
+  $("licencia-seguir").hidden = info?.estado !== "prueba";
   if (abierta) return;
+  // La puerta real siempre trae sus botones (consultar el plan los esconde).
+  for (const id of ["iniciar-plan", "ya-pague", "licencia-codigo", "activar-codigo"]) $(id).hidden = false;
+  const etiquetaCodigo = document.querySelector('#licencia label[for="licencia-codigo"]');
+  if (etiquetaCodigo) etiquetaCodigo.hidden = false;
+  $("licencia-seguir").textContent = "Seguir probando";
   const vencida = info?.estado === "vencida";
   const precio = info?.precioTexto || "$599.900";
   const hasta = info?.hasta ? fechaCorta(String(info.hasta).slice(0, 10)) : "";
-  $("licencia-titulo").textContent = vencida ? "El plan se venció" : "Inicia el plan";
+  $("licencia-titulo").textContent = vencida ? "El plan se venció" : "Se acabó la prueba gratis";
   $("iniciar-plan").textContent = vencida ? "Pagar el otro año" : "Iniciar el plan";
   $("licencia-texto").textContent = vencida
     ? `El año terminó${hasta && hasta !== "Sin fecha" ? ` el ${hasta}` : ""}. Los expedientes siguen en este computador. Esta es la única página hasta pagar el otro año, ${precio}. El nuevo año empieza cuando Wompi confirme el pago.`
-    : `Vigencia permanece cerrado hasta que se pague el plan. Cuesta ${precio} por un año. El año empieza cuando Wompi confirma el pago, no cuando se instala el programa.`;
+    : `Tuviste 20 días gratis y se acabaron. Para seguir usando Vigencia paga el plan: ${precio} por un año. Tus expedientes siguen en este computador y nada se borra. El año empieza cuando Wompi confirma el pago.`;
+}
+
+function mostrarPlan() {
+  cerrarMenuOpciones();
+  // La puerta pinta el pago; aquí solo se consulta: a una cuenta vigente
+  // no se le ofrece pagar de nuevo, solo se le muestra su vigencia.
+  const idsPago = ["iniciar-plan", "ya-pague", "pago-navegador", "licencia-codigo", "activar-codigo"];
+  const etiquetaCodigo = document.querySelector('#licencia label[for="licencia-codigo"]');
+  if (estadoPlan === "vigente") {
+    const hasta = datoPlan?.hasta ? fechaCorta(String(datoPlan.hasta).slice(0, 10)) : "";
+    $("licencia-titulo").textContent = "Tu plan está vigente";
+    $("licencia-texto").textContent = hasta && hasta !== "Sin fecha"
+      ? `Tu año va hasta el ${hasta}. Tus expedientes siguen en este computador.`
+      : "Tu plan está vigente. Tus expedientes siguen en este computador.";
+    for (const id of idsPago) $(id).hidden = true;
+    if (etiquetaCodigo) etiquetaCodigo.hidden = true;
+    $("licencia-aviso").textContent = "";
+    $("licencia-seguir").hidden = false;
+    $("licencia-seguir").textContent = "Volver";
+  } else {
+    for (const id of idsPago) $(id).hidden = false;
+    $("pago-navegador").hidden = true;
+    if (etiquetaCodigo) etiquetaCodigo.hidden = false;
+    $("licencia-seguir").hidden = estadoPlan !== "prueba";
+    $("licencia-seguir").textContent = "Seguir probando";
+    pintarPuerta(datoPlan);
+    if (estadoPlan === "prueba") {
+      const n = Number(datoPlan?.diasRestantes) || 0;
+      const precio = datoPlan?.precioTexto || "$599.900";
+      $("licencia-titulo").textContent = "Tu prueba gratis";
+      $("licencia-texto").textContent = `Te ${n === 1 ? "queda 1 día" : `quedan ${n} días`} gratis con todo incluido. Cuando se acaben, el plan cuesta ${precio} por un año y tus expedientes siguen en este computador.`;
+    }
+  }
+  // Se consulta el plan encima de la app; Seguir probando/Volver devuelve.
+  $("licencia").hidden = false;
+  $("aplicacion").hidden = true;
 }
 
 async function entrarSiVigente(info) {
-  if (info?.estado !== "vigente" || aplicacionLista) return;
+  if (!planAbierto(info?.estado) || aplicacionLista) return;
   aplicacionLista = true;
   const estadoInicial = await window.vigencia.estado();
   estado.pausaHasta = estadoInicial.actualizarHasta || null;
@@ -3169,7 +3303,7 @@ $("iniciar-plan").addEventListener("click", async () => {
     $("licencia-aviso").textContent = respuesta?.error || "No pude abrir el pago.";
     return;
   }
-  if (respuesta.estado === "vigente") {
+  if (planAbierto(respuesta.estado)) {
     $("licencia-aviso").textContent = "";
     pintarPuerta(respuesta);
     await entrarSiVigente(respuesta);
@@ -3179,12 +3313,20 @@ $("iniciar-plan").addEventListener("click", async () => {
   $("licencia-aviso").textContent = "Cuando termines en Wompi, pulsa Ya pagué.";
 });
 
+$("licencia-seguir").addEventListener("click", () => {
+  $("licencia").hidden = true;
+  $("aplicacion").hidden = !planAbierto(estadoPlan);
+});
+
+$("aviso-prueba").addEventListener("click", mostrarPlan);
+$("ver-plan").addEventListener("click", mostrarPlan);
+
 $("ya-pague").addEventListener("click", async () => {
   $("ya-pague").disabled = true;
   $("licencia-aviso").textContent = "Confirmando el pago…";
   const respuesta = await window.vigencia.confirmarPlan();
   $("ya-pague").disabled = false;
-  if (respuesta?.estado === "vigente") {
+  if (planAbierto(respuesta?.estado)) {
     $("licencia-aviso").textContent = "";
     pintarPuerta(respuesta);
     await entrarSiVigente(respuesta);
@@ -3200,7 +3342,7 @@ $("activar-codigo").addEventListener("click", async () => {
   $("licencia-aviso").textContent = "Revisando el código…";
   const respuesta = await window.vigencia.activarCodigo($("licencia-codigo").value);
   $("activar-codigo").disabled = false;
-  if (respuesta?.estado === "vigente") {
+  if (planAbierto(respuesta?.estado)) {
     $("licencia-codigo").value = "";
     $("licencia-aviso").textContent = "";
     pintarPuerta(respuesta);
@@ -3219,7 +3361,16 @@ $("licencia-salir").addEventListener("click", () => window.vigencia.salir());
 window.vigencia.alPago(() => {
   $("ya-pague").click();
 });
-await refrescarLicencia();
+try {
+  await refrescarLicencia();
+} catch (error) {
+  // Si el arranque falla, la puerta lo dice en vez de quedar muda.
+  $("licencia").hidden = false;
+  $("aplicacion").hidden = true;
+  $("licencia-titulo").textContent = "No pude arrancar";
+  $("licencia-texto").textContent = `Vigencia no pudo leer su estado: ${error?.message || error}. Revise que la carpeta de datos se pueda escribir e intente de nuevo.`;
+  throw error;
+}
 
 const ppPantalla = { deptos: false, muni: "", lista: [], despachoSel: "" };
 
@@ -3775,3 +3926,6 @@ $("samai-texto").addEventListener("input", aplicarFiltrosSamai);
 
 $("sistema-documentos").addEventListener("click", () => elegirSistema("documentos"));
 iniciarDocumentos({ mostrarDialogo, ocultarDialogo, menuDesplegable, abrirConfigModelos });
+iniciarJuris();
+iniciarComentarios({ mostrarDialogo, ocultarDialogo });
+$("abrir-comentarios").addEventListener("click", abrirComentarios);

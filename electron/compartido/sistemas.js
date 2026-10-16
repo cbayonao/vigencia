@@ -8,6 +8,7 @@ export const SISTEMAS = [
   { id: "micrositio", nombre: "Publicaciones procesales", fuente: "Micrositio", sigla: "PP", listo: true },
   { id: "spoa", nombre: "SPOA", fuente: "Fiscalía General de la Nación", sigla: "SP", listo: true },
   { id: "samai", nombre: "SAMAI", fuente: "Consejo de Estado", sigla: "SA", listo: true },
+  { id: "juris", nombre: "Jurisprudencia", fuente: "Relatorías y SAMAI", sigla: "JU", listo: true },
   { id: "externa", nombre: "Consulta externa", fuente: "", sigla: "CE", listo: false },
   { id: "supersociedades", nombre: "Supersociedades", fuente: "Superintendencia de Sociedades", sigla: "SS", listo: false },
   { id: "sic", nombre: "SIC", fuente: "Superintendencia de Industria y Comercio", sigla: "IC", listo: false },

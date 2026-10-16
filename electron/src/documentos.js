@@ -8,7 +8,7 @@ import {
   fragmentosRelevantes, fuentesDeCitas, interpretarRespuesta, marcarCitasDocumento,
   nombreTipo, plantillaBasica, presupuestoDe, reemplazarPasaje, textoDeEscrito,
 } from "../compartido/documentos.js";
-import { Aviso, detalleProceso, filas, run, transaccion, uno } from "./db.js";
+import { Aviso, detalleProceso, filas, guardarUso, run, transaccion, uno } from "./db.js";
 import { listarPiezas } from "./biblioteca.js";
 import { contextoExpediente, modeloParaDocumento, textoParaDocumento } from "./ia.js";
 import { fechaInforme } from "./informe.js";
@@ -354,14 +354,15 @@ export async function conversar({ db, datosDir, proyectoId, mensaje, modeloId, p
 
   let respuesta;
   try {
+    const onUsoDoc = (uso) => guardarUso(db, { ...uso, motivo: "documento", proyectoId: proyecto.id });
     if (pasaje && actual) {
       respuesta = await pedirTexto({
-        datosDir, modeloId: elegido.id, onProgreso: avance,
+        datosDir, modeloId: elegido.id, onProgreso: avance, onUso: onUsoDoc,
         encargo: armarEncargoPasaje({ tipo: proyecto.tipo, perfil, documento: actual.cuerpo, pasaje, pedido, fragmentos, origen: elegido.origen }),
       });
     } else {
       respuesta = await pedirTexto({
-        datosDir, modeloId: elegido.id, onProgreso: avance,
+        datosDir, modeloId: elegido.id, onProgreso: avance, onUso: onUsoDoc,
         encargo: armarEncargoDocumento({
           tipo: proyecto.tipo, perfil, expediente: contexto, fragmentos, historia, documento: actual?.cuerpo || "", pedido,
           hoy: hoyLargo, origen: elegido.origen,

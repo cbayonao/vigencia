@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import test from "node:test";
 import assert from "node:assert/strict";
+import { DIAS_PRUEBA, planAbierto } from "../compartido/plan.js";
 import { LLAVE_PUBLICA, PRECIO_CENTAVOS, PRECIO_PESOS, estadoLicencia, textoPrecio } from "../compartido/licencia.js";
 import { confirmarPlan, fotoLicencia, iniciarPlan, activarCodigo } from "../src/licencia.js";
 import {
@@ -31,9 +32,48 @@ test("el precio del plan es 599.900 pesos en la aplicación y en el servicio", (
   assert.equal(textoPrecio(), "$599.900");
 });
 
-test("sin comprobante el plan no empezó", () => {
+test("sin comprobante y sin inicio el plan no empezó", () => {
   const foto = estadoLicencia({ token: "", instalacion: "a".repeat(64), ahora: AHORA });
   assert.equal(foto.estado, "sin_pago");
+  assert.equal(planAbierto("vigente"), true);
+  assert.equal(planAbierto("prueba"), true);
+  assert.equal(planAbierto("sin_pago"), false);
+  assert.equal(planAbierto("vencida"), false);
+  assert.equal(DIAS_PRUEBA, 20);
+});
+
+test("la prueba gratis dura 20 días desde el primer arranque", () => {
+  const inicio = "2026-10-01T12:00:00.000Z";
+  const dia1 = estadoLicencia({ token: "", instalacion: "a".repeat(64), ahora: new Date(inicio), inicio });
+  assert.equal(dia1.estado, "prueba");
+  assert.equal(dia1.diasRestantes, 20);
+  const dia19 = estadoLicencia({ token: "", instalacion: "a".repeat(64), ahora: new Date("2026-10-21T11:00:00.000Z"), inicio });
+  assert.equal(dia19.estado, "prueba");
+  assert.equal(dia19.diasRestantes, 1);
+  const dia21 = estadoLicencia({ token: "", instalacion: "a".repeat(64), ahora: new Date("2026-10-21T12:00:01.000Z"), inicio });
+  assert.equal(dia21.estado, "sin_pago");
+  const relojAtras = estadoLicencia({ token: "", instalacion: "a".repeat(64), ahora: new Date("2026-09-01T00:00:00.000Z"), inicio });
+  assert.equal(relojAtras.estado, "sin_pago");
+  const vistoAtras = estadoLicencia({
+    token: "", instalacion: "a".repeat(64),
+    ahora: new Date("2026-10-10T00:00:00.000Z"), inicio, visto: "2026-10-15T00:00:00.000Z",
+  });
+  assert.equal(vistoAtras.estado, "sin_pago");
+  // El pago manda sobre la prueba.
+  const { publica, privada } = parDeLlaves();
+  const token = firmarToken({ inst: "a".repeat(64), hasta: "2027-10-11T12:00:00.000Z", iat: 1 }, privada);
+  assert.equal(estadoLicencia({ token, instalacion: "a".repeat(64), ahora: AHORA, inicio, publica }).estado, "vigente");
+});
+
+test("una cuenta activada no la toca la prueba aunque el inicio esté vencido", () => {
+  const { publica, privada } = parDeLlaves();
+  const instalacion = "b".repeat(64);
+  const token = firmarToken({ inst: instalacion, hasta: "2027-10-11T12:00:00.000Z", iat: 1 }, privada);
+  const vieja = estadoLicencia({
+    token, instalacion, ahora: AHORA, inicio: "2020-01-01T00:00:00.000Z", publica,
+  });
+  assert.equal(vieja.estado, "vigente");
+  assert.equal(vieja.diasRestantes, undefined);
 });
 
 test("un comprobante de otro computador no abre el plan", () => {
@@ -156,16 +196,49 @@ test("un aviso de Wompi sin firma no renueva y el mismo pago no suma dos años",
   assert.equal(verificarEvento(aviso, "test_events_secreto").ok, true);
 });
 
-test("sin servicio configurado la aplicación sigue cerrada", async () => {
+test("los comentarios se guardan pendientes y el equipo los aprueba", async () => {
+  const servicio = crearServicio({ claveAdmin: "secreto", ahora: () => AHORA, azar: () => "c1" });
+  const corto = await servicio.atender({ method: "POST", path: "/comentarios", body: { texto: "ok" } });
+  assert.equal(corto.status, 400);
+  const trampa = await servicio.atender({ method: "POST", path: "/comentarios", body: { texto: "spam bueno", trampa: "x" } });
+  assert.equal(trampa.status, 400);
+  const bueno = await servicio.atender({
+    method: "POST", path: "/comentarios",
+    body: { nombre: "  Ana  ", tipo: "bug", texto: "  No abre el PDF  " },
+  });
+  assert.equal(bueno.status, 200);
+  assert.equal(bueno.body.ok, true);
+  const publicos = await servicio.atender({ method: "GET", path: "/comentarios" });
+  assert.deepEqual(publicos.body.comentarios, []);
+  const sinClave = await servicio.atender({ method: "GET", path: "/admin/comentarios" });
+  assert.equal(sinClave.status, 401);
+  const todos = await servicio.atender({ method: "GET", path: "/admin/comentarios", query: { clave: "secreto" } });
+  assert.equal(todos.body.comentarios.length, 1);
+  assert.equal(todos.body.comentarios[0].nombre, "Ana");
+  assert.equal(todos.body.comentarios[0].tipo, "bug");
+  assert.equal(todos.body.comentarios[0].visible, false);
+  const aprobar = await servicio.atender({
+    method: "POST", path: "/admin/comentarios", body: { clave: "secreto", id: todos.body.comentarios[0].id, visible: true },
+  });
+  assert.equal(aprobar.body.ok, true);
+  const ya = await servicio.atender({ method: "GET", path: "/comentarios" });
+  assert.equal(ya.body.comentarios.length, 1);
+  assert.equal(ya.body.comentarios[0].texto, "No abre el PDF");
+});
+
+test("sin servicio configurado la aplicación abre en prueba", async () => {
   const dir = fs.mkdtempSync("/tmp/vigencia-licencia-");
   const apagado = { VIGENCIA_LICENCIA_URL: "" };
   const foto = fotoLicencia(dir, AHORA, apagado);
-  assert.equal(foto.estado, "sin_pago");
+  assert.equal(foto.estado, "prueba");
+  assert.equal(foto.diasRestantes, 20);
   assert.equal(foto.conectado, false);
+  const caja = JSON.parse(fs.readFileSync(`${dir}/licencia.json`, "utf8"));
+  assert.equal(caja.inicio, AHORA.toISOString());
   const inicio = await iniciarPlan({ dir, env: apagado, ahora: AHORA });
   assert.equal(inicio.ok, false);
   const confirmado = await confirmarPlan({ dir, env: apagado, ahora: AHORA });
-  assert.equal(confirmado.estado, "sin_pago");
+  assert.equal(confirmado.estado, "prueba");
 });
 
 test("el código firmado abre solo esta instalación", () => {

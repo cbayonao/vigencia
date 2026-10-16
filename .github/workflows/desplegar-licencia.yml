@@ -44,6 +44,7 @@ jobs:
           wompi_private_key      = "${{ secrets.WOMPI_PRIVATE_KEY }}"
           wompi_integrity_secret = "${{ secrets.WOMPI_INTEGRITY_SECRET }}"
           wompi_events_secret    = "${{ secrets.WOMPI_EVENTS_SECRET }}"
+          comentarios_clave      = "${{ secrets.COMENTARIOS_CLAVE }}"
           EOF
         working-directory: licencia/terraform
       - run: terraform init -input=false && terraform apply -auto-approve -input=false

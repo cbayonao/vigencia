@@ -26,6 +26,13 @@ contextBridge.exposeInMainWorld("vigencia", {
   documentosFuenteGuardar: (datos) => ipcRenderer.invoke("documentos-fuente-guardar", datos),
   documentosFuenteBorrar: (id) => ipcRenderer.invoke("documentos-fuente-borrar", { id }),
   documentosFuenteImportar: () => ipcRenderer.invoke("documentos-fuente-importar"),
+  documentosFuentesImportarRutas: (rutas) => ipcRenderer.invoke("documentos-fuentes-importar-rutas", { rutas }),
+  comentariosListar: () => ipcRenderer.invoke("comentarios-listar"),
+  comentariosEnviar: (datos) => ipcRenderer.invoke("comentarios-enviar", datos),
+  jurisFuentes: () => ipcRenderer.invoke("juris-fuentes"),
+  jurisBuscar: (datos) => ipcRenderer.invoke("juris-buscar", datos),
+  jurisLeer: (sentencia) => ipcRenderer.invoke("juris-leer", { sentencia }),
+  jurisGuardar: (sentencia, texto) => ipcRenderer.invoke("juris-guardar", { sentencia, texto }),
   documentosExportar: (version, formato) => ipcRenderer.invoke("documentos-exportar", { version, formato }),
   detalle: (id) => ipcRenderer.invoke("detalle", id),
   guardarCliente: (datos) => ipcRenderer.invoke("guardar-cliente", datos),
@@ -110,6 +117,8 @@ contextBridge.exposeInMainWorld("vigencia", {
   samaiOlvidar: (guid) => ipcRenderer.invoke("samai-olvidar", { guid }),
   ppVista: (url, nombre) => ipcRenderer.invoke("pp-vista", { url, nombre }),
   ppDescargarDoc: (url, nombre, token) => ipcRenderer.invoke("pp-descargar", { url, nombre, token }),
+  gastoResumen: () => ipcRenderer.invoke("gasto-resumen"),
+  gastoUltimo: (proyectoId) => ipcRenderer.invoke("gasto-ultimo", { proyectoId }),
   alPp: (fn) => {
     const canal = (_evento, dato) => fn(dato);
     ipcRenderer.on("pp-progreso", canal);

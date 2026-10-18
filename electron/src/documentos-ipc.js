@@ -2,7 +2,8 @@
 // ventana y su forma de responder.
 import fs from "node:fs";
 import path from "node:path";
-import { CLASES_FUENTE, TIPOS_DOCUMENTO, diferencias } from "../compartido/documentos.js";
+import { CLASES_FUENTE, TIPOS_DOCUMENTO, claseDeNombre, diferencias } from "../compartido/documentos.js";
+import { EXTENSIONES } from "../compartido/convertir.js";
 import { tituloLista } from "../compartido/logica.js";
 import { listarProcesos } from "./db.js";
 import { borrarPieza, buscarFuentes, etiquetasUsadas, guardarPieza, leerPieza } from "./biblioteca.js";
@@ -13,7 +14,7 @@ import {
 } from "./documentos.js";
 import { listarModelos } from "./ia.js";
 import { docxDeEscrito, odtDeEscrito } from "./docx.js";
-import { leerArchivoFuente } from "./importar.js";
+import { importarABiblioteca, ligarArchivo, mismoTextoQueArchivo, piezaDelArchivo, revisarRuta, textoDeArchivo } from "./fuentes.js";
 import { htmlDocumento } from "./memorial.js";
 import { pdfDesdeHtml } from "./pdf.js";
 
@@ -22,7 +23,9 @@ function nombreArchivo(valor, extension) {
   return `${base}.${extension}`;
 }
 
-export function registrarDocumentos({ ipcMain, dialog, db, datosDir, ventana, responder, mensajeHumano }) {
+// convertirDatos llega de registrarConvertir (la cola del conversor): toda
+// fuente que viene de un archivo pasa por ahí, con caché, OCR y progreso.
+export function registrarDocumentos({ ipcMain, dialog, db, datosDir, ventana, responder, mensajeHumano, convertirDatos }) {
   const base = () => db();
   ipcMain.handle("documentos-inicio", () => responder(() => ({
     tipos: TIPOS_DOCUMENTO,
@@ -94,7 +97,13 @@ export function registrarDocumentos({ ipcMain, dialog, db, datosDir, ventana, re
     etiquetas: etiquetasUsadas(base()),
   })));
   ipcMain.handle("documentos-fuente-leer", (_e, dato) => responder(() => ({ fuente: leerPieza(base(), dato?.id) })));
-  ipcMain.handle("documentos-fuente-guardar", (_e, dato) => responder(() => ({ fuente: guardarPieza(base(), { ...(dato || {}), clase: dato?.clase || "nota", tipo: undefined }) })));
+  ipcMain.handle("documentos-fuente-guardar", (_e, dato) => responder(() => {
+    const { archivoId, ...resto } = dato || {};
+    let fuente = guardarPieza(base(), { ...resto, clase: resto.clase || "nota", tipo: undefined, archivoId: undefined });
+    // Importada y guardada sin cambios: queda ligada al archivo convertido.
+    if (!resto.id && archivoId && mismoTextoQueArchivo(base(), datosDir(), archivoId, fuente.texto)) fuente = ligarArchivo(base(), fuente.id, archivoId);
+    return { fuente };
+  }));
   ipcMain.handle("documentos-fuente-borrar", (_e, dato) => responder(() => {
     borrarPieza(base(), dato?.id);
     return {};
@@ -104,10 +113,21 @@ export function registrarDocumentos({ ipcMain, dialog, db, datosDir, ventana, re
       const elegido = await dialog.showOpenDialog(ventana(), {
         title: "Importar una fuente",
         properties: ["openFile"],
-        filters: [{ name: "Texto, Word o PDF", extensions: ["txt", "md", "docx", "pdf"] }],
+        filters: [{ name: "PDF, imágenes, Word, Excel, HTML o texto", extensions: Object.keys(EXTENSIONES) }],
       });
       if (elegido.canceled || !elegido.filePaths[0]) return { ok: false, cancelado: true };
-      return { ...(await leerArchivoFuente(elegido.filePaths[0], { datosDir: datosDir() })), archivo: path.basename(elegido.filePaths[0]) };
+      const ruta = elegido.filePaths[0];
+      const archivo = path.basename(ruta);
+      const problema = revisarRuta(ruta);
+      if (problema) return { ok: false, error: problema };
+      const r = await convertirDatos({ datos: fs.readFileSync(ruta), nombre: archivo, meta: { herramienta: "biblioteca" } });
+      if (r.error || !r.archivo) return { ok: false, error: r.error || "No pude leer ese archivo." };
+      const existente = piezaDelArchivo(base(), r.archivo.id);
+      if (existente) return { ok: true, existente: existente.id, nombre: existente.nombre };
+      const texto = textoDeArchivo(base(), datosDir(), r.archivo.id);
+      if (!texto) return { ok: false, error: r.archivo.aviso || "Ese archivo quedó sin texto." };
+      const nombre = archivo.replace(/\.[^.]+$/, "");
+      return { ok: true, nombre, texto, archivo, archivoId: r.archivo.id, aviso: r.archivo.aviso || "", clase: claseDeNombre(nombre) };
     } catch (error) {
       return { ok: false, error: mensajeHumano(error) };
     }
@@ -117,27 +137,10 @@ export function registrarDocumentos({ ipcMain, dialog, db, datosDir, ventana, re
   // marca los ids devueltos y el usuario pulsa Usar las marcadas.
   ipcMain.handle("documentos-fuentes-importar-rutas", async (_e, dato) => {
     try {
-    const rutas = Array.isArray(dato?.rutas) ? dato.rutas.slice(0, 20) : [];
-    if (!rutas.length) return { ok: true, fuentes: [], errores: [] };
-    const fuentes = [];
-    const errores = [];
-    for (const ruta of rutas) {
-      const archivoBase = path.basename(String(ruta || ""));
-      try {
-        const leido = await leerArchivoFuente(String(ruta || ""), { datosDir: datosDir() });
-        if (!leido.ok) {
-          errores.push({ archivo: archivoBase || String(ruta || ""), error: leido.error });
-          continue;
-        }
-        const nombre = String(leido.nombre || archivoBase).slice(0, 120);
-        const clase = /sentencia|t-\d|c-\d|su-\d/i.test(nombre) ? "jurisprudencia" : (/ley|decreto|c[oó]digo/i.test(nombre) ? "ley" : "nota");
-        const guardada = guardarPieza(base(), { nombre, clase, etiquetas: [], texto: leido.texto, origen: archivoBase });
-        fuentes.push({ id: guardada.id, nombre: guardada.nombre });
-      } catch (error) {
-        errores.push({ archivo: archivoBase || String(ruta || ""), error: mensajeHumano(error) });
-      }
-    }
-    return { ok: true, fuentes, errores };
+      const rutas = Array.isArray(dato?.rutas) ? dato.rutas.slice(0, 20) : [];
+      if (!rutas.length) return { ok: true, fuentes: [], errores: [] };
+      const r = await importarABiblioteca({ db: base(), datosDir: datosDir(), rutas, convertirDatos, mensajeHumano });
+      return { ok: true, ...r };
     } catch (error) {
       return { ok: false, error: mensajeHumano(error) };
     }

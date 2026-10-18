@@ -4,18 +4,18 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { EXTENSIONES, encabezadoYaml, esConvertible, quitarEncabezado } from "../compartido/convertir.js";
+import { EXTENSIONES, encabezadoYaml, esConvertible } from "../compartido/convertir.js";
 import {
-  agregarAProyecto, archivosDelProyecto, enCache, guardarAgentes, guardarEdicion, guardarResultado, incluirEnContexto, leerAgentes,
-  leerArchivo, leerMarkdown, limpiarCache, listarArchivos, marcarError, prepararArchivo, quitarDeProyecto, renombrarArchivo, PLANTILLA_AGENTS,
+  agregarAProyecto, archivosDelProyecto, convertirConCache, guardarAgentes, guardarEdicion, incluirEnContexto, leerAgentes,
+  leerArchivo, leerMarkdown, limpiarCache, listarArchivos, quitarDeProyecto, renombrarArchivo, PLANTILLA_AGENTS,
 } from "./conversiones.js";
-import { guardarPieza } from "./biblioteca.js";
-import { run } from "./db.js";
+import { piezaDeArchivo } from "./fuentes.js";
 import { estadoOcr, instalarOcr, quitarOcr } from "./convertir/ocr.js";
 import { descargarJuris } from "./juris.js";
 import { enviosDelProyecto, historialBloque, prepararBloque, prepararVuelta, proponerBloque, resolverBloque } from "./documentos.js";
 
 const aqui = path.dirname(fileURLToPath(import.meta.url));
+const HERRAMIENTAS_RUTAS = new Set(["convertir", "documentos", "biblioteca", "pdf"]);
 
 export function crearCola({ utilityProcess, datosDir, alProgreso }) {
   let hijo = null;
@@ -97,25 +97,13 @@ export function registrarConvertir({ ipcMain, dialog, utilityProcess, db, datosD
   // Convierte unos bytes ya leídos (archivo del usuario o PDF de la
   // relatoría) y devuelve la fila de archivo lista.
   async function convertirDatos({ datos, nombre, origen = "usuario", meta = {}, encabezado = {}, proyectoId = null, forzarOcr = false }) {
-    const fila = prepararArchivo(base(), datosDir(), { datos, nombre, origen, meta });
-    const cache = enCache(base(), datosDir(), fila.sha256, { forzarOcr });
-    if (cache) {
-      run(base(), "UPDATE archivo SET estado = 'listo' WHERE id = ?", [cache.id]);
-      if (proyectoId) agregarAProyecto(base(), proyectoId, cache.id);
-      enviar("convertir-progreso", { archivoId: cache.id, nombre, fase: "listo", cache: true });
-      return { archivo: leerArchivo(base(), cache.id), cache: true };
-    }
-    const { id, promesa } = cola.poner({ archivoId: fila.id, ruta: fila.original, nombre, opciones: { forzarOcr } });
-    const m = await promesa;
-    if (m.tipo !== "listo") {
-      const a = marcarError(base(), fila.id, m.mensaje, m.codigo === "cancelado" ? "cancelado" : "error");
-      enviar("convertir-progreso", { id, archivoId: fila.id, nombre, fase: "error", error: m.mensaje, codigo: m.codigo });
-      return { archivo: a, error: m.mensaje, codigo: m.codigo };
-    }
-    const a = guardarResultado(base(), datosDir(), fila.id, m.resultado, { encabezado });
-    if (proyectoId) agregarAProyecto(base(), proyectoId, a.id);
-    enviar("convertir-progreso", { id, archivoId: a.id, nombre, fase: "listo" });
-    return { archivo: a };
+    return convertirConCache(base(), datosDir(), { datos, nombre, origen, meta, encabezado, proyectoId, forzarOcr }, {
+      ejecutar: async (tarea) => {
+        const { id, promesa } = cola.poner(tarea);
+        return { id, ...(await promesa) };
+      },
+      alProgreso: (p) => enviar("convertir-progreso", p),
+    });
   }
 
   ipcMain.handle("convertir-inicio", () => responder(() => ({
@@ -146,7 +134,8 @@ export function registrarConvertir({ ipcMain, dialog, utilityProcess, db, datosD
           resultados.push({ nombre, error: "El archivo pesa más de 300 MB." });
           continue;
         }
-        resultados.push({ nombre, ...(await convertirDatos({ datos: fs.readFileSync(ruta), nombre, proyectoId: dato?.proyectoId || null, forzarOcr: Boolean(dato?.forzarOcr) })) });
+        const herramienta = HERRAMIENTAS_RUTAS.has(dato?.herramienta) ? dato.herramienta : "convertir";
+        resultados.push({ nombre, ...(await convertirDatos({ datos: fs.readFileSync(ruta), nombre, meta: { herramienta }, proyectoId: Number(dato?.proyectoId) || null, forzarOcr: Boolean(dato?.forzarOcr) })) });
       } catch (error) {
         resultados.push({ nombre, error: mensajeHumano(error) });
       }
@@ -158,7 +147,7 @@ export function registrarConvertir({ ipcMain, dialog, utilityProcess, db, datosD
       const a = leerArchivo(base(), dato?.id);
       const { original } = leerMarkdown(base(), datosDir(), a.id);
       if (!original) return { ok: false, error: "No está la copia del original. Conviértalo otra vez desde el archivo." };
-      return { ok: true, ...(await convertirDatos({ datos: fs.readFileSync(original), nombre: a.nombre, origen: a.origen, forzarOcr: true })) };
+      return { ok: true, ...(await convertirDatos({ datos: fs.readFileSync(original), nombre: a.nombre, origen: a.origen, meta: { herramienta: "convertir" }, forzarOcr: true })) };
     } catch (error) {
       return { ok: false, error: mensajeHumano(error) };
     }
@@ -182,18 +171,9 @@ export function registrarConvertir({ ipcMain, dialog, utilityProcess, db, datosD
       return { ok: false, error: mensajeHumano(error) };
     }
   });
-  ipcMain.handle("convertir-a-biblioteca", (_e, dato) => responder(() => {
-    const { archivo, markdown } = leerMarkdown(base(), datosDir(), dato?.id);
-    const pieza = guardarPieza(base(), {
-      nombre: archivo.nombre.replace(/\.[^.]+$/, "").slice(0, 120),
-      clase: archivo.origen === "jurisprudencia" ? "jurisprudencia" : "nota",
-      etiquetas: [],
-      texto: quitarEncabezado(markdown).slice(0, 600000),
-      origen: archivo.nombre.slice(0, 200),
-    });
-    run(base(), "UPDATE pieza SET archivo_id = ? WHERE id = ?", [archivo.id, pieza.id]);
-    return { pieza };
-  }));
+  // Una sola fuente por archivo: si ya estaba en la biblioteca, se devuelve
+  // la misma. La fuente queda ligada al archivo y usa sus trozos con página.
+  ipcMain.handle("convertir-a-biblioteca", (_e, dato) => responder(() => piezaDeArchivo(base(), datosDir(), dato?.id)));
   ipcMain.handle("convertir-limpiar-cache", (_e) => responder(() => limpiarCache(base(), datosDir())));
   ipcMain.handle("convertir-ocr-estado", () => responder(() => ({ ocr: estadoOcr(datosDir()) })));
   ipcMain.handle("convertir-ocr-instalar", async () => {
@@ -255,7 +235,7 @@ export function registrarConvertir({ ipcMain, dialog, utilityProcess, db, datosD
       };
       const salida = [];
       for (const d of documentos) {
-        salida.push(await convertirDatos({ datos: d.datos, nombre: d.nombre, origen: "jurisprudencia", meta: encabezado, encabezado, proyectoId: dato?.proyectoId || null }));
+        salida.push(await convertirDatos({ datos: d.datos, nombre: d.nombre, origen: "jurisprudencia", meta: { ...encabezado, herramienta: "jurisprudencia" }, encabezado, proyectoId: dato?.proyectoId || null }));
       }
       return { ok: true, resultados: salida };
     } catch (error) {

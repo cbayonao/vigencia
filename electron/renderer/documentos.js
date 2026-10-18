@@ -3,6 +3,9 @@
 import { contarAvisos, diferencias, escritoDeTexto, estimarTokens, textoDeEscrito } from "../compartido/documentos.js";
 import { escritoAJson, jsonAEscrito, parrafoHtml, textoPlano } from "../compartido/formato.js";
 import { bloquesDeCuerpo } from "../compartido/memoria.js";
+import { EXTENSIONES, detalleArchivo } from "../compartido/convertir.js";
+import { conAvance } from "./proyectos.js";
+import { avisar } from "./aviso.js";
 
 const $ = (id) => document.getElementById(id);
 const doc = {
@@ -1023,6 +1026,7 @@ async function pintarBiblioteca() {
     const meta = [nombreClase(f.clase), `${f.largo.toLocaleString("es-CO")} caracteres (≈ ${Math.max(1, Math.ceil(f.largo / 4)).toLocaleString("es-CO")} tokens)`];
     if (f.etiquetas.length) meta.push(f.etiquetas.join(", "));
     if (f.origen) meta.push(f.origen);
+    if (f.archivo_id) meta.push("ligada al archivo convertido");
     textos.append(nodo("span", "doc-tarjeta-meta", meta.join(", ")), nodo("span", "doc-bib-muestra", f.muestra));
     const botones = nodo("div", "botones");
     const editar = nodo("button", "boton-texto", "Editar");
@@ -1077,6 +1081,9 @@ async function abrirFuente(id = null, previo = null) {
   $("doc-fuente-etiquetas").value = (f.etiquetas || []).join(", ");
   $("doc-fuente-texto").value = f.texto;
   $("doc-fuente-texto").dataset.origen = f.origen || "";
+  // Importada de un archivo: si se guarda sin cambios, queda ligada a él y
+  // Documentos usa sus trozos con página.
+  $("doc-fuente-texto").dataset.archivo = !id && f.archivoId ? String(f.archivoId) : "";
   largoFuente();
   mostrarError("doc-fuente-error", "");
   ui.mostrarDialogo("dialogo-doc-fuente");
@@ -1101,6 +1108,7 @@ async function guardarFuente(evento) {
     etiquetas: $("doc-fuente-etiquetas").value,
     texto: $("doc-fuente-texto").value,
     origen: $("doc-fuente-texto").dataset.origen || "",
+    archivoId: Number($("doc-fuente-texto").dataset.archivo) || null,
   });
   if (!r?.ok) return mostrarError("doc-fuente-error", r?.error || "No pude guardar la fuente.");
   ui.ocultarDialogo("dialogo-doc-fuente");
@@ -1110,18 +1118,30 @@ async function guardarFuente(evento) {
 }
 
 async function importarFuente() {
-  const r = await window.vigencia.documentosFuenteImportar();
+  mostrarError("doc-bib-error", "");
+  const caja = $("doc-bib-soltar-estado");
+  caja.hidden = false;
+  const r = await conAvance({ estado: caja, barra: $("doc-bib-avance") }, () => window.vigencia.documentosFuenteImportar());
   if (!r?.ok) {
+    estadoSoltar("");
     if (!r?.cancelado) mostrarError("doc-bib-error", r?.error || "No pude leer ese archivo.");
     return;
   }
-  const clase = /sentencia|t-\d|c-\d|su-\d/i.test(r.nombre) ? "jurisprudencia" : (/ley|decreto|c[oó]digo/i.test(r.nombre) ? "ley" : "nota");
-  await abrirFuente(null, { nombre: r.nombre.slice(0, 120), clase, etiquetas: [], texto: r.texto, origen: r.archivo });
+  // El archivo ya estaba en la biblioteca: se abre esa misma fuente.
+  if (r.existente) {
+    estadoSoltar(`Ese archivo ya estaba en la biblioteca como ${r.nombre}.`);
+    if (doc.datos) doc.bibMarcadas.add(r.existente);
+    await abrirFuente(r.existente);
+    return;
+  }
+  estadoSoltar(r.aviso || "");
+  await abrirFuente(null, { nombre: r.nombre.slice(0, 120), clase: r.clase || "nota", etiquetas: [], texto: r.texto, origen: r.archivo, archivoId: r.archivoId });
 }
 
 // ---------- Arrastrar y soltar fuentes ----------
 
-const EXTENSIONES_FUENTE = [".txt", ".md", ".docx", ".pdf"];
+// Lo mismo que acepta Convertir: todo archivo pasa por el conversor.
+const EXTENSIONES_FUENTE = Object.keys(EXTENSIONES).map((e) => `.${e}`);
 
 function estadoSoltar(mensaje, error = false) {
   const el = $("doc-bib-soltar-estado");
@@ -1157,9 +1177,9 @@ async function soltarFuentes(archivos) {
     return;
   }
   $("doc-bib-soltar").classList.add("ocupada");
-  estadoSoltar(`Leyendo ${rutas.length} ${rutas.length === 1 ? "archivo" : "archivos"}…`);
+  estadoSoltar(`Convirtiendo ${rutas.length} ${rutas.length === 1 ? "archivo" : "archivos"} en este computador.`);
   try {
-    const r = await window.vigencia.documentosFuentesImportarRutas(rutas);
+    const r = await conAvance({ estado: $("doc-bib-soltar-estado"), barra: $("doc-bib-avance") }, () => window.vigencia.documentosFuentesImportarRutas(rutas));
     if (!r?.ok) {
       estadoSoltar(r?.error || "No pude leer esos archivos.", true);
       return;
@@ -1170,6 +1190,8 @@ async function soltarFuentes(archivos) {
     if (r.fuentes?.length) partes.push(`${r.fuentes.length} ${r.fuentes.length === 1 ? "fuente agregada y marcada" : "fuentes agregadas y marcadas"}`);
     if (r.errores?.length) partes.push(`${r.errores.length} fallaron: ${r.errores.map((x) => x.archivo).join(", ")}`);
     if (rechazados.length) partes.push(`no entraron: ${rechazados.join(", ")}`);
+    const avisos = (r.fuentes || []).filter((f) => f.aviso).map((f) => `${f.nombre}: ${f.aviso}`);
+    if (avisos.length) partes.push(avisos.join(" "));
     let mensaje = `${partes.join(". ")}.`;
     if (doc.datos && r.fuentes?.length) mensaje += " Pulse Usar las marcadas.";
     estadoSoltar(mensaje, Boolean(r.errores?.length));
@@ -1346,9 +1368,21 @@ export const CAPAS_DOCUMENTOS = [
   "dialogo-doc-confirmar",
 ];
 
+// Abrir un proyecto desde otra pantalla (Convertir, Herramientas PDF). Se
+// anota antes de mostrar Documentos para que abrirDocumentos no abra el
+// proyecto anterior por encima.
+export function pedirProyectoDocumentos(id, { contexto = false } = {}) {
+  doc.pendiente = id ? { id: Number(id), contexto: Boolean(contexto) } : null;
+}
+
 export async function abrirDocumentos() {
   await cargarInicio();
-  if (doc.abierto) await abrirProyecto(doc.abierto, { conservarVista: true });
+  const pendiente = doc.pendiente;
+  doc.pendiente = null;
+  if (pendiente) {
+    await abrirProyecto(pendiente.id);
+    if (pendiente.contexto && doc.abierto === pendiente.id) await abrirContexto();
+  } else if (doc.abierto) await abrirProyecto(doc.abierto, { conservarVista: true });
   else pintarProyecto();
 }
 
@@ -1448,10 +1482,19 @@ function revisarEnvio(previa) {
   $("envio-resumen").textContent = `Va a enviar ${Number(inf.caracteres || 0).toLocaleString("es-CO")} caracteres (cerca de ${Number(inf.tokens || 0).toLocaleString("es-CO")} tokens) a ${inf.modelo || "la nube"}, con su clave. ${inf.expediente ? "Incluye datos del expediente vinculado. " : ""}${inf.agentes ? "Incluye las instrucciones del proyecto. " : ""}Nada sale si pulsa No enviar.`;
   const lista = $("envio-archivos");
   lista.replaceChildren();
-  for (const a of inf.archivos || []) {
-    lista.append(nodo("p", "ayuda", `${a.nombre}: ${a.fragmentos} ${a.fragmentos === 1 ? "fragmento" : "fragmentos"}${a.paginas?.length ? `, páginas ${a.paginas.join(", ")}` : ""}`));
+  const linea = (titulo, x) => {
+    const p = nodo("p", "ayuda envio-linea");
+    p.append(nodo("strong", "", titulo));
+    p.append(document.createTextNode(` ${x.fragmentos} ${x.fragmentos === 1 ? "fragmento" : "fragmentos"}${x.paginas?.length ? `, páginas ${x.paginas.join(", ")}` : ""}.`));
+    if (x.detalle) p.append(nodo("span", "envio-detalle", x.detalle));
+    return p;
+  };
+  for (const a of inf.archivos || []) lista.append(linea(`${a.nombre}:`, a));
+  if (inf.fuentesDetalle?.length) {
+    for (const f of inf.fuentesDetalle) lista.append(linea(`Fuente de la biblioteca ${f.nombre}:`, f));
+  } else {
+    for (const f of inf.fuentes || []) lista.append(nodo("p", "ayuda", `Fuente de la biblioteca: ${f}`));
   }
-  for (const f of inf.fuentes || []) lista.append(nodo("p", "ayuda", `Fuente de la biblioteca: ${f}`));
   if (!lista.children.length) lista.append(nodo("p", "ayuda", "No van archivos ni fuentes."));
   $("envio-texto").textContent = previa.texto || "";
   $("envio-texto").hidden = true;
@@ -1498,7 +1541,7 @@ async function pintarArchivosCtx() {
       await window.vigencia.proyectoArchivoIncluir(doc.abierto, a.id, marca.checked);
       await abrirProyecto(doc.abierto, { conservarVista: true });
     });
-    const detalle = [a.estado === "listo" ? "listo" : a.estado, a.paginas ? `${a.paginas} págs.` : "", a.paginas_ocr ? `${a.paginas_ocr} con OCR` : "", `${Number(a.tokens_aprox || 0).toLocaleString("es-CO")} tokens aprox.`].filter(Boolean).join(", ");
+    const detalle = [a.estado === "listo" ? "listo" : a.estado, detalleArchivo(a), `${Number(a.tokens_aprox || 0).toLocaleString("es-CO")} tokens aprox.`].filter(Boolean).join(", ");
     const nombre = nodo("span", "nombre", `${a.nombre} (${detalle})`);
     if (a.aviso) nombre.title = a.aviso;
     const quitar = nodo("button", "boton-texto", "Quitar");
@@ -1516,18 +1559,11 @@ async function pintarArchivosCtx() {
 
 async function convertirAlProyecto(rutas) {
   if (!rutas.length || !doc.abierto) return;
-  $("doc-ctx-estado").textContent = `Convirtiendo ${rutas.length} ${rutas.length === 1 ? "archivo" : "archivos"} en este computador...`;
-  const quitar = window.vigencia.alConvertir((p) => {
-    if (p?.fase === "ocr") $("doc-ctx-estado").textContent = `${p.nombre}: leyendo con OCR la página ${p.pagina} de ${p.total}`;
-    else if (p?.fase === "leyendo" && p.total) $("doc-ctx-estado").textContent = `${p.nombre}: página ${p.pagina} de ${p.total}`;
-  });
-  try {
-    const r = await window.vigencia.convertirRutas(rutas, doc.abierto);
-    const errores = (r?.resultados || []).filter((x) => x.error).map((x) => `${x.nombre}: ${x.error}`);
-    $("doc-ctx-estado").textContent = errores.length ? errores.join(" ") : "Listo. Los archivos quedaron en el proyecto.";
-  } finally {
-    quitar();
-  }
+  $("doc-ctx-estado").textContent = `Convirtiendo ${rutas.length} ${rutas.length === 1 ? "archivo" : "archivos"} en este computador.`;
+  const r = await conAvance({ estado: $("doc-ctx-estado"), barra: $("doc-ctx-avance") }, () => window.vigencia.convertirRutas(rutas, doc.abierto, false, "documentos"));
+  const errores = (r?.resultados || []).filter((x) => x.error).map((x) => `${x.nombre}: ${x.error}`);
+  $("doc-ctx-estado").textContent = errores.length ? errores.join(" ") : "Listo. Los archivos quedaron en el proyecto.";
+  avisar(errores.length ? "Algunos archivos no se pudieron convertir." : "Archivos en el contexto del proyecto.", errores.length ? "error" : "ok");
   await pintarArchivosCtx();
   await abrirProyecto(doc.abierto, { conservarVista: true });
 }

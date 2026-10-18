@@ -191,7 +191,9 @@ export async function textoDePdfCompleto(buffer, { datosDir = "" } = {}) {
     const viejo = textoDePdf(buffer);
     if (viejo.ok) return viejo;
     return { ok: false, error: r.aviso || viejo.error };
-  } catch {
+  } catch (error) {
+    // Con contraseña ningún lector sirve: se dice cómo abrirlo.
+    if (error?.codigo === "clave") return { ok: false, error: error.message, codigo: "clave" };
     return textoDePdf(buffer);
   }
 }

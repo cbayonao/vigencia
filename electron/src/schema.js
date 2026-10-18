@@ -673,4 +673,15 @@ export const MIGRACIONES = [
       `);
     },
   },
+  {
+    version: 17,
+    nombre: "fuentes ligadas a archivos convertidos",
+    up(db) {
+      // Solo suma: la columna pieza.archivo_id viene de la 13. El índice
+      // sirve para encontrar la fuente de un archivo y sus trozos.
+      const piezaCols = new Set(db.prepare("PRAGMA table_info(pieza)").all().map((fila) => fila.name));
+      if (!piezaCols.has("archivo_id")) db.exec("ALTER TABLE pieza ADD COLUMN archivo_id INTEGER");
+      db.exec("CREATE INDEX IF NOT EXISTS pieza_archivo ON pieza(archivo_id)");
+    },
+  },
 ];

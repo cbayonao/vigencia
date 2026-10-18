@@ -7,7 +7,7 @@ import zlib from "node:zlib";
 import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
-  IMAGENES, VERSION_CONVERSOR, calidadTexto, extensionDe, limpiarTexto, marcaPagina, necesitaOcr, quitarRepetidos, tablaMarkdown,
+  IMAGENES, MAX_PAGINAS_OCR, VERSION_CONVERSOR, avisoTopeOcr, calidadTexto, extensionDe, limpiarTexto, marcaPagina, necesitaOcr, quitarRepetidos, tablaMarkdown,
 } from "../../compartido/convertir.js";
 import { AVISO_OCR, crearLectorOcr, estadoOcr } from "./ocr.js";
 
@@ -163,10 +163,20 @@ async function imagenMayor(pagina, lib) {
   return mejor;
 }
 
-export async function convertirPdf(datos, { datosDir, forzarOcr = false, onProgreso, senal, lectorOcr } = {}) {
+// Un PDF con contraseña no se puede leer: se dice cómo abrirlo en vez del
+// error crudo de pdfjs.
+export const AVISO_CLAVE = "Ese PDF tiene contraseña. Ábralo primero en Herramientas PDF, Desbloquear, y desde ahí llévelo al contexto.";
+
+function errorClave() {
+  const error = new Error(AVISO_CLAVE);
+  error.codigo = "clave";
+  return error;
+}
+
+export async function convertirPdf(datos, { datosDir, forzarOcr = false, onProgreso, senal, lectorOcr, maxPaginasOcr = MAX_PAGINAS_OCR } = {}) {
   const lib = await cargarPdfjs();
   const base = carpetaPdfjs();
-  const doc = await lib.getDocument({
+  const tarea = lib.getDocument({
     data: new Uint8Array(datos),
     cMapUrl: `${path.join(base, "cmaps")}${path.sep}`,
     cMapPacked: true,
@@ -177,7 +187,15 @@ export async function convertirPdf(datos, { datosDir, forzarOcr = false, onProgr
     disableFontFace: true,
     useSystemFonts: false,
     verbosity: 0,
-  }).promise;
+  });
+  // Sin onPassword, pdfjs rechaza con PasswordException: no hay a quién pedirla.
+  let doc;
+  try {
+    doc = await tarea.promise;
+  } catch (error) {
+    if (error?.name === "PasswordException" || /password/i.test(String(error?.message || ""))) throw errorClave();
+    throw error;
+  }
   const total = doc.numPages;
   const paginas = [];
   const sinTexto = [];
@@ -193,6 +211,10 @@ export async function convertirPdf(datos, { datosDir, forzarOcr = false, onProgr
     }
     let paginasOcr = 0;
     let avisoOcr = "";
+    const tope = Math.max(0, Number.isFinite(Number(maxPaginasOcr)) ? Number(maxPaginasOcr) : MAX_PAGINAS_OCR);
+    const pendientes = sinTexto.length;
+    if (sinTexto.length > tope) sinTexto.splice(tope);
+    const avisoTope = avisoTopeOcr(sinTexto.length, pendientes);
     if (sinTexto.length) {
       const estado = estadoOcr(datosDir);
       if (!estado.listo && !lectorOcr) {
@@ -229,7 +251,8 @@ export async function convertirPdf(datos, { datosDir, forzarOcr = false, onProgr
       paginas: total,
       paginasOcr,
       calidad: calidadTexto(limpias.join("\n")),
-      aviso: vacias ? (avisoOcr || `${vacias} de ${total} páginas quedaron sin texto legible.`) : "",
+      aviso: [vacias ? (avisoOcr || `${vacias} de ${total} páginas quedaron sin texto legible.`) : "", avisoOcr ? "" : avisoTope].filter(Boolean).join(" "),
+      paginasSinOcr: pendientes - sinTexto.length,
     };
   } finally {
     await doc.destroy();

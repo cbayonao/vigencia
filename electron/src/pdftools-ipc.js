@@ -1,11 +1,14 @@
 // Canales IPC de Herramientas PDF. Los diálogos de abrir/guardar son del
 // sistema; los bytes nunca salen del computador.
+import crypto from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { NIVELES_COMPRIMIR, camposPdf, comprimirPdf, rellenarPdf } from "./pdftools.js";
 import { protegerPdf } from "./pdfproteger.js";
 import { desbloquearPdf } from "./pdfdescifrar.js";
-import { textoDePdf } from "./pdftexto.js";
+import { textoDePdfCompleto } from "./pdftexto.js";
+import { revisarRuta } from "./fuentes.js";
 import { parsearRangos } from "../compartido/pdftools.js";
 import { firmarPdf, infoPdf, rotarPdf, separarPdf, unirPdfs } from "./pdftools.js";
 
@@ -15,7 +18,62 @@ function aRutas(valor) {
   return (Array.isArray(valor) ? valor : []).map(String).filter(Boolean).slice(0, 50);
 }
 
-export function registrarPdftools({ ipcMain, dialog, ventana, mensajeHumano }) {
+// Copias temporales (un PDF ya desbloqueado que el usuario no guardó pero
+// quiere llevar al contexto). Viven en la carpeta temporal del sistema y se
+// borran a las 24 horas o al cerrar la app.
+export function carpetaTemporalPdf(base = os.tmpdir()) {
+  return path.join(base, "vigencia-pdf");
+}
+
+export function guardarTemporal(bytes, nombre, base = os.tmpdir()) {
+  const dir = path.join(carpetaTemporalPdf(base), crypto.randomBytes(8).toString("hex"));
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const limpio = String(nombre || "documento.pdf").replace(/[\\/:*?"<>|]+/g, " ").trim() || "documento.pdf";
+  const ruta = path.join(dir, limpio.toLowerCase().endsWith(".pdf") ? limpio : `${limpio}.pdf`);
+  fs.writeFileSync(ruta, bytes, { mode: 0o600 });
+  return ruta;
+}
+
+export function limpiarTemporales({ base = os.tmpdir(), edadMs = 24 * 3600 * 1000, ahora = Date.now() } = {}) {
+  const raiz = carpetaTemporalPdf(base);
+  let borradas = 0;
+  let entradas = [];
+  try {
+    entradas = fs.readdirSync(raiz);
+  } catch {
+    return 0;
+  }
+  for (const e of entradas) {
+    const ruta = path.join(raiz, e);
+    try {
+      if (edadMs <= 0 || ahora - fs.statSync(ruta).mtimeMs >= edadMs) {
+        fs.rmSync(ruta, { recursive: true, force: true });
+        borradas++;
+      }
+    } catch {
+      /* ya no está */
+    }
+  }
+  return borradas;
+}
+
+// Texto para Comparar: el mismo lector de Convertir (pdfjs, fuentes CID y
+// OCR si está instalado), con el lector simple de respaldo.
+export async function textoParaComparar(ruta, { datosDir = "" } = {}) {
+  let datos;
+  try {
+    datos = fs.readFileSync(ruta);
+  } catch {
+    return { ok: false, error: "No pude leer un PDF." };
+  }
+  const t = await textoDePdfCompleto(datos, { datosDir });
+  if (!t.ok) return { ok: false, error: t.codigo === "clave" || /contraseña/i.test(t.error || "") ? "Uno tiene contraseña: desbloquéelo primero." : t.error };
+  return { ok: true, texto: t.texto || "" };
+}
+
+export function registrarPdftools({ ipcMain, dialog, ventana, mensajeHumano, datosDir = () => "", convertirDatos = null }) {
+  limpiarTemporales();
+
   ipcMain.handle("pdf-elegir", async (_e, dato) => {
     try {
       const r = await dialog.showOpenDialog(ventana(), {
@@ -157,7 +215,11 @@ export function registrarPdftools({ ipcMain, dialog, ventana, mensajeHumano }) {
       if (!ruta) return { ok: false, error: "Elija primero el PDF." };
       const bytes = await desbloquearPdf(ruta, String(dato?.clave || ""));
       const base = path.basename(ruta, ".pdf").slice(0, 60);
-      return await guardarComo("Guardar el PDF sin contraseña", `${base}-abierto.pdf`, bytes);
+      // La copia sin contraseña queda también en un temporal: así se puede
+      // llevar al contexto aunque el usuario no guarde una copia.
+      const nombre = `${base}-abierto.pdf`;
+      const temporal = guardarTemporal(bytes, nombre);
+      return { ...(await guardarComo("Guardar el PDF sin contraseña", nombre, bytes)), temporal, nombre };
     } catch (error) {
       return { ok: false, error: mensajeHumano(error) };
     }
@@ -193,17 +255,36 @@ export function registrarPdftools({ ipcMain, dialog, ventana, mensajeHumano }) {
       if (a === b) return { ok: false, error: "Son el mismo archivo dos veces." };
       const leidos = [];
       for (const ruta of [a, b]) {
-        let datos;
-        try {
-          datos = fs.readFileSync(ruta);
-        } catch {
-          return { ok: false, error: "No pude leer un PDF." };
-        }
-        const t = textoDePdf(datos);
-        if (!t.ok) return { ok: false, error: /contraseña/i.test(t.error || "") ? "Uno tiene contraseña: desbloquéelo primero." : t.error };
-        leidos.push(t.texto || "");
+        const t = await textoParaComparar(ruta, { datosDir: datosDir() });
+        if (!t.ok) return t;
+        leidos.push(t.texto);
       }
       return { ok: true, textoA: leidos[0].slice(0, 300000), textoB: leidos[1].slice(0, 300000) };
+    } catch (error) {
+      return { ok: false, error: mensajeHumano(error) };
+    }
+  });
+  // Llevar un PDF (elegido, resultado de una herramienta o copia temporal
+  // ya desbloqueada) al conversor: queda en Convertir con su Markdown y, si
+  // hay proyecto, en el contexto del proyecto. Mismo camino que Convertir.
+  ipcMain.handle("pdf-a-proyecto", async (_e, dato) => {
+    try {
+      if (!convertirDatos) return { ok: false, error: "El conversor todavía no está listo." };
+      const ruta = String(dato?.ruta || "");
+      if (!ruta) return { ok: false, error: "Elija primero el PDF." };
+      if (path.extname(ruta).toLowerCase() !== ".pdf") return { ok: false, error: "Eso no es un PDF." };
+      const problema = revisarRuta(ruta);
+      if (problema) return { ok: false, error: problema };
+      const nombre = String(dato?.nombre || "").trim().slice(0, 120) || path.basename(ruta);
+      const r = await convertirDatos({
+        datos: fs.readFileSync(ruta),
+        nombre: nombre.toLowerCase().endsWith(".pdf") ? nombre : `${nombre}.pdf`,
+        meta: { herramienta: "pdf" },
+        proyectoId: Number(dato?.proyectoId) || null,
+        forzarOcr: Boolean(dato?.forzarOcr),
+      });
+      if (r.error || !r.archivo) return { ok: false, error: r.error || "No pude convertirlo.", codigo: r.codigo || "" };
+      return { ok: true, archivo: r.archivo, cache: Boolean(r.cache), proyectoId: Number(dato?.proyectoId) || null };
     } catch (error) {
       return { ok: false, error: mensajeHumano(error) };
     }

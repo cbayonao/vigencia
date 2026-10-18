@@ -13,7 +13,7 @@ const MAX_TEXTO = 20000;
 // Las fuentes de Documentos pueden ser leyes enteras: se recuperan por
 // fragmentos, así que admiten más texto. Al escrito solo entra una pieza
 // de hasta MAX_TEXTO.
-const MAX_FUENTE = 600000;
+export const MAX_FUENTE = 600000;
 const TIPOS = new Set(TIPOS_PIEZA.map((tipo) => tipo.id));
 
 function piezaDe(fila) {
@@ -29,6 +29,7 @@ function piezaDe(fila) {
     clase: claseDePieza(fila),
     etiquetas: leerEtiquetas(fila.etiquetas),
     origen: fila.origen || "",
+    archivo_id: fila.archivo_id ? Number(fila.archivo_id) : null,
     largo: String(fila.texto || "").length,
     creado_en: fila.creado_en,
     actualizado_en: fila.actualizado_en,
@@ -37,14 +38,14 @@ function piezaDe(fila) {
 
 function leer(db, id) {
   return piezaDe(uno(db, `
-    SELECT id, nombre, tipo, texto, activa, clase, etiquetas, origen, creado_en, actualizado_en
+    SELECT id, nombre, tipo, texto, activa, clase, etiquetas, origen, archivo_id, creado_en, actualizado_en
     FROM pieza WHERE id = ?
   `, [id]));
 }
 
 export function listarPiezas(db) {
   return filas(db, `
-    SELECT id, nombre, tipo, texto, activa, clase, etiquetas, origen, creado_en, actualizado_en
+    SELECT id, nombre, tipo, texto, activa, clase, etiquetas, origen, archivo_id, creado_en, actualizado_en
     FROM pieza
     ORDER BY nombre COLLATE NOCASE, id
   `).map((fila) => piezaDe(fila));
@@ -71,8 +72,13 @@ export function guardarPieza(db, dato = {}) {
   const marca = ahora();
   const id = Number(dato.id) || 0;
   if (id) {
-    const previa = uno(db, "SELECT id FROM pieza WHERE id = ?", [id]);
+    const previa = uno(db, "SELECT id, texto, archivo_id FROM pieza WHERE id = ?", [id]);
     if (!previa) throw new Aviso("Esa pieza ya no está.");
+    // Si el usuario cambió el texto de una fuente que venía de un archivo,
+    // se desliga: desde ahora manda su texto y no los trozos del archivo.
+    if (previa.archivo_id && String(previa.texto || "").trim() !== cuerpo) {
+      run(db, "UPDATE pieza SET archivo_id = NULL WHERE id = ?", [id]);
+    }
     run(db, `
       UPDATE pieza
       SET nombre = ?, tipo = ?, texto = ?, clase = ?, etiquetas = COALESCE(?, etiquetas), origen = COALESCE(?, origen), actualizado_en = ?
@@ -82,9 +88,9 @@ export function guardarPieza(db, dato = {}) {
     return leer(db, id);
   }
   const info = run(db, `
-    INSERT INTO pieza (nombre, tipo, texto, activa, clase, etiquetas, origen, creado_en, actualizado_en)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `, [nombre, tipo, cuerpo, clase || cuerpo.length > MAX_TEXTO ? 0 : 1, claseFinal, etiquetas, origen, marca, marca]);
+    INSERT INTO pieza (nombre, tipo, texto, activa, clase, etiquetas, origen, archivo_id, creado_en, actualizado_en)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `, [nombre, tipo, cuerpo, clase || cuerpo.length > MAX_TEXTO ? 0 : 1, claseFinal, etiquetas, origen, Number(dato.archivoId) || null, marca, marca]);
   return leer(db, Number(info.lastInsertRowid));
 }
 

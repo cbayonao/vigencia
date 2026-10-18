@@ -304,15 +304,30 @@
         <div class="zona-soltar" id="conv-soltar">Suelte aquí uno o varios archivos: PDF, imágenes, Word (.docx), Excel, ODS, CSV, HTML, TXT o MD. Todo se convierte en este computador, sin internet.
           <div><label class="ayuda"><input type="checkbox" id="conv-forzar-ocr"> Leer con OCR aunque el PDF traiga texto</label></div>
         </div>
+        <div class="fila-fin conv-destino-fila">
+          <label class="ayuda" for="conv-destino">Llevar lo que convierta al contexto de</label>
+          <select id="conv-destino" class="campo"></select>
+        </div>
         <p class="ayuda" id="conv-ocr"></p>
         <div id="conv-cola"></div>
         <h2 class="seccion serif">Convertidos</h2>
+        <div class="conv-marcados" id="conv-marcados" hidden>
+          <span class="ayuda" id="conv-marcados-cuenta"></span>
+          <div class="botones">
+            <button type="button" class="boton-linea" id="conv-marcados-proyecto">Agregar al proyecto elegido arriba</button>
+            <button type="button" class="boton-linea" id="conv-marcados-biblioteca">Agregar a la biblioteca</button>
+            <button type="button" class="boton-texto" id="conv-marcados-abrir" hidden>Abrir en Documentos</button>
+            <button type="button" class="boton-texto" id="conv-marcados-limpiar">Quitar marcas</button>
+          </div>
+          <p class="ayuda" id="conv-marcados-estado"></p>
+        </div>
         <div id="conv-lista"></div>
         <section id="conv-vista" hidden>
           <h2 class="seccion serif" id="conv-vista-titulo"></h2>
           <div class="fila-fin">
             <select id="conv-proyecto" class="campo"></select>
-            <button type="button" class="boton-linea" id="conv-a-proyecto">Agregar al proyecto</button>
+            <button type="button" class="boton-linea" id="conv-a-proyecto">Agregar al contexto del proyecto</button>
+            <button type="button" class="boton-texto" id="conv-abrir-doc">Abrir en Documentos</button>
             <button type="button" class="boton-linea" id="conv-a-biblioteca">Agregar a la biblioteca</button>
             <button type="button" class="boton-texto" id="conv-copiar">Copiar Markdown</button>
             <button type="button" class="boton-texto" id="conv-guardar-como">Guardar .md</button>
@@ -493,6 +508,22 @@
             <div class="fila-fin">
               <span class="ayuda" id="pdf-comparar-estado"></span>
               <button type="button" class="boton-cobre" id="pdf-comparar-boton">Comparar</button>
+            </div>
+          </section>
+          <section class="juris-card pdf-llevar" id="pdf-llevar" aria-label="Usar el PDF con la IA" hidden>
+            <p class="etiqueta primera">Usar con la IA</p>
+            <p class="ayuda" id="pdf-llevar-nombre"></p>
+            <label><span class="etiqueta">Proyecto de Documentos</span><select id="pdf-llevar-proyecto" class="campo"></select></label>
+            <label class="casilla"><input type="checkbox" id="pdf-llevar-ocr"> <span>Leer con OCR aunque el PDF traiga texto</span></label>
+            <div class="fila-fin">
+              <button type="button" class="boton-linea" id="pdf-llevar-convertir">Convertir a Markdown</button>
+              <button type="button" class="boton-cobre" id="pdf-llevar-contexto">Agregar al contexto del proyecto</button>
+            </div>
+            <progress class="avance" id="pdf-llevar-avance" max="1" hidden aria-label="Avance de la conversión"></progress>
+            <p class="ayuda" id="pdf-llevar-estado"></p>
+            <div class="fila-fin" id="pdf-llevar-siguiente" hidden>
+              <button type="button" class="boton-texto" id="pdf-llevar-ver">Ver en Convertir</button>
+              <button type="button" class="boton-texto" id="pdf-llevar-abrir">Abrir en Documentos</button>
             </div>
           </section>
         </aside>
@@ -1132,9 +1163,10 @@
       <p class="nota">Leyes, jurisprudencia, doctrina, modelos propios y notas de este computador. Es la misma biblioteca del escrito. Marque las que usa este documento: del texto largo solo viajan al modelo los fragmentos que sirven para lo que pide.</p>
       <div class="doc-soltar" id="doc-bib-soltar" tabindex="0" role="button" aria-label="Adjuntar archivos arrastrándolos a la biblioteca">
         <span class="doc-soltar-icono" aria-hidden="true">⤓</span>
-        <span class="doc-soltar-texto"><strong>Arrastre aquí sus archivos</strong> .txt, .md, .docx o .pdf</span>
-        <span class="doc-soltar-sub">Se guardan en la biblioteca y se marcan para este documento. También puede usar Importar.</span>
+        <span class="doc-soltar-texto"><strong>Arrastre aquí sus archivos</strong> PDF, imágenes, Word, Excel, HTML, TXT o MD</span>
+        <span class="doc-soltar-sub">Se convierten en este computador, con OCR si está instalado, y se guardan en la biblioteca con sus páginas. Quedan marcados para este documento. También puede usar Importar.</span>
         <span class="ayuda doc-soltar-estado" id="doc-bib-soltar-estado" hidden></span>
+        <progress class="avance" id="doc-bib-avance" max="1" hidden aria-label="Avance de la conversión"></progress>
       </div>
       <div class="doc-bib-filtros">
         <input id="doc-bib-buscar" placeholder="Buscar en nombre, etiquetas y texto" aria-label="Buscar fuentes" autocomplete="off">
@@ -1180,6 +1212,7 @@
         <div><button type="button" class="boton-linea" id="doc-ctx-elegir">Elegir archivos</button></div>
       </div>
       <p class="ayuda" id="doc-ctx-estado"></p>
+      <progress class="avance" id="doc-ctx-avance" max="1" hidden aria-label="Avance de la conversión"></progress>
       <div id="doc-ctx-archivos"></div>
       <h3 class="seccion serif">Instrucciones del proyecto (AGENTS.md)</h3>
       <p class="ayuda">Partes, hechos clave, pretensiones, estilo y lo que no se debe decir. Con un modelo local conviene que sea corto.</p>

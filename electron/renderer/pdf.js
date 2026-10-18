@@ -3,10 +3,11 @@
 import { ANGULOS, NIVELES_COMPRIMIR, POSICIONES_FIRMA, cajaFirma } from "../compartido/pdftools.js";
 import { diferencias } from "../compartido/documentos.js";
 import { avisar } from "./aviso.js";
+import { conAvance, irA, llenarProyectos } from "./proyectos.js";
 
 const $ = (id) => document.getElementById(id);
 const HERRAMIENTAS_PDF = ["unir", "separar", "rotar", "firmar", "comprimir", "proteger", "desbloquear", "rellenar", "comparar"];
-const pdf = { listo: false, herramienta: "unir", unir: [], separar: "", rotar: "", firmar: "", comprimir: "", proteger: "", desbloquear: "", rellenar: "", compararA: "", compararB: "", firmarInfo: null };
+const pdf = { llevar: null, llevado: null, listo: false, herramienta: "unir", unir: [], separar: "", rotar: "", firmar: "", comprimir: "", proteger: "", desbloquear: "", rellenar: "", compararA: "", compararB: "", firmarInfo: null };
 
 let arrastreDesde = -1;
 
@@ -85,6 +86,59 @@ function elegirHerramienta(cual) {
   }
   pintarAyudaPdf();
   if (cual === "firmar") pintarVistaFirma();
+}
+
+// ---------- Usar con la IA: convertir o llevar al contexto ----------
+
+const COMO_LLEVAR = {
+  elegido: "el PDF que eligió",
+  resultado: "el PDF que acaba de guardar",
+  temporal: "una copia temporal sin contraseña, aunque no haya guardado una",
+};
+
+// Deja listo el panel Usar con la IA para un PDF: el elegido, el que salió
+// de una herramienta o la copia temporal ya desbloqueada.
+async function ofrecerLlevar(ruta, { como = "elegido", nombre = "" } = {}) {
+  if (!ruta) return;
+  pdf.llevar = { ruta, como, nombre: nombre || nombreCorto(ruta) };
+  pdf.llevado = null;
+  $("pdf-llevar").hidden = false;
+  $("pdf-llevar-nombre").textContent = `${pdf.llevar.nombre}, ${COMO_LLEVAR[como] || COMO_LLEVAR.elegido}.`;
+  $("pdf-llevar-siguiente").hidden = true;
+  estado("pdf-llevar-estado", "");
+  await llenarProyectos($("pdf-llevar-proyecto"), { vacio: "Elija un proyecto" });
+}
+
+async function llevar(conProyecto) {
+  if (!pdf.llevar) return;
+  const proyectoId = Number($("pdf-llevar-proyecto").value) || null;
+  if (conProyecto && !proyectoId) {
+    estado("pdf-llevar-estado", "Elija primero el proyecto de Documentos.", true);
+    return;
+  }
+  for (const id of ["pdf-llevar-convertir", "pdf-llevar-contexto"]) $(id).disabled = true;
+  try {
+    const r = await conAvance({ estado: $("pdf-llevar-estado"), barra: $("pdf-llevar-avance") }, () => window.vigencia.pdfAProyecto({
+      ruta: pdf.llevar.ruta,
+      nombre: pdf.llevar.nombre,
+      proyectoId: conProyecto ? proyectoId : null,
+      forzarOcr: $("pdf-llevar-ocr").checked,
+    }));
+    if (!r?.ok) {
+      estado("pdf-llevar-estado", r?.error || "No pude convertirlo.", true);
+      avisar(r?.error || "No pude convertirlo.", "error");
+      return;
+    }
+    pdf.llevado = { archivoId: r.archivo.id, proyectoId: conProyecto ? proyectoId : null };
+    const base = r.cache ? "Ya estaba convertido." : "Convertido a Markdown en este computador.";
+    const aviso = r.archivo.aviso ? ` ${r.archivo.aviso}` : "";
+    estado("pdf-llevar-estado", conProyecto ? `${base} Quedó en el contexto del proyecto.${aviso}` : `${base}${aviso}`, Boolean(r.archivo.aviso));
+    avisar(conProyecto ? "PDF en el contexto del proyecto." : "PDF convertido a Markdown.");
+    $("pdf-llevar-siguiente").hidden = false;
+    $("pdf-llevar-abrir").hidden = !conProyecto;
+  } finally {
+    for (const id of ["pdf-llevar-convertir", "pdf-llevar-contexto"]) $(id).disabled = false;
+  }
 }
 
 // ---------- Unir ----------
@@ -181,6 +235,7 @@ async function unir() {
     if (r?.ok) {
       estado("pdf-unir-estado", `Guardado en ${r.ruta}`);
       avisar("PDF unido y guardado.");
+      ofrecerLlevar(r.ruta, { como: "resultado" });
       pdf.unir = [];
       pintarUnir();
     } else if (!r?.cancelado) {
@@ -198,8 +253,10 @@ async function elegirUno(clave) {
   const r = await window.vigencia.pdfElegir(false);
   if (!r?.ok || !(r.rutas || []).length) return;
   pdf[clave] = r.rutas[0];
-  await pintarUno(clave);
+  const info = await pintarUno(clave);
   if (clave === "rellenar") await pintarCampos();
+  // Con contraseña no se puede leer: se ofrece después de desbloquear.
+  if (clave !== "desbloquear" && clave !== "proteger" && info) ofrecerLlevar(pdf[clave]);
 }
 
 async function pintarUno(clave) {
@@ -229,6 +286,7 @@ async function separar() {
     if (r?.ok) {
       estado("pdf-separar-estado", `Guardado en ${r.ruta}`);
       avisar("Páginas separadas y guardadas.");
+      ofrecerLlevar(r.ruta, { como: "resultado" });
     } else if (!r?.cancelado) {
       estado("pdf-separar-estado", r?.error || "No pude separar.", true);
       avisar(r?.error || "No pude separar.", "error");
@@ -244,6 +302,7 @@ async function rotar() {
     if (r?.ok) {
       estado("pdf-rotar-estado", `Guardado en ${r.ruta}`);
       avisar("PDF girado y guardado.");
+      ofrecerLlevar(r.ruta, { como: "resultado" });
     } else if (!r?.cancelado) {
       estado("pdf-rotar-estado", r?.error || "No pude girar.", true);
       avisar(r?.error || "No pude girar.", "error");
@@ -378,6 +437,7 @@ async function comprimir() {
       const pct = r.antes > 0 ? Math.round((1 - r.despues / r.antes) * 100) : 0;
       estado("pdf-comprimir-estado", `De ${tamanoHumano(r.antes)} a ${tamanoHumano(r.despues)} (${pct}% menos, ${r.nivel}). ${r.tocadas} ${r.tocadas === 1 ? "foto tocada" : "fotos tocadas"}.`);
       avisar(`Comprimido: ${pct}% menos.`);
+      ofrecerLlevar(r.ruta, { como: "resultado" });
     } else if (!r?.cancelado) {
       estado("pdf-comprimir-estado", r?.error || "No pude comprimir.", true);
       avisar(r?.error || "No pude comprimir.", "error");
@@ -422,6 +482,12 @@ async function desbloquear() {
       $("pdf-desbloquear-clave").value = "";
       estado("pdf-desbloquear-estado", `Guardado en ${r.ruta}, ya sin contraseña.`);
       avisar("PDF desbloqueado y guardado.");
+      ofrecerLlevar(r.ruta, { como: "resultado" });
+    } else if (r?.cancelado && r.temporal) {
+      // No guardó copia, pero la versión sin contraseña sirve para la IA.
+      $("pdf-desbloquear-clave").value = "";
+      estado("pdf-desbloquear-estado", "No guardó copia. Igual puede llevarlo a la IA desde Usar con la IA.");
+      ofrecerLlevar(r.temporal, { como: "temporal", nombre: r.nombre });
     } else if (!r?.cancelado) {
       estado("pdf-desbloquear-estado", r?.error || "No pude abrirlo.", true);
       avisar(r?.error || "No pude abrirlo.", "error");
@@ -490,6 +556,7 @@ async function rellenar() {
     if (r?.ok) {
       estado("pdf-rellenar-estado", `Guardado en ${r.ruta}.`);
       avisar("Formulario diligenciado y guardado.");
+      ofrecerLlevar(r.ruta, { como: "resultado" });
     } else if (!r?.cancelado) {
       estado("pdf-rellenar-estado", r?.error || "No pude guardar.", true);
       avisar(r?.error || "No pude guardar.", "error");
@@ -504,6 +571,7 @@ async function rellenar() {
 async function elegirComparar(cual) {
   const r = await window.vigencia.pdfElegir(false);
   if (!r?.ok || !(r.rutas || []).length) return;
+  ofrecerLlevar(r.rutas[0]);
   if (cual === "a") {
     pdf.compararA = r.rutas[0];
     $("pdf-comparar-nombre-a").textContent = `Primero: ${nombreCorto(pdf.compararA)}.`;
@@ -562,6 +630,7 @@ async function firmar() {
     if (r?.ok) {
       estado("pdf-firmar-estado", `Guardado en ${r.ruta}`);
       avisar("PDF firmado y guardado.");
+      ofrecerLlevar(r.ruta, { como: "resultado" });
     } else if (!r?.cancelado) {
       estado("pdf-firmar-estado", r?.error || "No pude firmar.", "error");
       avisar(r?.error || "No pude firmar.", "error");
@@ -625,12 +694,23 @@ export async function abrirPdf() {
 export function iniciarPdf() {
   if (pdf.listo) return;
   pdf.listo = true;
-  for (const h of ["unir", "separar", "rotar", "firmar"]) {
+  for (const h of HERRAMIENTAS_PDF) {
     $(`pdf-tab-${h}`).addEventListener("click", () => elegirHerramienta(h));
   }
+  $("pdf-llevar-convertir").addEventListener("click", () => llevar(false));
+  $("pdf-llevar-contexto").addEventListener("click", () => llevar(true));
+  $("pdf-llevar-ver").addEventListener("click", () => {
+    if (pdf.llevado?.archivoId) irA({ a: "convertir", archivoId: pdf.llevado.archivoId });
+  });
+  $("pdf-llevar-abrir").addEventListener("click", () => {
+    if (pdf.llevado?.proyectoId) irA({ a: "documentos", proyectoId: pdf.llevado.proyectoId, contexto: true });
+  });
   $("pdf-elegir-unir").addEventListener("click", async () => {
     const r = await window.vigencia.pdfElegir(true);
-    if (r?.ok) agregarUnir(r.rutas);
+    if (r?.ok) {
+      await agregarUnir(r.rutas);
+      if (r.rutas?.length === 1) ofrecerLlevar(r.rutas[0]);
+    }
   });
   const zona = $("pdf-soltar");
   zona.addEventListener("dragover", (e) => {
@@ -686,8 +766,6 @@ export function iniciarPdf() {
       ponerTextoEnLienzo();
     }
   });
-  $("pdf-separar-boton").addEventListener("click", separar);
-  $("pdf-rotar-boton").addEventListener("click", rotar);
   $("pdf-comprimir-boton").addEventListener("click", comprimir);
   $("pdf-proteger-boton").addEventListener("click", proteger);
   $("pdf-desbloquear-boton").addEventListener("click", desbloquear);

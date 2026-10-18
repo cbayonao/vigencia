@@ -944,8 +944,24 @@ html[data-tema="oscuro"] .doc-pasaje-ref { background: var(--cobre); }
 .zona-soltar.sobre { background: var(--cobre-suave, #dce8f4); }
 .conv-fila { display: grid; grid-template-columns: 1fr auto auto auto; gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px solid rgba(0,0,0,.08); }
 .conv-fila input { padding: 5px 8px; font-size: 13px; border: 1px solid var(--hover-borde); border-radius: 8px; background: var(--blanco); color: inherit; min-width: 0; }
-.conv-barra { height: 4px; background: rgba(0,0,0,.08); border-radius: 2px; overflow: hidden; grid-column: 1 / -1; }
-.conv-barra > i { display: block; height: 100%; background: var(--cobre, #17456e); }
+/* Barras de avance: <progress> nativo (la política de la ventana no deja anchos en línea). */
+progress.conv-barra, progress.avance { appearance: none; -webkit-appearance: none; width: 100%; height: 4px; border: 0; border-radius: 2px; overflow: hidden; background: rgba(0,0,0,.08); }
+progress.conv-barra { grid-column: 1 / -1; }
+progress.avance { display: block; margin: 6px 0; }
+progress.avance[hidden] { display: none; }
+progress.conv-barra::-webkit-progress-bar, progress.avance::-webkit-progress-bar { background: rgba(0,0,0,.08); }
+progress.conv-barra::-webkit-progress-value, progress.avance::-webkit-progress-value { background: var(--cobre, #17456e); }
+.conv-fila.conv-fila-marca { grid-template-columns: auto 1fr auto auto auto; }
+.conv-fila input[type="checkbox"] { padding: 0; min-width: 0; width: 16px; height: 16px; }
+.conv-destino-fila { margin: 10px 0 2px; gap: 8px; align-items: center; }
+.conv-destino-fila select { max-width: 340px; }
+.conv-marcados { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; padding: 8px 10px; margin-bottom: 8px; border: 1px solid var(--linea); border-radius: 10px; background: var(--papel-2); }
+.conv-marcados[hidden] { display: none; }
+.conv-marcados > p { flex-basis: 100%; margin: 0; }
+.pdf-llevar { border-color: var(--cobre); }
+.pdf-llevar select { width: 100%; }
+.envio-linea { display: flex; flex-wrap: wrap; gap: 4px 6px; }
+.envio-detalle { flex-basis: 100%; color: var(--suave); font-size: 12px; }
 .conv-paneles { display: grid; grid-template-columns: 1fr; gap: 12px; min-height: 360px; }
 .conv-paneles iframe, .conv-paneles img, .conv-paneles textarea { width: 100%; height: 100%; min-height: 360px; border: 1px solid rgba(0,0,0,.12); border-radius: 8px; }
 .conv-paneles textarea { font-family: ui-monospace, monospace; font-size: 12.5px; padding: 8px; }

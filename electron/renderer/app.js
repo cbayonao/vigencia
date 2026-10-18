@@ -26,10 +26,10 @@ import {
 } from "../compartido/sistemas.js";
 import { coincideBusqueda, especialidadDe } from "../compartido/pp.js";
 import { planAbierto } from "../compartido/plan.js";
-import { CAPAS_DOCUMENTOS, abrirDocumentos, iniciarDocumentos, refrescarModelosDocumentos } from "./documentos.js";
+import { CAPAS_DOCUMENTOS, abrirDocumentos, iniciarDocumentos, pedirProyectoDocumentos, refrescarModelosDocumentos } from "./documentos.js";
 import { abrirJuris, iniciarJuris } from "./juris.js";
 import { abrirPdf, iniciarPdf } from "./pdf.js";
-import { abrirConvertir, iniciarConvertir, pintarOcr } from "./convertir.js";
+import { abrirConvertir, iniciarConvertir, pintarOcr, verConvertido } from "./convertir.js";
 import { abrirComentarios, iniciarComentarios } from "./comentarios.js";
 
 const $ = (id) => document.getElementById(id);
@@ -3984,5 +3984,16 @@ iniciarDocumentos({ mostrarDialogo, ocultarDialogo, menuDesplegable, abrirConfig
 iniciarConvertir({ abrirConfigModelos });
 iniciarJuris();
 iniciarPdf();
+// Ir de una pantalla a otra (Convertir y PDF llevan a Documentos y al revés).
+window.addEventListener("vigencia:ir", async (e) => {
+  const d = e.detail || {};
+  if (d.a === "documentos") {
+    pedirProyectoDocumentos(Number(d.proyectoId) || null, { contexto: Boolean(d.contexto) });
+    elegirSistema("documentos");
+  } else if (d.a === "convertir") {
+    elegirSistema("convertir");
+    if (d.archivoId) await verConvertido(Number(d.archivoId));
+  }
+});
 iniciarComentarios({ mostrarDialogo, ocultarDialogo });
 $("abrir-comentarios").addEventListener("click", abrirComentarios);

@@ -2,10 +2,12 @@
 // se convierte en este computador; la ventana solo muestra la cola, el
 // resultado y deja editarlo.
 import { documentoHtml } from "../compartido/formato.js";
+import { detalleArchivo } from "../compartido/convertir.js";
 import { avisar } from "./aviso.js";
+import { irA, llenarProyectos, moverBarra, textoAvance } from "./proyectos.js";
 
 const $ = (id) => document.getElementById(id);
-const cv = { cola: new Map(), elegido: null, ui: null, proyectos: [], vista: "bonita", temporizador: 0 };
+const cv = { cola: new Map(), elegido: null, ui: null, proyectos: [], vista: "bonita", temporizador: 0, marcados: new Set() };
 
 function nodo(tag, clase, texto) {
   const el = document.createElement(tag);
@@ -22,12 +24,7 @@ function estado(id, mensaje, error = false) {
 }
 
 function textoFase(p) {
-  if (p.fase === "en cola") return "En cola";
-  if (p.fase === "leyendo") return p.total ? `Leyendo página ${p.pagina} de ${p.total}` : "Leyendo";
-  if (p.fase === "ocr") return `OCR página ${p.pagina} de ${p.total}`;
-  if (p.fase === "listo") return p.cache ? "Listo (ya estaba convertido)" : "Listo";
-  if (p.fase === "error") return p.codigo === "cancelado" ? "Cancelado" : `Error: ${p.error || ""}`;
-  return p.fase || "";
+  return textoAvance({ ...p, nombre: "" });
 }
 
 function pintarCola() {
@@ -41,11 +38,11 @@ function pintarCola() {
     cancelar.hidden = !p.id || ["listo", "error"].includes(p.fase);
     cancelar.addEventListener("click", () => window.vigencia.convertirCancelar(p.id));
     fila.append(cancelar);
-    const barra = nodo("div", "conv-barra");
-    const i = nodo("i");
-    const avance = p.fase === "listo" ? 1 : p.total ? p.pagina / p.total : 0.05;
-    i.style.width = `${Math.round(avance * 100)}%`;
-    barra.append(i);
+    // <progress> y no un ancho en línea: la política de la ventana no deja estilos en línea.
+    const barra = document.createElement("progress");
+    barra.className = "conv-barra";
+    barra.setAttribute("aria-label", `Avance de ${p.nombre || "archivo"}`);
+    moverBarra(barra, p);
     fila.append(barra);
     fila.dataset.clave = clave;
     caja.append(fila);
@@ -59,10 +56,22 @@ async function pintarLista() {
   if (!r?.ok) return estado("conv-ocr", r?.error || "No pude leer los convertidos.", true);
   estado("conv-ocr", r.ocr?.listo ? "OCR en español instalado: los PDF escaneados y las imágenes se leen en este computador." : r.ocr?.aviso || "");
   if (!r.archivos.length) caja.append(nodo("p", "ayuda", "Todavía no hay archivos convertidos."));
+  const vivos = new Set(r.archivos.filter((a) => a.estado === "listo").map((a) => a.id));
+  for (const id of [...cv.marcados]) if (!vivos.has(id)) cv.marcados.delete(id);
   for (const a of r.archivos) {
-    const fila = nodo("div", "conv-fila");
-    const detalle = [a.estado, a.paginas ? `${a.paginas} págs.` : "", a.paginas_ocr ? `${a.paginas_ocr} con OCR` : "", a.tokens_aprox ? `${Number(a.tokens_aprox).toLocaleString("es-CO")} tokens aprox.` : ""].filter(Boolean).join(", ");
-    fila.append(nodo("span", "", a.nombre), nodo("span", "ayuda", detalle));
+    const fila = nodo("div", "conv-fila conv-fila-marca");
+    const marca = document.createElement("input");
+    marca.type = "checkbox";
+    marca.disabled = a.estado !== "listo";
+    marca.checked = cv.marcados.has(a.id);
+    marca.setAttribute("aria-label", `Marcar ${a.nombre}`);
+    marca.addEventListener("change", () => {
+      if (marca.checked) cv.marcados.add(a.id);
+      else cv.marcados.delete(a.id);
+      pintarMarcados();
+    });
+    const detalle = [a.estado === "listo" ? "" : a.estado, detalleArchivo(a), a.tokens_aprox ? `${Number(a.tokens_aprox).toLocaleString("es-CO")} tokens aprox.` : ""].filter(Boolean).join(", ");
+    fila.append(marca, nodo("span", "", a.nombre), nodo("span", "ayuda", detalle));
     const ver = nodo("button", "boton-texto", "Ver");
     ver.type = "button";
     ver.disabled = a.estado !== "listo";
@@ -75,6 +84,48 @@ async function pintarLista() {
     if (a.error) fila.append(nodo("span", "ayuda error", a.error));
     caja.append(fila);
   }
+  pintarMarcados();
+}
+
+function pintarMarcados() {
+  const n = cv.marcados.size;
+  $("conv-marcados").hidden = n === 0;
+  $("conv-marcados-cuenta").textContent = n === 1 ? "1 archivo marcado." : `${n} archivos marcados.`;
+}
+
+// Varias a la vez: al proyecto elegido arriba o a la biblioteca.
+async function marcadosAProyecto() {
+  const proyecto = Number($("conv-destino").value);
+  if (!proyecto) return estado("conv-marcados-estado", "Elija arriba el proyecto de Documentos.", true);
+  let bien = 0;
+  for (const id of cv.marcados) {
+    const r = await window.vigencia.proyectoArchivoAgregar(proyecto, id);
+    if (r?.ok) bien++;
+  }
+  estado("conv-marcados-estado", `${bien} de ${cv.marcados.size} quedaron en el contexto del proyecto.`, bien < cv.marcados.size);
+  avisar(`${bien} ${bien === 1 ? "archivo" : "archivos"} en el contexto del proyecto.`, bien ? "ok" : "error");
+  $("conv-marcados-abrir").hidden = !bien;
+}
+
+async function marcadosABiblioteca() {
+  let nuevas = 0;
+  let repetidas = 0;
+  const errores = [];
+  for (const id of cv.marcados) {
+    const r = await window.vigencia.convertirABiblioteca(id);
+    if (!r?.ok) errores.push(r?.error || "No pude agregarlo.");
+    else if (r.repetida) repetidas++;
+    else nuevas++;
+  }
+  const partes = [`${nuevas} ${nuevas === 1 ? "fuente nueva" : "fuentes nuevas"} en la biblioteca`];
+  if (repetidas) partes.push(`${repetidas} ya estaban`);
+  if (errores.length) partes.push(errores.join(" "));
+  estado("conv-marcados-estado", `${partes.join(", ")}.`, Boolean(errores.length));
+  avisar(errores.length ? "Algunos no se pudieron agregar." : "Listo en la biblioteca.", errores.length ? "error" : "ok");
+}
+
+export async function verConvertido(id) {
+  if (id) await abrirVista(id);
 }
 
 async function editarNombre(fila, a) {
@@ -97,7 +148,7 @@ async function editarNombre(fila, a) {
         estado("conv-ocr", r?.error || "No pude cambiar el nombre.", true);
         avisar(r?.error || "No pude cambiar el nombre.", "error");
       } else {
-        avisar(`Ahora se llama “${r.archivo?.nombre || entrada.value.trim()}”.`);
+        avisar(`Ahora se llama ${r.archivo?.nombre || entrada.value.trim()}.`);
         if (cv.elegido?.id === a.id && r.archivo) {
           cv.elegido = { ...cv.elegido, nombre: r.archivo.nombre };
           $("conv-vista-titulo").textContent = r.archivo.nombre;
@@ -156,12 +207,8 @@ async function abrirVista(id) {
   // La política de la ventana no deja abrir file:// en un marco; se muestra
   // dónde quedó la copia del original. Pendiente: visor por el servidor local.
   original.append(nodo("p", "ayuda", r.original ? `Copia del original guardada en: ${r.original}` : "No hay copia del original."));
-  original.append(nodo("p", "ayuda", `Motor: ${r.archivo.motor || "sin dato"}. Calidad del texto: ${Math.round(Number(r.archivo.calidad || 0) * 100)} %.`));
-  const inicio = await window.vigencia.documentosInicio();
-  cv.proyectos = inicio?.ok ? inicio.proyectos || [] : [];
-  const sel = $("conv-proyecto");
-  sel.replaceChildren(new Option(cv.proyectos.length ? "Elegir proyecto" : "No hay proyectos en Documentos", ""));
-  for (const p of cv.proyectos) sel.append(new Option(p.nombre, String(p.id)));
+  original.append(nodo("p", "ayuda", `Motor: ${r.archivo.motor || "sin dato"}. ${detalleArchivo(r.archivo) || "Sin datos del archivo"}.`));
+  cv.proyectos = await llenarProyectos($("conv-proyecto"), { vacio: "Elegir proyecto", elegido: $("conv-destino").value });
   // Sube la página de golpe (el suave arrastra el panel interno al final).
   $("conv-vista").scrollIntoView({ block: "start" });
   vista.scrollTop = 0;
@@ -169,7 +216,14 @@ async function abrirVista(id) {
 
 async function convertir(rutas) {
   if (!rutas.length) return;
-  const r = await window.vigencia.convertirRutas(rutas, null, $("conv-forzar-ocr").checked);
+  // Si arriba hay un proyecto elegido, cada archivo queda en su contexto.
+  const proyecto = Number($("conv-destino").value) || null;
+  const r = await window.vigencia.convertirRutas(rutas, proyecto, $("conv-forzar-ocr").checked, "convertir");
+  const listos = (r?.resultados || []).filter((x) => x.archivo?.estado === "listo").length;
+  if (proyecto && listos) {
+    estado("conv-ocr", `${listos} ${listos === 1 ? "archivo quedó" : "archivos quedaron"} en el contexto del proyecto.`);
+    avisar("En el contexto del proyecto.");
+  }
   for (const x of r?.resultados || []) {
     if (x.error && !x.archivo) cv.cola.set(`x-${x.nombre}-${Date.now()}`, { nombre: x.nombre, fase: "error", error: x.error });
   }
@@ -190,6 +244,7 @@ export async function pintarOcr() {
 export function abrirConvertir() {
   pintarCola();
   pintarLista();
+  llenarProyectos($("conv-destino"), { vacio: "Solo convertir, sin proyecto" });
 }
 
 export function iniciarConvertir(ui) {
@@ -252,15 +307,31 @@ export function iniciarConvertir(ui) {
   $("conv-a-biblioteca").addEventListener("click", async () => {
     if (!cv.elegido) return;
     const r = await window.vigencia.convertirABiblioteca(cv.elegido.id);
-    estado("conv-vista-estado", r?.ok ? "Quedó en la biblioteca." : r?.error || "No pude agregarlo.", !r?.ok);
-    avisar(r?.ok ? "Quedó en la biblioteca." : (r?.error || "No pude agregarlo."), r?.ok ? "ok" : "error");
+    const texto = r?.ok ? (r.repetida ? "Ya estaba en la biblioteca." : "Quedó en la biblioteca, con sus páginas.") : r?.error || "No pude agregarlo.";
+    estado("conv-vista-estado", texto, !r?.ok);
+    avisar(texto, r?.ok ? "ok" : "error");
   });
   $("conv-a-proyecto").addEventListener("click", async () => {
     const id = Number($("conv-proyecto").value);
     if (!cv.elegido || !id) return estado("conv-vista-estado", "Elija un proyecto.", true);
     const r = await window.vigencia.proyectoArchivoAgregar(id, cv.elegido.id);
-    estado("conv-vista-estado", r?.ok ? "Quedó en los archivos del proyecto." : r?.error || "No pude agregarlo.", !r?.ok);
-    avisar(r?.ok ? "Quedó en los archivos del proyecto." : (r?.error || "No pude agregarlo."), r?.ok ? "ok" : "error");
+    estado("conv-vista-estado", r?.ok ? "Quedó en el contexto del proyecto." : r?.error || "No pude agregarlo.", !r?.ok);
+    avisar(r?.ok ? "Quedó en el contexto del proyecto." : (r?.error || "No pude agregarlo."), r?.ok ? "ok" : "error");
+  });
+  $("conv-abrir-doc").addEventListener("click", () => {
+    const id = Number($("conv-proyecto").value);
+    if (!id) return estado("conv-vista-estado", "Elija el proyecto que quiere abrir.", true);
+    irA({ a: "documentos", proyectoId: id, contexto: true });
+  });
+  $("conv-marcados-proyecto").addEventListener("click", marcadosAProyecto);
+  $("conv-marcados-biblioteca").addEventListener("click", marcadosABiblioteca);
+  $("conv-marcados-limpiar").addEventListener("click", () => {
+    cv.marcados.clear();
+    pintarLista();
+  });
+  $("conv-marcados-abrir").addEventListener("click", () => {
+    const id = Number($("conv-destino").value);
+    if (id) irA({ a: "documentos", proyectoId: id, contexto: true });
   });
   $("conv-reocr").addEventListener("click", async () => {
     if (!cv.elegido) return;

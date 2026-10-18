@@ -79,7 +79,8 @@ export function prepararArchivo(db, datosDir, { datos, nombre, origen = "usuario
   const marca = ahora();
   const previo = archivoPorHash(db, hash);
   if (previo) {
-    const metaNueva = { ...previo.meta, ...meta };
+    // La herramienta de origen es la primera que lo trajo.
+    const metaNueva = { ...previo.meta, ...meta, ...(previo.meta?.herramienta ? { herramienta: previo.meta.herramienta } : {}) };
     run(db, "UPDATE archivo SET nombre = ?, estado = 'convirtiendo', error = '', meta = ?, actualizado_en = ? WHERE id = ?", [
       previo.nombre || nombre, JSON.stringify(metaNueva), marca, previo.id,
     ]);
@@ -114,6 +115,8 @@ export function guardarResultado(db, datosDir, archivoId, resultado, { encabezad
     version_conversor: VERSION_CONVERSOR,
     paginas: resultado.paginas || 0,
     paginas_ocr: resultado.paginasOcr || 0,
+    paginas_sin_ocr: resultado.paginasSinOcr || 0,
+    calidad: Number(Number(resultado.calidad || 0).toFixed(3)),
     duracion_ms: resultado.duracionMs || 0,
     convertido_en: ahora(),
   };
@@ -125,6 +128,37 @@ export function guardarResultado(db, datosDir, archivoId, resultado, { encabezad
   ]);
   indexarTrozos(db, archivoId, md);
   return leerArchivo(db, archivoId);
+}
+
+// Una sola entrada para convertir unos bytes: caché por hash, conversión
+// (la hace `ejecutar`, que en la app es la cola del utilityProcess),
+// resultado guardado y, si se pide, archivo agregado al proyecto. La usan
+// Convertir, la biblioteca de Documentos, Herramientas PDF y Jurisprudencia.
+// `meta.herramienta` dice de qué pantalla vino.
+export async function convertirConCache(db, datosDir, {
+  datos, nombre, origen = "usuario", meta = {}, encabezado = {}, proyectoId = null, forzarOcr = false,
+} = {}, { ejecutar, alProgreso } = {}) {
+  if (!Buffer.isBuffer(datos)) throw new Aviso("No llegaron los bytes del archivo.");
+  if (proyectoId && !uno(db, "SELECT id FROM doc_proyecto WHERE id = ?", [proyectoId])) throw new Aviso("Ese proyecto ya no está.");
+  // La caché se mira antes de preparar: prepararArchivo deja el estado en
+  // convirtiendo y entonces enCache nunca la encontraba.
+  const cache = enCache(db, datosDir, sha256(datos), { forzarOcr });
+  if (cache) {
+    if (proyectoId) agregarAProyecto(db, proyectoId, cache.id);
+    alProgreso?.({ archivoId: cache.id, nombre, fase: "listo", cache: true });
+    return { archivo: leerArchivo(db, cache.id), cache: true };
+  }
+  const fila = prepararArchivo(db, datosDir, { datos, nombre, origen, meta });
+  const m = await ejecutar({ archivoId: fila.id, ruta: fila.original, nombre, opciones: { forzarOcr } });
+  if (m?.tipo !== "listo") {
+    const a = marcarError(db, fila.id, m?.mensaje, m?.codigo === "cancelado" ? "cancelado" : "error");
+    alProgreso?.({ id: m?.id, archivoId: fila.id, nombre, fase: "error", error: m?.mensaje, codigo: m?.codigo });
+    return { archivo: a, error: m?.mensaje || "No pude convertir ese archivo.", codigo: m?.codigo || "" };
+  }
+  const a = guardarResultado(db, datosDir, fila.id, m.resultado, { encabezado });
+  if (proyectoId) agregarAProyecto(db, proyectoId, a.id);
+  alProgreso?.({ id: m.id, archivoId: a.id, nombre, fase: "listo" });
+  return { archivo: a };
 }
 
 export function marcarError(db, archivoId, mensaje, estado = "error") {

@@ -23,6 +23,20 @@ export const EXTENSIONES = {
   md: "Markdown",
 };
 
+// Tope de páginas escaneadas que se leen con OCR en una sola conversión.
+// Un expediente de 900 páginas escaneadas tardaría horas: se leen las
+// primeras y el aviso dice cuántas quedaron sin leer.
+export const MAX_PAGINAS_OCR = 200;
+
+// De qué pantalla vino cada archivo convertido (archivo.meta.herramienta).
+export const HERRAMIENTAS_ORIGEN = {
+  convertir: "Convertir a Markdown",
+  pdf: "Herramientas PDF",
+  biblioteca: "Biblioteca de fuentes",
+  documentos: "Contexto del proyecto",
+  jurisprudencia: "Jurisprudencia",
+};
+
 export const IMAGENES = new Set(["png", "jpg", "jpeg", "tif", "tiff", "bmp", "webp"]);
 
 export function extensionDe(nombre) {
@@ -152,6 +166,35 @@ export function encabezadoYaml(meta = {}) {
 
 export function quitarEncabezado(md) {
   return String(md || "").replace(/^---\n[\s\S]*?\n---\n+/, "");
+}
+
+// Texto para guardar como fuente de la biblioteca: sin encabezado YAML ni
+// marcas de página (las páginas siguen en los trozos del archivo).
+export function textoLegible(md) {
+  return quitarEncabezado(md).replace(/^<!-- pagina \d+ -->\s*$/gm, "").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+// Aviso cuando hay más páginas escaneadas que el tope de OCR.
+export function avisoTopeOcr(leidas, total) {
+  const faltan = Math.max(0, Number(total || 0) - Number(leidas || 0));
+  if (!faltan) return "";
+  return `Se leyeron con OCR las primeras ${leidas} páginas escaneadas. Las otras ${faltan} quedaron sin leer: separe el PDF en partes en Herramientas PDF y conviértalas aparte.`;
+}
+
+// Resumen en palabras de un archivo convertido: tipo, páginas, OCR,
+// calidad y de dónde vino. Lo muestran Revisar envío y las listas.
+export function detalleArchivo(a = {}) {
+  const meta = a.meta && typeof a.meta === "object" ? a.meta : {};
+  const paginas = Number(a.paginas ?? meta.paginas ?? 0);
+  const ocr = Number(a.paginas_ocr ?? meta.paginas_ocr ?? 0);
+  const calidad = Number(a.calidad ?? meta.calidad ?? 0);
+  const herramienta = HERRAMIENTAS_ORIGEN[meta.herramienta] || "";
+  const partes = [EXTENSIONES[String(a.extension || "").toLowerCase()] || ""];
+  if (paginas) partes.push(`${paginas} ${paginas === 1 ? "página" : "páginas"}`);
+  if (ocr) partes.push(`${ocr} leídas con OCR`);
+  if (calidad) partes.push(`calidad del texto ${Math.round(calidad * 100)} %`);
+  if (herramienta) partes.push(`desde ${herramienta}`);
+  return partes.filter(Boolean).join(", ");
 }
 
 // Troceo con página: sigue las marcas <!-- pagina n --> y el último

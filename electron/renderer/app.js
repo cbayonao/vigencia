@@ -28,6 +28,7 @@ import { coincideBusqueda, especialidadDe } from "../compartido/pp.js";
 import { planAbierto } from "../compartido/plan.js";
 import { CAPAS_DOCUMENTOS, abrirDocumentos, iniciarDocumentos, refrescarModelosDocumentos } from "./documentos.js";
 import { abrirJuris, iniciarJuris } from "./juris.js";
+import { abrirPdf, iniciarPdf } from "./pdf.js";
 import { abrirConvertir, iniciarConvertir, pintarOcr } from "./convertir.js";
 import { abrirComentarios, iniciarComentarios } from "./comentarios.js";
 
@@ -2959,6 +2960,8 @@ function pintarSistemas() {
   const documentos = $("sistema-documentos");
   documentos.classList.toggle("activo", estado.sistema === "documentos");
   $("sistema-convertir").classList.toggle("activo", estado.sistema === "convertir");
+  $("sistema-jurisprudencia").classList.toggle("activo", estado.sistema === "juris");
+  $("sistema-pdf").classList.toggle("activo", estado.sistema === "pdf");
   if (estado.sistema === "documentos") documentos.setAttribute("aria-current", "page");
   else documentos.removeAttribute("aria-current");
   const lista = $("sistemas-lista");
@@ -2985,7 +2988,7 @@ function pintarSistemas() {
 function elegirDocumentos() {
   estado.sistema = "documentos";
   cerrarCombos();
-  for (const id of ["pantalla-consulta", "pantalla-pp", "pantalla-spoa", "pantalla-samai", "pantalla-juris", "pantalla-construccion", "pantalla-convertir"]) $(id).hidden = true;
+  for (const id of ["pantalla-consulta", "pantalla-pp", "pantalla-spoa", "pantalla-samai", "pantalla-juris", "pantalla-construccion", "pantalla-convertir", "pantalla-pdf"]) $(id).hidden = true;
   $("pantalla-documentos").hidden = false;
   document.title = "Documentos";
   pintarSistemas();
@@ -2995,12 +2998,32 @@ function elegirDocumentos() {
 function elegirConvertir() {
   estado.sistema = "convertir";
   cerrarCombos();
-  for (const id of ["pantalla-consulta", "pantalla-pp", "pantalla-spoa", "pantalla-samai", "pantalla-juris", "pantalla-construccion", "pantalla-documentos"]) $(id).hidden = true;
+  for (const id of ["pantalla-consulta", "pantalla-pp", "pantalla-spoa", "pantalla-samai", "pantalla-juris", "pantalla-construccion", "pantalla-documentos", "pantalla-pdf"]) $(id).hidden = true;
   $("pantalla-convertir").hidden = false;
   document.title = "Convertir a Markdown";
   pintarSistemas();
   $("sistema-convertir").classList.add("activo");
   abrirConvertir();
+}
+
+function elegirJurisprudencia() {
+  estado.sistema = "juris";
+  cerrarCombos();
+  for (const id of ["pantalla-consulta", "pantalla-pp", "pantalla-spoa", "pantalla-samai", "pantalla-construccion", "pantalla-convertir", "pantalla-documentos", "pantalla-pdf"]) $(id).hidden = true;
+  $("pantalla-juris").hidden = false;
+  document.title = "Jurisprudencia · Vigencia";
+  pintarSistemas();
+  abrirJuris();
+}
+
+function elegirPdf() {
+  estado.sistema = "pdf";
+  cerrarCombos();
+  for (const id of ["pantalla-consulta", "pantalla-pp", "pantalla-spoa", "pantalla-samai", "pantalla-construccion", "pantalla-convertir", "pantalla-documentos", "pantalla-juris"]) $(id).hidden = true;
+  $("pantalla-pdf").hidden = false;
+  document.title = "Herramientas PDF · Vigencia";
+  pintarSistemas();
+  abrirPdf();
 }
 
 function elegirSistema(id) {
@@ -3012,9 +3035,21 @@ function elegirSistema(id) {
     elegirConvertir();
     return;
   }
+  if (id === "juris") {
+    elegirJurisprudencia();
+    return;
+  }
+  if (id === "pdf") {
+    elegirPdf();
+    return;
+  }
   $("pantalla-documentos").hidden = true;
   $("pantalla-convertir").hidden = true;
+  $("pantalla-juris").hidden = true;
+  $("pantalla-pdf").hidden = true;
   $("sistema-convertir").classList.remove("activo");
+  $("sistema-jurisprudencia").classList.remove("activo");
+  $("sistema-pdf").classList.remove("activo");
   const sistema = sistemaDe(sistemaElegible(id, estado.ocultos));
   estado.sistema = sistema.id;
   cerrarCombos();
@@ -3022,21 +3057,18 @@ function elegirSistema(id) {
   const pp = sistema.id === "micrositio";
   const spoa = sistema.id === "spoa";
   const samai = sistema.id === "samai";
-  const juris = sistema.id === "juris";
   $("pantalla-consulta").hidden = !propia;
   $("pantalla-pp").hidden = !pp;
   $("pantalla-spoa").hidden = !spoa;
   $("pantalla-samai").hidden = !samai;
-  $("pantalla-juris").hidden = !juris;
-  $("pantalla-construccion").hidden = propia || pp || spoa || samai || juris;
-  if (!propia && !pp && !spoa && !samai && !juris) {
+  $("pantalla-construccion").hidden = propia || pp || spoa || samai;
+  if (!propia && !pp && !spoa && !samai) {
     $("obra-sistema").textContent = sistema.fuente ? `${sistema.nombre} · ${sistema.fuente}` : sistema.nombre;
     $("obra-texto").textContent = `Estamos construyendo la consulta de ${sistema.nombre}. Mientras tanto, sus expedientes siguen en la consulta nacional unificada.`;
   }
   if (pp) abrirPp();
   if (spoa) pintarSpCasos();
   if (samai) abrirSamai();
-  if (juris) abrirJuris();
   document.title = `${propia ? "Procesos" : sistema.nombre} · Vigencia`;
   pintarSistemas();
 }
@@ -3946,8 +3978,11 @@ $("samai-texto").addEventListener("input", aplicarFiltrosSamai);
 
 $("sistema-documentos").addEventListener("click", () => elegirSistema("documentos"));
 $("sistema-convertir").addEventListener("click", () => elegirSistema("convertir"));
+$("sistema-jurisprudencia").addEventListener("click", () => elegirSistema("juris"));
+$("sistema-pdf").addEventListener("click", () => elegirSistema("pdf"));
 iniciarDocumentos({ mostrarDialogo, ocultarDialogo, menuDesplegable, abrirConfigModelos });
 iniciarConvertir({ abrirConfigModelos });
 iniciarJuris();
+iniciarPdf();
 iniciarComentarios({ mostrarDialogo, ocultarDialogo });
 $("abrir-comentarios").addEventListener("click", abrirComentarios);

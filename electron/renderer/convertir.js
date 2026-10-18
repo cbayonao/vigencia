@@ -1,8 +1,11 @@
 // Pantalla Convertir a Markdown y la sección OCR de Modelos de IA. Todo
 // se convierte en este computador; la ventana solo muestra la cola, el
 // resultado y deja editarlo.
+import { documentoHtml } from "../compartido/formato.js";
+import { avisar } from "./aviso.js";
+
 const $ = (id) => document.getElementById(id);
-const cv = { cola: new Map(), elegido: null, ui: null, proyectos: [] };
+const cv = { cola: new Map(), elegido: null, ui: null, proyectos: [], vista: "bonita", temporizador: 0 };
 
 function nodo(tag, clase, texto) {
   const el = document.createElement(tag);
@@ -65,9 +68,76 @@ async function pintarLista() {
     ver.disabled = a.estado !== "listo";
     ver.addEventListener("click", () => abrirVista(a.id));
     fila.append(ver);
+    const renombrar = nodo("button", "boton-texto", "Renombrar");
+    renombrar.type = "button";
+    renombrar.addEventListener("click", () => editarNombre(fila, a));
+    fila.append(renombrar);
     if (a.error) fila.append(nodo("span", "ayuda error", a.error));
     caja.append(fila);
   }
+}
+
+async function editarNombre(fila, a) {
+  const actual = fila.querySelector("span");
+  if (!actual) return;
+  const entrada = document.createElement("input");
+  entrada.value = a.nombre || "";
+  entrada.maxLength = 120;
+  entrada.setAttribute("aria-label", "Nuevo nombre del archivo");
+  actual.replaceWith(entrada);
+  entrada.focus();
+  entrada.select();
+  let listo = false;
+  const cerrar = async (guardar) => {
+    if (listo) return;
+    listo = true;
+    if (guardar) {
+      const r = await window.vigencia.convertirRenombrar(a.id, entrada.value);
+      if (!r?.ok) {
+        estado("conv-ocr", r?.error || "No pude cambiar el nombre.", true);
+        avisar(r?.error || "No pude cambiar el nombre.", "error");
+      } else {
+        avisar(`Ahora se llama “${r.archivo?.nombre || entrada.value.trim()}”.`);
+        if (cv.elegido?.id === a.id && r.archivo) {
+          cv.elegido = { ...cv.elegido, nombre: r.archivo.nombre };
+          $("conv-vista-titulo").textContent = r.archivo.nombre;
+        }
+      }
+    }
+    await pintarLista();
+  };
+  entrada.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") cerrar(true);
+    else if (e.key === "Escape") cerrar(false);
+  });
+  entrada.addEventListener("blur", () => cerrar(true));
+}
+
+function pintarBonito() {
+  const vista = $("conv-bonito");
+  if (!vista || $("conv-vista").hidden) return;
+  try {
+    vista.innerHTML = documentoHtml($("conv-md").value) || '<p class="ayuda">Nada que mostrar todavía.</p>';
+  } catch {
+    vista.replaceChildren(nodo("p", "ayuda error", "No pude dibujar la vista."));
+  }
+}
+
+function programarBonito() {
+  window.clearTimeout(cv.temporizador);
+  cv.temporizador = window.setTimeout(pintarBonito, 250);
+}
+
+function elegirVista(cual) {
+  cv.vista = cual;
+  const bonita = cual === "bonita";
+  $("conv-bonito").hidden = !bonita;
+  $("conv-md").hidden = bonita;
+  $("tab-vista-bonita").classList.toggle("elegida", bonita);
+  $("tab-vista-codigo").classList.toggle("elegida", !bonita);
+  $("tab-vista-bonita").setAttribute("aria-selected", String(bonita));
+  $("tab-vista-codigo").setAttribute("aria-selected", String(!bonita));
+  if (bonita) pintarBonito();
 }
 
 async function abrirVista(id) {
@@ -77,6 +147,9 @@ async function abrirVista(id) {
   $("conv-vista").hidden = false;
   $("conv-vista-titulo").textContent = r.archivo.nombre;
   $("conv-md").value = r.markdown;
+  elegirVista("bonita");
+  const vista = $("conv-bonito");
+  vista.scrollTop = 0;
   estado("conv-vista-estado", r.archivo.aviso || "");
   const original = $("conv-original");
   original.replaceChildren();
@@ -89,7 +162,9 @@ async function abrirVista(id) {
   const sel = $("conv-proyecto");
   sel.replaceChildren(new Option(cv.proyectos.length ? "Elegir proyecto" : "No hay proyectos en Documentos", ""));
   for (const p of cv.proyectos) sel.append(new Option(p.nombre, String(p.id)));
-  $("conv-vista").scrollIntoView({ behavior: "smooth", block: "start" });
+  // Sube la página de golpe (el suave arrastra el panel interno al final).
+  $("conv-vista").scrollIntoView({ block: "start" });
+  vista.scrollTop = 0;
 }
 
 async function convertir(rutas) {
@@ -151,39 +226,54 @@ export function iniciarConvertir(ui) {
     if (!cv.elegido) return;
     const r = await window.vigencia.convertirGuardarEdicion(cv.elegido.id, $("conv-md").value);
     estado("conv-vista-estado", r?.ok ? `Guardé la revisión ${r.revision}. La conversión original se conserva.` : r?.error || "No pude guardar.", !r?.ok);
+    avisar(r?.ok ? `Revisión ${r.revision} guardada.` : (r?.error || "No pude guardar."), r?.ok ? "ok" : "error");
   });
   $("conv-copiar").addEventListener("click", async () => {
     try {
       await navigator.clipboard.writeText($("conv-md").value);
       estado("conv-vista-estado", "Markdown copiado.");
+      avisar("Markdown copiado.");
     } catch {
       estado("conv-vista-estado", "No pude copiar.", true);
+      avisar("No pude copiar.", "error");
     }
   });
   $("conv-guardar-como").addEventListener("click", async () => {
     if (!cv.elegido) return;
     const r = await window.vigencia.convertirGuardarComo(cv.elegido.id);
-    if (r?.ok) estado("conv-vista-estado", `Guardado en ${r.ruta}`);
-    else if (!r?.cancelado) estado("conv-vista-estado", r?.error || "No pude guardarlo.", true);
+    if (r?.ok) {
+      estado("conv-vista-estado", `Guardado en ${r.ruta}`);
+      avisar("Archivo .md guardado.");
+    } else if (!r?.cancelado) {
+      estado("conv-vista-estado", r?.error || "No pude guardarlo.", true);
+      avisar(r?.error || "No pude guardarlo.", "error");
+    }
   });
   $("conv-a-biblioteca").addEventListener("click", async () => {
     if (!cv.elegido) return;
     const r = await window.vigencia.convertirABiblioteca(cv.elegido.id);
     estado("conv-vista-estado", r?.ok ? "Quedó en la biblioteca." : r?.error || "No pude agregarlo.", !r?.ok);
+    avisar(r?.ok ? "Quedó en la biblioteca." : (r?.error || "No pude agregarlo."), r?.ok ? "ok" : "error");
   });
   $("conv-a-proyecto").addEventListener("click", async () => {
     const id = Number($("conv-proyecto").value);
     if (!cv.elegido || !id) return estado("conv-vista-estado", "Elija un proyecto.", true);
     const r = await window.vigencia.proyectoArchivoAgregar(id, cv.elegido.id);
     estado("conv-vista-estado", r?.ok ? "Quedó en los archivos del proyecto." : r?.error || "No pude agregarlo.", !r?.ok);
+    avisar(r?.ok ? "Quedó en los archivos del proyecto." : (r?.error || "No pude agregarlo."), r?.ok ? "ok" : "error");
   });
   $("conv-reocr").addEventListener("click", async () => {
     if (!cv.elegido) return;
     estado("conv-vista-estado", "Reconvirtiendo con OCR...");
     const r = await window.vigencia.convertirReconvertir(cv.elegido.id);
-    if (!r?.ok || r.error) return estado("conv-vista-estado", r?.error || "No pude reconvertir.", true);
+    if (!r?.ok || r.error) {
+      estado("conv-vista-estado", r?.error || "No pude reconvertir.", true);
+      avisar(r?.error || "No pude reconvertir.", "error");
+      return;
+    }
     await abrirVista(r.archivo.id);
     await pintarLista();
+    avisar("Reconvertido con OCR.");
   });
   $("ocr-instalar").addEventListener("click", async () => {
     $("ocr-instalar").disabled = true;
@@ -201,4 +291,7 @@ export function iniciarConvertir(ui) {
     await window.vigencia.convertirOcrQuitar();
     await pintarOcr();
   });
+  $("tab-vista-bonita").addEventListener("click", () => elegirVista("bonita"));
+  $("tab-vista-codigo").addEventListener("click", () => elegirVista("codigo"));
+  $("conv-md").addEventListener("input", programarBonito);
 }

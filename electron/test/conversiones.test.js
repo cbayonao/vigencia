@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { abrirBase, uno } from "../src/db.js";
 import {
   agregarAProyecto, archivosDelProyecto, candidatosFts, enCache, guardarAgentes, guardarEdicion, guardarResultado, incluirEnContexto,
-  leerMarkdown, limpiarCache, prepararArchivo, agentesParaContexto, PLANTILLA_AGENTS,
+  leerMarkdown, limpiarCache, prepararArchivo, renombrarArchivo, agentesParaContexto, PLANTILLA_AGENTS,
 } from "../src/conversiones.js";
 import { convertirRuta } from "../src/convertir/convertidores.js";
 import { actualizarProyecto, conversar, crearProyecto, prepararVuelta } from "../src/documentos.js";
@@ -116,4 +116,14 @@ test("con modelo local nada pide confirmación ni se registra envío", async () 
   const local = () => ({ id: "gguf:x", nombre: "Local", usa: true, origen: "local" });
   await conversar({ db: tmp.db, datosDir: tmp.dir, proyectoId: p.id, mensaje: "memorial", resolverModelo: local, pedirTexto: async () => ({ texto: "Asunto: M\n\n## Uno\nDos.", origen: "local" }) });
   assert.equal(Number(uno(tmp.db, "SELECT COUNT(*) n FROM envio_nube").n), 0);
+});
+
+test("renombrar cambia solo el rótulo y exige mínimo", async () => {
+  const tmp = temporal();
+  const a = await convertir(tmp, "texto.pdf");
+  const r = renombrarArchivo(tmp.db, a.id, "  Demanda 2024  ");
+  assert.equal(r.nombre, "Demanda 2024");
+  assert.equal(r.sha256, a.sha256);
+  assert.throws(() => renombrarArchivo(tmp.db, a.id, "ab"), /3 letras/);
+  assert.throws(() => renombrarArchivo(tmp.db, 99999, "Nombre largo"), /ya no está/);
 });

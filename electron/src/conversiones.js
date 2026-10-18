@@ -37,6 +37,17 @@ export function leerArchivo(db, id) {
   return archivoDe(uno(db, "SELECT * FROM archivo WHERE id = ?", [id]));
 }
 
+// Cambiarle el nombre después de cargado: solo es el rótulo, la caché va
+// por hash y no se toca.
+export function renombrarArchivo(db, id, nombre) {
+  const previo = leerArchivo(db, Number(id) || 0);
+  if (!previo) throw new Aviso("Ese archivo ya no está.");
+  const limpio = String(nombre || "").replace(/\s+/g, " ").trim().slice(0, 120);
+  if (limpio.length < 3) throw new Aviso("El nombre necesita al menos 3 letras.");
+  run(db, "UPDATE archivo SET nombre = ?, actualizado_en = ? WHERE id = ?", [limpio, ahora(), previo.id]);
+  return leerArchivo(db, previo.id);
+}
+
 export function archivoPorHash(db, hash) {
   return archivoDe(uno(db, "SELECT * FROM archivo WHERE sha256 = ?", [hash]));
 }

@@ -816,6 +816,50 @@ html[data-tema="oscuro"] .doc-marca-dato { background: #4a4220; color: #f6e9b5; 
 #dialogo-doc-biblioteca .fila-fin { flex-wrap: wrap; justify-content: flex-end; }
 
 /* Jurisprudencia: búsqueda unificada de relatorías */
+/* Avisos flotantes: confirman cada acción en cualquier pantalla. */
+#avisos { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); z-index: 200; display: flex; flex-direction: column; gap: 8px; align-items: center; pointer-events: none; }
+@keyframes aviso-entra { from { opacity: 0; transform: translateY(12px) scale(0.96); } to { opacity: 1; transform: none; } }
+.aviso-aviso { margin: 0; padding: 10px 18px; border-radius: 999px; font-size: 13.5px; font-weight: 600; color: #fff; background: #2e6da8; box-shadow: 0 4px 16px rgb(0 0 0 / 0.25); opacity: 1; transition: opacity 0.3s, transform 0.3s; max-width: min(90vw, 560px); text-align: center; animation: aviso-entra 0.25s ease-out; }
+.aviso-aviso.aviso-error { background: #8d3a32; }
+.aviso-aviso.fuera { opacity: 0; transform: translateY(8px); }
+
+/* Micro-animaciones: todo responde al tacto. */
+.boton-cobre, .boton-linea, .boton-texto, .pp-tab { transition: transform 0.1s ease, box-shadow 0.15s ease, background 0.15s ease; }
+.boton-cobre:active, .boton-linea:active, .boton-texto:active, .pp-tab:active { transform: scale(0.96); }
+.tarjeta { transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease, background 0.15s ease; }
+.tarjeta:hover { transform: translateY(-1px); box-shadow: 0 3px 10px rgb(0 0 0 / 0.08); }
+.juris-fuente { transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease, background 0.15s ease; }
+.juris-fuente:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgb(0 0 0 / 0.1); }
+.juris-fuente:active { transform: scale(0.96); }
+.juris-fuente .pdf-mosaico-icono, .juris-fuente-icono { display: inline-block; transition: transform 0.2s ease; }
+.juris-fuente:hover .pdf-mosaico-icono, .juris-fuente:hover .juris-fuente-icono { transform: scale(1.15) rotate(-4deg); }
+@keyframes ayuda-pulso { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+.ayuda.procesando { animation: ayuda-pulso 1.1s ease-in-out infinite; }
+.conv-fila.arrastrando { opacity: 0.4; }
+.conv-fila.destino-arriba { box-shadow: 0 -3px 0 var(--cobre); }
+.conv-fila.destino-abajo { box-shadow: 0 3px 0 var(--cobre); }
+[draggable="true"] { cursor: grab; }
+[draggable="true"]:active { cursor: grabbing; }
+@media (prefers-reduced-motion: reduce) {
+  .aviso-aviso, .boton-cobre, .boton-linea, .boton-texto, .pp-tab, .tarjeta, .juris-fuente { animation: none; transition: none; }
+  .ayuda.procesando { animation: none; }
+}
+
+/* Herramientas PDF */
+.pdf-lado { overflow-y: auto; }
+.pdf-vista { position: relative; border: 1px solid var(--linea); border-radius: 10px; background: var(--blanco); box-shadow: 0 2px 10px rgb(0 0 0 / 0.08); width: 100%; max-width: 330px; margin: 0 auto; overflow: hidden; display: flex; align-items: center; justify-content: center; min-height: 120px; }
+.pdf-vista canvas { width: 100%; height: auto; display: block; }
+.pdf-vista .ayuda { margin: 12px; text-align: center; }
+.juris-fuentes.pdf-cuadricula { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.juris-fuente.pdf-mosaico { align-items: center; text-align: center; padding: 12px 6px 10px; border-left-width: 1px; gap: 4px; }
+.pdf-mosaico-icono { font-size: 24px; line-height: 1.2; }
+.pdf-mosaico .juris-fuente-nombre { font-size: 12.5px; }
+.juris-fuente.pdf-mosaico.elegida { border-left-color: var(--cobre); }
+.pdf-lienzo { width: 100%; height: 150px; border: 1px solid var(--hover-borde); border-radius: 10px; background: var(--blanco); cursor: crosshair; touch-action: none; }
+input[type="range"] { width: 100%; }
+.pdf-campo { display: flex; flex-direction: column; min-width: 0; margin-top: 6px; }
+.pdf-campo .etiqueta { margin: 4px 0 2px; overflow-wrap: anywhere; }
+
 /* Jurisprudencia: todo agrupado en tarjetas, nada suelto */
 .juris-lado { padding: 14px 14px 18px; gap: 12px; }
 .juris-card { background: var(--blanco); border: 1px solid var(--linea); border-radius: 14px; padding: 14px 16px; }
@@ -898,12 +942,41 @@ html[data-tema="oscuro"] .doc-pasaje-ref { background: var(--cobre); }
 .juris-md { white-space: pre-wrap; max-height: 420px; overflow: auto; font-family: ui-monospace, monospace; font-size: 12.5px; }
 .zona-soltar { border: 2px dashed var(--cobre, #17456e); border-radius: 10px; padding: 22px; text-align: center; }
 .zona-soltar.sobre { background: var(--cobre-suave, #dce8f4); }
-.conv-fila { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px solid rgba(0,0,0,.08); }
+.conv-fila { display: grid; grid-template-columns: 1fr auto auto auto; gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px solid rgba(0,0,0,.08); }
+.conv-fila input { padding: 5px 8px; font-size: 13px; border: 1px solid var(--hover-borde); border-radius: 8px; background: var(--blanco); color: inherit; min-width: 0; }
 .conv-barra { height: 4px; background: rgba(0,0,0,.08); border-radius: 2px; overflow: hidden; grid-column: 1 / -1; }
 .conv-barra > i { display: block; height: 100%; background: var(--cobre, #17456e); }
-.conv-paneles { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; min-height: 360px; }
+.conv-paneles { display: grid; grid-template-columns: 1fr; gap: 12px; min-height: 360px; }
 .conv-paneles iframe, .conv-paneles img, .conv-paneles textarea { width: 100%; height: 100%; min-height: 360px; border: 1px solid rgba(0,0,0,.12); border-radius: 8px; }
 .conv-paneles textarea { font-family: ui-monospace, monospace; font-size: 12.5px; padding: 8px; }
+.conv-paneles > .conv-doc { min-width: 0; display: flex; flex-direction: column; }
+.conv-paneles > .conv-doc > textarea { flex: 1; }
+.conv-origen { font-size: 12px; color: var(--suave); margin: 2px 0 0; }
+.conv-origen p { margin: 2px 0; overflow-wrap: anywhere; }
+
+/* Vista bonita del Markdown: hoja de papel con tipografía jurídica. */
+.conv-bonito { background: var(--blanco); border: 1px solid rgba(0,0,0,.12); border-radius: 8px; padding: 28px 32px; max-height: 70vh; overflow: auto; font-family: Georgia, "Times New Roman", serif; font-size: 14.5px; line-height: 1.65; color: var(--tinta); }
+.conv-bonito > :first-child { margin-top: 0; }
+.conv-bonito > :last-child { margin-bottom: 0; }
+.conv-titulo { font-size: 22px; line-height: 1.3; margin: 0 0 4px; font-weight: 700; }
+.conv-seccion { font-size: 16px; margin: 22px 0 8px; padding-bottom: 4px; border-bottom: 2px solid var(--cobre, #17456e); font-weight: 700; }
+.conv-bonito p { margin: 8px 0 0; text-align: justify; max-width: 78ch; }
+.conv-bonito ul, .conv-bonito ol { margin: 8px 0 0; padding-left: 26px; max-width: 78ch; }
+.conv-bonito li { margin: 3px 0; }
+.conv-bonito li::marker { color: var(--cobre, #17456e); font-weight: 700; }
+.conv-bonito blockquote { margin: 12px 0 0; padding: 10px 16px; border-left: 4px solid var(--cobre, #17456e); background: var(--papel-2); border-radius: 0 8px 8px 0; font-style: italic; }
+.conv-bonito blockquote p { margin: 0; text-align: left; }
+.conv-bonito .firma { text-align: center; letter-spacing: 0.12em; margin-top: 18px; }
+.conv-pagina { text-align: center !important; color: var(--suave); font-size: 12px; letter-spacing: 0.22em; margin: 20px 0 8px; }
+.conv-bonito table.doc-tabla { width: 100%; border-collapse: collapse; margin: 12px 0 0; font-size: 13px; font-family: inherit; }
+.conv-bonito table.doc-tabla th, .conv-bonito table.doc-tabla td { border: 1px solid #c9b8a4; padding: 6px 10px; text-align: left; vertical-align: top; }
+.conv-bonito table.doc-tabla th { background: var(--papel-2); font-weight: 700; }
+.conv-bonito table.doc-tabla tbody tr:nth-child(even) td { background: rgb(0 0 0 / 0.025); }
+.conv-bonito strong { font-weight: 700; }
+.conv-bonito u { text-underline-offset: 2px; }
+html[data-tema="oscuro"] .conv-bonito table.doc-tabla th { background: rgb(255 255 255 / 0.06); }
+html[data-tema="oscuro"] .conv-bonito table.doc-tabla th, html[data-tema="oscuro"] .conv-bonito table.doc-tabla td { border-color: #5a5348; }
+html[data-tema="oscuro"] .conv-bonito blockquote { background: rgb(255 255 255 / 0.05); }
 .envio-texto { white-space: pre-wrap; max-height: 50vh; overflow: auto; font-family: ui-monospace, monospace; font-size: 12px; border: 1px solid rgba(0,0,0,.12); padding: 8px; border-radius: 8px; }
 .ctx-archivo { display: flex; gap: 8px; align-items: center; padding: 4px 0; width: 100%; }
 .ctx-archivo input[type="checkbox"] { flex: none; width: auto; margin: 0; }

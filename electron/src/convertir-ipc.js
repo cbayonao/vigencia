@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { EXTENSIONES, encabezadoYaml, esConvertible, quitarEncabezado } from "../compartido/convertir.js";
 import {
   agregarAProyecto, archivosDelProyecto, enCache, guardarAgentes, guardarEdicion, guardarResultado, incluirEnContexto, leerAgentes,
-  leerArchivo, leerMarkdown, limpiarCache, listarArchivos, marcarError, prepararArchivo, quitarDeProyecto, PLANTILLA_AGENTS,
+  leerArchivo, leerMarkdown, limpiarCache, listarArchivos, marcarError, prepararArchivo, quitarDeProyecto, renombrarArchivo, PLANTILLA_AGENTS,
 } from "./conversiones.js";
 import { guardarPieza } from "./biblioteca.js";
 import { run } from "./db.js";
@@ -165,6 +165,7 @@ export function registrarConvertir({ ipcMain, dialog, utilityProcess, db, datosD
   });
   ipcMain.handle("convertir-cancelar", (_e, dato) => responder(() => ({ cancelado: cola.cancelar(Number(dato?.id)) })));
   ipcMain.handle("convertir-leer", (_e, dato) => responder(() => leerMarkdown(base(), datosDir(), dato?.id)));
+  ipcMain.handle("convertir-renombrar", (_e, dato) => responder(() => ({ archivo: renombrarArchivo(base(), dato?.id, dato?.nombre) })));
   ipcMain.handle("convertir-guardar-edicion", (_e, dato) => responder(() => guardarEdicion(base(), datosDir(), dato?.id, dato?.markdown)));
   ipcMain.handle("convertir-guardar-como", async (_e, dato) => {
     try {

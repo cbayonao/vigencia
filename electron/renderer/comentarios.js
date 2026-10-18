@@ -1,4 +1,6 @@
 // Diálogo Comentarios y reportes: formulario + lo aprobado por el equipo.
+import { avisar } from "./aviso.js";
+
 const $ = (id) => document.getElementById(id);
 
 const estado = { listo: false };
@@ -73,10 +75,12 @@ async function enviar(evento) {
     });
     if (!r?.ok) {
       mostrarError(r?.error || "No pude enviar el comentario.");
+      avisar(r?.error || "No pude enviar el comentario.", "error");
       return;
     }
     $("comentario-texto").value = "";
     $("comentario-estado").textContent = "¡Gracias! Quedó pendiente de revisión.";
+    avisar("¡Gracias! Quedó pendiente de revisión.");
   } finally {
     $("comentario-enviar").disabled = false;
     setTimeout(() => {

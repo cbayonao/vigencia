@@ -99,6 +99,92 @@ export function textoPlano(parrafo) {
 
 // ---------- HTML (vista y PDF) ----------
 
+// Markdown completo a HTML bonito para el visor: "Asunto: ..." es el
+// título, "## ..." abre sección, lo demás va por leerParrafo. Las viñetas
+// y numerales seguidos se agrupan en una sola lista.
+export function documentoHtml(markdown) {
+  const lineas = String(markdown ?? "").replace(/\r\n/g, "\n").split("\n");
+  const crudos = [];
+  let actual = [];
+  const empujar = () => {
+    const t = actual.join("\n").trim();
+    if (t) crudos.push(t);
+    actual = [];
+  };
+  for (const linea of lineas) {
+    const tabla = /^\|/.test(linea.trim());
+    const enTabla = actual.length && /^\|/.test(actual[actual.length - 1].trim());
+    if (!linea.trim() && !enTabla) {
+      empujar();
+      continue;
+    }
+    if (tabla !== enTabla && actual.length) empujar();
+    actual.push(linea);
+  }
+  empujar();
+  // Viñetas o numerales seguidos (sin línea en blanco) son un bloque c/u.
+  const bloques = [];
+  for (const crudo of crudos) {
+    const partidas = crudo.split("\n").filter((l) => l.trim());
+    if (partidas.length > 1 && partidas.every((l) => /^([-*•]|\d{1,3}[.)])\s+/.test(l.trim()))) {
+      bloques.push(...partidas.map((l) => l.trim()));
+    } else {
+      bloques.push(crudo);
+    }
+  }
+  const salida = [];
+  let lista = null;
+  const cerrarLista = () => {
+    if (lista) salida.push(lista.abre + lista.items.join("") + (lista.tipo === "ul" ? "</ul>" : "</ol>"));
+    lista = null;
+  };
+  for (let bi = 0; bi < bloques.length; bi += 1) {
+    const bloque = bloques[bi];
+    // El encabezado de datos (--- ... ---) no se muestra; los avisos de
+    // página se vuelven una línea discreta.
+    if (/^---\s*\n[\s\S]*\n---\s*$/.test(bloque)) continue;
+    const pagina = bloque.match(/^<!--\s*pagina\s+(\d+)\s*-->$/i);
+    if (pagina) {
+      cerrarLista();
+      salida.push(`<p class="conv-pagina">página ${pagina[1]}</p>`);
+      continue;
+    }
+    const primero = bloque.split("\n")[0];
+    if (bi === 0 && /^Asunto:/.test(primero)) {
+      cerrarLista();
+      const [lineaAsunto, ...restoLineas] = bloque.split("\n");
+      salida.push(`<h1 class="conv-titulo">${tramosHtml(lineaAsunto.replace(/^Asunto:\s*/, "").trim())}</h1>`);
+      const resto = restoLineas.join("\n").trim();
+      if (resto) bloques.splice(bi + 1, 0, resto);
+      continue;
+    }
+    const seccion = primero.match(/^##\s+(.*)$/);
+    if (seccion) {
+      cerrarLista();
+      salida.push(`<h2 class="conv-seccion">${tramosHtml(seccion[1].trim())}</h2>`);
+      const resto = bloque.split("\n").slice(1).join("\n").trim();
+      if (resto) bloques.splice(bi + 1, 0, resto);
+      continue;
+    }
+    const p = leerParrafo(bloque);
+    if (p.tipo === "vineta" || p.tipo === "numeral") {
+      const tipo = p.tipo === "vineta" ? "ul" : "ol";
+      const clase = p.alineacion ? ` class="al-${p.alineacion}"` : "";
+      const item = `<li${clase}>${tramosHtml(p.texto)}</li>`;
+      if (!lista || lista.tipo !== tipo) {
+        cerrarLista();
+        lista = { tipo, abre: tipo === "ul" ? "<ul>" : `<ol start="${p.numero || 1}">`, items: [] };
+      }
+      lista.items.push(item);
+      continue;
+    }
+    cerrarLista();
+    salida.push(parrafoHtml(bloque));
+  }
+  cerrarLista();
+  return salida.join("\n");
+}
+
 export function tramosHtml(texto) {
   return tramos(texto).map((r) => {
     let h = escaparHtml(r.texto)

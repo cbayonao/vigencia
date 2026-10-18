@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { getSchema } from "@tiptap/core";
-import { escritoAJson, jsonAEscrito, leerParrafo, parrafoHtml, tramos } from "../compartido/formato.js";
+import { escritoAJson, jsonAEscrito, leerParrafo, parrafoHtml, tramos, documentoHtml } from "../compartido/formato.js";
 import { escritoDeTexto, textoDeEscrito } from "../compartido/documentos.js";
 import { aplicarBloque, bloquesDeCuerpo } from "../compartido/memoria.js";
 import { docxDeEscrito, odtDeEscrito } from "../src/docx.js";
@@ -134,4 +134,53 @@ test("el editor empaquetado existe y es local", () => {
   assert.doesNotMatch(js, /https?:\/\/(?!prosemirror|tiptap|github|www\.w3)[a-z0-9.-]+\/[^"'\s]*\.(js|css)/i);
   const html = fs.readFileSync(new URL("../renderer/index.html", import.meta.url), "utf8");
   assert.match(html, /script-src 'self'/);
+});
+
+test("documentoHtml dibuja título, secciones, listas y tabla", () => {
+  const h = documentoHtml(`Asunto: Tutela por salud
+
+## Hechos
+La EPS negó el **medicamento**.
+
+- Primer hecho
+- Segundo hecho
+
+1. Petición uno
+2. Petición dos
+
+> La salud es fundamental.
+
+| Nombre | Dosis |
+| Juan | 5 mg |
+
+___
+`);
+  assert.match(h, /<h1 class="conv-titulo">Tutela por salud<\/h1>/);
+  assert.match(h, /<h2 class="conv-seccion">Hechos<\/h2>/);
+  assert.match(h, /<strong>medicamento<\/strong>/);
+  assert.match(h, /<ul><li>Primer hecho<\/li><li>Segundo hecho<\/li><\/ul>/);
+  assert.match(h, /<ol start="1"><li>Petición uno<\/li><li>Petición dos<\/li><\/ol>/);
+  assert.match(h, /<blockquote><p>La salud es fundamental\.<\/p><\/blockquote>/);
+  assert.match(h, /<th>Nombre<\/th>/);
+  assert.match(h, /\bfirma\b/);
+});
+
+test("documentoHtml escapa y respeta alineación", () => {
+  const h = documentoHtml(`{centro} **OJO** <script>alert(1)</script>
+
+Texto con [Cita no aportada] y [Dato pendiente: cédula].`);
+  assert.match(h, /class="al-centro"/);
+  assert.doesNotMatch(h, /<script>/);
+  assert.match(h, /&lt;script&gt;/);
+  assert.match(h, /doc-marca-cita/);
+  assert.match(h, /doc-marca-dato/);
+  assert.equal(documentoHtml("   \n\n  "), "");
+});
+
+test("documentoHtml esconde datos y suaviza páginas", () => {
+  const h = documentoHtml(`---\ntitulo: "X" fecha: "hoy"\n---\n\n<!-- pagina 3 -->\n\nHola.`);
+  assert.doesNotMatch(h, /titulo:/);
+  assert.doesNotMatch(h, /<!--/);
+  assert.match(h, /<p class="conv-pagina">página 3<\/p>/);
+  assert.match(h, /<p>Hola\.<\/p>/);
 });

@@ -1,6 +1,8 @@
 // Pantalla Jurisprudencia: una sola búsqueda contra las tres relatorías,
 // ficha de lectura y guardado como fuente de la biblioteca para la IA.
 // Todo pasa por window.vigencia (juris-*); abrir enlaces usa ppAbrir.
+import { avisar } from "./aviso.js";
+
 const $ = (id) => document.getElementById(id);
 
 const ju = {
@@ -303,6 +305,8 @@ async function leerTexto() {
   ju.texto = r.texto || "";
   pintarLector();
   lectorEstado(ju.texto ? `${ju.texto.length.toLocaleString("es-CO")} caracteres listos para guardar.` : "Llegó vacío. Intente de nuevo.");
+  if (ju.texto) avisar("Texto listo para guardar.");
+  else avisar("Llegó vacío. Intente de nuevo.", "error");
 }
 
 function textoAGuardar() {
@@ -354,7 +358,10 @@ async function guardarFuente() {
   } finally {
     ju.guardando = false;
     pintarLector();
-    if (aviso) lectorEstado(aviso, error);
+    if (aviso) {
+      lectorEstado(aviso, error);
+      avisar(error ? aviso : "Guardada en la biblioteca.", error ? "error" : "ok");
+    }
   }
 }
 
@@ -373,6 +380,7 @@ async function buscar(evento) {
     const r = await window.vigencia.jurisBuscar({ fuente: ju.fuente, texto, filtros });
     if (!r?.ok) {
       estadoBuscar(r?.error || "No pude buscar.", true);
+      avisar(r?.error || "No pude buscar.", "error");
       return;
     }
     ju.resultados = r.filas || [];
@@ -388,6 +396,7 @@ async function buscar(evento) {
     estadoBuscar(ju.resultados.length
       ? `${ju.resultados.length} ${ju.resultados.length === 1 ? "resultado" : "resultados"}${ju.total > ju.resultados.length ? ` de ${ju.total}: afine con Más filtros para ver más` : ""}. Pulse uno para leerlo.`
       : "Sin resultados. Pruebe con otras palabras.");
+    if (ju.resultados.length) avisar(`${ju.resultados.length} ${ju.resultados.length === 1 ? "resultado" : "resultados"}.`);
   } finally {
     ju.buscando = false;
     pintarResultados();

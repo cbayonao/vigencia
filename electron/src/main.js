@@ -103,6 +103,7 @@ import { htmlMemorial } from "./memorial.js";
 import { registrarDocumentos } from "./documentos-ipc.js";
 import { registrarJuris } from "./juris-ipc.js";
 import { registrarConvertir } from "./convertir-ipc.js";
+import { registrarPdftools } from "./pdftools-ipc.js";
 import { consultarVersion, descargarActualizacion } from "./actualizar.js";
 import { directorioDatos } from "./rutas.js";
 
@@ -796,6 +797,12 @@ if (bloqueo) {
       datosDir: () => datosDir,
       ventana: () => ventana,
       responder,
+      mensajeHumano,
+    });
+    registrarPdftools({
+      ipcMain,
+      dialog,
+      ventana: () => ventana,
       mensajeHumano,
     });
     ipcMain.handle("listar", () => responder(() => ({

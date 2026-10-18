@@ -17,6 +17,7 @@ grokvig.sqlite-*
 avisos.log
 ejecucion.log
 tree.txt
+/conversiones/
 
 # Dependencias y artefactos
 node_modules/

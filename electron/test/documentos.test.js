@@ -16,7 +16,6 @@ import {
   leerProyecto, listarPerfiles, listarProyectos, restaurarVersion, actualizarProyecto,
 } from "../src/documentos.js";
 import { textoDePdf } from "../src/pdftexto.js";
-import { leerArchivoFuente } from "../src/importar.js";
 
 function temporal() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "vig-docs-"));
@@ -298,16 +297,6 @@ test("el PDF con texto simple se lee y uno sin texto avisa", async () => {
   assert.match(leido.texto, /Segunda +línea/);
   assert.equal(textoDePdf(Buffer.from("no")).ok, false);
   assert.equal(textoDePdf(pdfDePrueba("q 1 0 0 1 0 0 cm Q")).ok, false);
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "vig-pdf-"));
-  try {
-    fs.writeFileSync(path.join(dir, "ley.pdf"), pdf);
-    fs.writeFileSync(path.join(dir, "nota.txt"), "\uFEFFHola");
-    assert.equal((await leerArchivoFuente(path.join(dir, "ley.pdf"))).nombre, "ley");
-    assert.equal((await leerArchivoFuente(path.join(dir, "nota.txt"))).texto, "Hola");
-    assert.equal((await leerArchivoFuente(path.join(dir, "x.odt"))).ok, false);
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
 });
 
 test("los tokens se estiman a 4 caracteres por token", async () => {

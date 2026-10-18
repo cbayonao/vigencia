@@ -103,7 +103,7 @@ import { htmlMemorial } from "./memorial.js";
 import { registrarDocumentos } from "./documentos-ipc.js";
 import { registrarJuris } from "./juris-ipc.js";
 import { registrarConvertir } from "./convertir-ipc.js";
-import { registrarPdftools } from "./pdftools-ipc.js";
+import { limpiarTemporales, registrarPdftools } from "./pdftools-ipc.js";
 import { consultarVersion, descargarActualizacion } from "./actualizar.js";
 import { directorioDatos } from "./rutas.js";
 
@@ -774,6 +774,8 @@ if (bloqueo) {
       }
       enviar("corrida", dato);
     });
+    // El conversor se registra después; Documentos y PDF lo usan cuando ya existe.
+    const convertirDatos = (dato) => conversor.convertirDatos(dato);
     registrarDocumentos({
       ipcMain,
       dialog,
@@ -782,6 +784,7 @@ if (bloqueo) {
       ventana: () => ventana,
       responder,
       mensajeHumano,
+      convertirDatos,
     });
     registrarJuris({
       ipcMain,
@@ -804,6 +807,8 @@ if (bloqueo) {
       dialog,
       ventana: () => ventana,
       mensajeHumano,
+      datosDir: () => datosDir,
+      convertirDatos,
     });
     ipcMain.handle("listar", () => responder(() => ({
       procesos: listarProcesos(db),
@@ -1577,6 +1582,7 @@ if (bloqueo) {
   app.on("will-quit", () => {
     programador?.detener();
     conversor?.cola.cerrar();
+    limpiarTemporales({ edadMs: 0 });
     try {
       servidorPdf?.close();
     } catch {

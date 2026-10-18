@@ -34,6 +34,14 @@ export function claseDePieza(pieza) {
   return "nota";
 }
 
+// Clase sugerida por el nombre del archivo al importarlo.
+export function claseDeNombre(nombre) {
+  const n = String(nombre || "");
+  if (/sentencia|\b(?:t|c|su)-\d/i.test(n)) return "jurisprudencia";
+  if (/\bley\b|decreto|c[oó]digo/i.test(n)) return "ley";
+  return "nota";
+}
+
 export function tipoDeClase(clase) {
   return CLASES_FUENTE.find((item) => item.id === clase)?.tipo || "";
 }
@@ -131,12 +139,19 @@ export function fragmentosRelevantes(fuentes, consulta, { presupuesto = 6000, ta
       trozos.push({ fuente, orden: 0, texto: cuerpo.trim(), entero: true });
       continue;
     }
+    // Fuente ligada a un archivo convertido: se usan sus trozos guardados,
+    // que traen página y título para citar. Las demás se trocean aquí.
+    const guardados = Array.isArray(fuente.trozos) ? fuente.trozos.filter((t) => String(t?.texto || "").trim()) : [];
+    if (guardados.length) {
+      for (const t of guardados) trozos.push({ fuente, orden: Number(t.orden) || 0, pagina: Number(t.pagina) || 0, titulo: t.titulo || "", texto: String(t.texto).trim(), entero: false });
+      continue;
+    }
     for (const trozo of trocear(cuerpo, { tamano })) trozos.push({ fuente, ...trozo, entero: false });
   }
   if (!trozos.length) return [];
   const pregunta = [...new Set(terminos(consulta))];
   const docs = trozos.map((trozo) => {
-    const lista = terminos(`${trozo.fuente?.nombre || ""} ${trozo.texto}`);
+    const lista = terminos(`${trozo.fuente?.nombre || ""} ${trozo.titulo || ""} ${trozo.texto}`);
     const tf = new Map();
     for (const t of lista) tf.set(t, (tf.get(t) || 0) + 1);
     return { trozo, tf, largo: lista.length || 1 };
@@ -186,7 +201,7 @@ export function bloqueDeFragmentos(fragmentos) {
   }
   return [...grupos.entries()].map(([fuente, lista]) => {
     const clase = CLASES_FUENTE.find((c) => c.id === claseDePieza(fuente))?.nombre || "Fuente";
-    const cuerpo = lista.map((f) => (f.entero ? f.texto : `[Fragmento ${f.orden + 1}] ${f.texto}`)).join("\n\n");
+    const cuerpo = lista.map((f) => (f.entero ? f.texto : `[Fragmento ${f.orden + 1}${f.pagina ? `, página ${f.pagina}` : ""}] ${f.texto}`)).join("\n\n");
     return `### ${fuente.nombre} (${clase})\n${cuerpo}`;
   }).join("\n\n");
 }

@@ -16,7 +16,8 @@ import { contextoExpediente, modeloParaDocumento, textoParaDocumento } from "./i
 import { fechaInforme } from "./informe.js";
 import { bloqueMemoria } from "../compartido/memoria.js";
 import { anotarVuelta, bloquesDelProyecto, guardarEdicionUsuario, guardarPropuesta, historialBloque, leerMemoria, prepararCambioBloque, resolverCambio, sincronizar } from "./memoria.js";
-import { agentesParaContexto, archivosDelProyecto, candidatosFts, leerAgentes, trozosDeArchivos } from "./conversiones.js";
+import { agentesParaContexto, archivosDelProyecto, candidatosFts, leerAgentes, leerArchivo, trozosDeArchivos } from "./conversiones.js";
+import { detalleArchivo } from "../compartido/convertir.js";
 
 const TIPOS = new Set(TIPOS_DOCUMENTO.map((t) => t.id));
 
@@ -283,6 +284,42 @@ function fuentesDelProyecto(db, proyectoId) {
   return listarPiezas(db).filter((p) => ids.has(p.id));
 }
 
+// Fuentes elegidas con sus trozos: la que viene de un archivo convertido
+// lleva los trozos guardados (con página); la de antes, sin archivo, se
+// trocea al vuelo como siempre. También trae el archivo para el informe.
+export function fuentesConTrozos(db, proyectoId) {
+  const fuentes = fuentesDelProyecto(db, proyectoId);
+  const ids = fuentes.map((p) => p.archivo_id).filter(Boolean);
+  if (!ids.length) return fuentes;
+  const porArchivo = new Map();
+  for (const t of trozosDeArchivos(db, ids)) {
+    if (!porArchivo.has(t.archivo_id)) porArchivo.set(t.archivo_id, []);
+    porArchivo.get(t.archivo_id).push(t);
+  }
+  return fuentes.map((p) => {
+    const trozos = p.archivo_id ? porArchivo.get(p.archivo_id) || [] : [];
+    if (!trozos.length) return p;
+    return { ...p, trozos, archivo: leerArchivo(db, p.archivo_id) };
+  });
+}
+
+// Informe de las fuentes de la biblioteca que entran: fragmentos, páginas
+// y, si vienen de un archivo, sus datos (OCR, calidad, origen).
+export function informeFuentes(fragmentos) {
+  const mapa = new Map();
+  for (const f of fragmentos || []) {
+    const fuente = f.fuente || {};
+    const clave = fuente.id ?? fuente.nombre;
+    if (!mapa.has(clave)) {
+      mapa.set(clave, { id: fuente.id || null, nombre: fuente.nombre || "Fuente", fragmentos: 0, paginas: new Set(), detalle: fuente.archivo ? detalleArchivo(fuente.archivo) : "" });
+    }
+    const m = mapa.get(clave);
+    m.fragmentos++;
+    if (f.pagina) m.paginas.add(f.pagina);
+  }
+  return [...mapa.values()].map((m) => ({ ...m, paginas: [...m.paginas].sort((a, b) => a - b) }));
+}
+
 export function leerProyecto(db, id) {
   const proyecto = exigirProyecto(db, id);
   const proceso = proyecto.id_proceso ? uno(db, "SELECT id_proceso, radicado, despacho FROM proceso WHERE id_proceso = ?", [proyecto.id_proceso]) : null;
@@ -346,8 +383,10 @@ export function prepararVuelta({ db, datosDir, proyectoId, mensaje, modeloId, pa
   if (!elegido.usa) return { datos, proyecto, perfil, historia, preguntas, actual, elegido, ficha, contexto, pedido, encargo: "", informe: null, fragmentos: [], archivosFrag: [] };
 
   const lim = presupuestoDe(elegido.origen);
-  const fuentes = fuentesDelProyecto(db, proyecto.id);
   const incluidos = archivosDelProyecto(db, proyecto.id).filter((a) => a.incluido && a.estado === "listo");
+  // Si el mismo archivo está en el proyecto y como fuente, entra una vez.
+  const yaIncluidos = new Set(incluidos.map((a) => a.id));
+  const fuentes = fuentesConTrozos(db, proyecto.id).filter((p) => !p.archivo_id || !yaIncluidos.has(p.archivo_id));
   const reparto = repartirFuentes(lim.fuentes, { hayArchivos: incluidos.length > 0, hayPiezas: fuentes.length > 0 });
   const consulta = [pedido, pasaje, nombreTipo(proyecto.tipo), actual?.asunto, ...historia.filter((m) => m.rol === "usuario").slice(-3).map((m) => m.texto)].filter(Boolean).join(" ");
   const fragmentos = fuentes.length ? fragmentosRelevantes(fuentes, consulta, { presupuesto: reparto.piezas }) : [];
@@ -377,9 +416,13 @@ export function prepararVuelta({ db, datosDir, proyectoId, mensaje, modeloId, pa
     proveedor: elegido.id.startsWith("nube:") ? elegido.id.slice(5).split(":")[0] : "local",
     caracteres: encargo.length,
     tokens: Math.ceil(encargo.length / 4),
-    archivos: informeArchivos(archivosFrag),
+    archivos: informeArchivos(archivosFrag).map((a) => {
+      const fila = incluidos.find((x) => x.id === a.id);
+      return { ...a, detalle: fila ? detalleArchivo(fila) : "" };
+    }),
     archivosRecortados: recortados,
     fuentes: [...new Set(fragmentos.map((f) => f.fuente?.nombre).filter(Boolean))],
+    fuentesDetalle: informeFuentes(fragmentos),
     agentes: Boolean(agentes.texto),
     memoria: Boolean(memoria),
     agentesRecortado: agentes.recortado,

@@ -102,7 +102,6 @@ async function ofrecerLlevar(ruta, { como = "elegido", nombre = "" } = {}) {
   if (!ruta) return;
   pdf.llevar = { ruta, como, nombre: nombre || nombreCorto(ruta) };
   pdf.llevado = null;
-  $("pdf-llevar").hidden = false;
   $("pdf-llevar-nombre").textContent = `${pdf.llevar.nombre}, ${COMO_LLEVAR[como] || COMO_LLEVAR.elegido}.`;
   $("pdf-llevar-siguiente").hidden = true;
   estado("pdf-llevar-estado", "");
@@ -110,7 +109,10 @@ async function ofrecerLlevar(ruta, { como = "elegido", nombre = "" } = {}) {
 }
 
 async function llevar(conProyecto) {
-  if (!pdf.llevar) return;
+  if (!pdf.llevar) {
+    estado("pdf-llevar-estado", "Elija o suelte primero un PDF.", true);
+    return;
+  }
   const proyectoId = Number($("pdf-llevar-proyecto").value) || null;
   if (conProyecto && !proyectoId) {
     estado("pdf-llevar-estado", "Elija primero el proyecto de Documentos.", true);
@@ -689,6 +691,7 @@ function iniciarLienzo() {
 
 export async function abrirPdf() {
   await pintarUnir();
+  await llenarProyectos($("pdf-llevar-proyecto"), { vacio: "Elija un proyecto" });
 }
 
 export function iniciarPdf() {
@@ -697,6 +700,20 @@ export function iniciarPdf() {
   for (const h of HERRAMIENTAS_PDF) {
     $(`pdf-tab-${h}`).addEventListener("click", () => elegirHerramienta(h));
   }
+  // Soltar un PDF sobre Usar con la IA también lo deja listo.
+  const llevarZona = $("pdf-llevar");
+  llevarZona.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    llevarZona.classList.add("sobre");
+  });
+  llevarZona.addEventListener("dragleave", () => llevarZona.classList.remove("sobre"));
+  llevarZona.addEventListener("drop", (e) => {
+    e.preventDefault();
+    llevarZona.classList.remove("sobre");
+    const ruta = [...(e.dataTransfer?.files || [])].map((f) => window.vigencia.rutaDeArchivo(f)).find((r) => /\.pdf$/i.test(r || ""));
+    if (ruta) ofrecerLlevar(ruta);
+    else estado("pdf-llevar-estado", "Suelte un archivo PDF.", true);
+  });
   $("pdf-llevar-convertir").addEventListener("click", () => llevar(false));
   $("pdf-llevar-contexto").addEventListener("click", () => llevar(true));
   $("pdf-llevar-ver").addEventListener("click", () => {

@@ -220,10 +220,6 @@ async function convertir(rutas) {
   const proyecto = Number($("conv-destino").value) || null;
   const r = await window.vigencia.convertirRutas(rutas, proyecto, $("conv-forzar-ocr").checked, "convertir");
   const listos = (r?.resultados || []).filter((x) => x.archivo?.estado === "listo").length;
-  if (proyecto && listos) {
-    estado("conv-ocr", `${listos} ${listos === 1 ? "archivo quedó" : "archivos quedaron"} en el contexto del proyecto.`);
-    avisar("En el contexto del proyecto.");
-  }
   for (const x of r?.resultados || []) {
     if (x.error && !x.archivo) cv.cola.set(`x-${x.nombre}-${Date.now()}`, { nombre: x.nombre, fase: "error", error: x.error });
   }
@@ -231,6 +227,12 @@ async function convertir(rutas) {
   await pintarLista();
   const ultimo = (r?.resultados || []).filter((x) => x.archivo?.estado === "listo").pop();
   if (ultimo) await abrirVista(ultimo.archivo.id);
+  if (proyecto && listos) {
+    const nombre = $("conv-destino").selectedOptions[0]?.textContent || "el proyecto";
+    const previo = $("conv-vista-estado").textContent;
+    estado("conv-vista-estado", [`${listos} ${listos === 1 ? "archivo quedó" : "archivos quedaron"} en el contexto de ${nombre}.`, previo].filter(Boolean).join(" "));
+    avisar("En el contexto del proyecto.");
+  }
 }
 
 export async function pintarOcr() {

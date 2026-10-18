@@ -959,6 +959,7 @@ progress.conv-barra::-webkit-progress-value, progress.avance::-webkit-progress-v
 .conv-marcados[hidden] { display: none; }
 .conv-marcados > p { flex-basis: 100%; margin: 0; }
 .pdf-llevar { border-color: var(--cobre); }
+.pdf-llevar.sobre { background: var(--cobre-suave, #dce8f4); }
 .pdf-llevar select { width: 100%; }
 .envio-linea { display: flex; flex-wrap: wrap; gap: 4px 6px; }
 .envio-detalle { flex-basis: 100%; color: var(--suave); font-size: 12px; }

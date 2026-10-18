@@ -1026,7 +1026,7 @@ async function pintarBiblioteca() {
     const meta = [nombreClase(f.clase), `${f.largo.toLocaleString("es-CO")} caracteres (≈ ${Math.max(1, Math.ceil(f.largo / 4)).toLocaleString("es-CO")} tokens)`];
     if (f.etiquetas.length) meta.push(f.etiquetas.join(", "));
     if (f.origen) meta.push(f.origen);
-    if (f.archivo_id) meta.push("con páginas del archivo");
+    if (f.archivo_id) meta.push("ligada al archivo convertido");
     textos.append(nodo("span", "doc-tarjeta-meta", meta.join(", ")), nodo("span", "doc-bib-muestra", f.muestra));
     const botones = nodo("div", "botones");
     const editar = nodo("button", "boton-texto", "Editar");

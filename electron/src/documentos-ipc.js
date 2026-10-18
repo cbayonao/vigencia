@@ -10,7 +10,7 @@ import { borrarPieza, buscarFuentes, etiquetasUsadas, guardarPieza, leerPieza } 
 import {
   actualizarProyecto, borrarPerfil, borrarProyecto, conversar, crearProyecto, duplicarProyecto, elegirFuentes,
   escritoDeVersion, guardarEdicionDocumento, guardarPerfil, guardarVersion, leerProyecto, leerVersion, listarPerfiles, listarProyectos,
-  modeloDelProyecto, restaurarVersion,
+  modeloDelProyecto, restaurarVersion, borrarVersion,
 } from "./documentos.js";
 import { listarModelos } from "./ia.js";
 import { docxDeEscrito, odtDeEscrito } from "./docx.js";
@@ -59,6 +59,10 @@ export function registrarDocumentos({ ipcMain, dialog, db, datosDir, ventana, re
     return { diferencias: diferencias(a?.cuerpo || "", b.cuerpo), antes: a?.numero || 0, despues: b.numero };
   }));
   ipcMain.handle("documentos-restaurar", (_e, dato) => responder(() => ({ version: restaurarVersion(base(), dato?.id) })));
+  ipcMain.handle("documentos-version-borrar", (_e, dato) => responder(() => {
+    borrarVersion(base(), dato?.id);
+    return {};
+  }));
   ipcMain.handle("documentos-guardar-texto", (_e, dato) => responder(() => {
     const r = guardarEdicionDocumento(base(), dato?.id, dato?.cuerpo, Array.isArray(dato?.ids) ? dato.ids.map((x) => (x ? String(x) : null)) : []);
     return { version: r.version, cambiados: r.cambiados };

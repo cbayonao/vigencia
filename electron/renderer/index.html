@@ -926,6 +926,9 @@
       <p class="nota">Se descargan una sola vez de Hugging Face y después trabajan sin internet.</p>
       <p class="ayuda error" id="modelos-error" hidden></p>
       <div class="directorio" id="modelos-lista"></div>
+      <h3 class="modelos-sub">Instalados en este computador</h3>
+      <p class="nota">Los .gguf descargados o importados. Aquí se pueden usar o borrar de este computador.</p>
+      <div class="directorio" id="modelos-instalados"></div>
       <h3 class="modelos-sub">Modelos en la nube (con su clave)</h3>
       <p class="nota">Pruebe la conexión antes de guardar: el botón Probar usa los datos escritos sin guardarlos. La clave se guarda solo en este computador y únicamente se usa para pedirle el memorial al proveedor que elija. El texto del expediente sale a internet.</p>
       <div class="directorio" id="nubes-lista"></div>
@@ -1150,6 +1153,7 @@
       <select id="doc-nuevo-perfil"></select>
       <label class="etiqueta" for="doc-nuevo-expediente">Expediente (opcional)</label>
       <select id="doc-nuevo-expediente"></select>
+      <label class="ayuda"><input type="checkbox" id="doc-nuevo-sololocal"> Solo en este computador (los modelos de nube no se listan)</label>
       <p class="ayuda error" id="doc-nuevo-error" hidden></p>
       <div class="fila-fin">
         <button type="button" class="boton-texto" id="doc-nuevo-cancelar">Cancelar</button>

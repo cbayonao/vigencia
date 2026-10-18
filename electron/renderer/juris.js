@@ -19,6 +19,7 @@ const ju = {
   texto: "",
   leyendo: false,
   guardando: false,
+  guardadas: new Map(),
 };
 
 function nodo(tag, clase, contenido) {
@@ -242,6 +243,15 @@ function pintarLector() {
   guardar.disabled = ju.guardando;
   guardar.title = "Guarda la sentencia como fuente de jurisprudencia para usarla con la IA al redactar.";
   guardar.addEventListener("click", guardarFuente);
+  const guardada = ju.abierta ? ju.guardadas.get(ju.abierta.ref) : null;
+  let quitar = null;
+  if (guardada) {
+    quitar = nodo("button", "boton-texto", "Quitar de la biblioteca");
+    quitar.type = "button";
+    quitar.disabled = ju.guardando;
+    quitar.title = `Quita ${guardada.nombre} de la biblioteca de este computador`;
+    quitar.addEventListener("click", quitarFuente);
+  }
   const web = nodo("button", "boton-texto", "Abrir en el navegador");
   web.type = "button";
   web.addEventListener("click", abrirNavegador);
@@ -251,6 +261,7 @@ function pintarLector() {
   convertir.title = "Baja la sentencia, la convierte a Markdown en este computador y la deja lista para cualquier modelo.";
   convertir.addEventListener("click", convertirSentencia);
   acciones.append(leer, convertir, guardar, web);
+  if (quitar) acciones.append(quitar);
   const nota = nodo("p", "ayuda", "");
   nota.id = "juris-lector-estado";
   tarjetaAcciones.append(acciones, nota);
@@ -352,6 +363,7 @@ async function guardarFuente() {
         aviso = g?.error || "No pude guardarla.";
         error = true;
       } else {
+        ju.guardadas.set(ju.abierta.ref, { id: g.fuente.id, nombre: g.fuente.nombre });
         aviso = `Guardada en la biblioteca como “${g.fuente.nombre}”. Ya sirve de insumo para la IA en Documentos.`;
       }
     }
@@ -363,6 +375,27 @@ async function guardarFuente() {
       avisar(error ? aviso : "Guardada en la biblioteca.", error ? "error" : "ok");
     }
   }
+}
+
+async function quitarFuente() {
+  const guardada = ju.abierta ? ju.guardadas.get(ju.abierta.ref) : null;
+  if (ju.guardando || !ju.abierta || !guardada) return;
+  if (!window.confirm(`Quitar ${guardada.nombre} de la biblioteca de este computador?`)) return;
+  ju.guardando = true;
+  pintarLector();
+  lectorEstado("Quitando de la biblioteca…");
+  const r = await window.vigencia.documentosFuenteBorrar(guardada.id);
+  ju.guardando = false;
+  pintarLector();
+  if (!r?.ok) {
+    lectorEstado(r?.error || "No pude quitarla.", true);
+    avisar(r?.error || "No pude quitarla.", "error");
+    return;
+  }
+  ju.guardadas.delete(ju.abierta.ref);
+  pintarLector();
+  lectorEstado("Quitada de la biblioteca.");
+  avisar("Quitada de la biblioteca.");
 }
 
 async function buscar(evento) {

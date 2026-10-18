@@ -323,6 +323,43 @@ export function guardarNube(datosDir, { proveedor, key, modelo, base }) {
   return { nubes: leerNubes(datosDir), ...listarModelos(datosDir) };
 }
 
+// Quitar la clave de un proveedor: se olvida en este computador. Si era el
+// modelo activo, se vuelve al Sencillo.
+export function quitarNube(datosDir, proveedor) {
+  if (!PROVEEDORES[proveedor]) throw new Aviso("Ese proveedor no está soportado.");
+  const tiendaDato = leerTienda(datosDir);
+  if (!tiendaDato.nubes[proveedor]?.key) throw new Aviso("Ese proveedor no tiene clave guardada.");
+  delete tiendaDato.nubes[proveedor];
+  if (tiendaDato.activo === `nube:${proveedor}`) tiendaDato.activo = MODELO_SENCILLO;
+  escribirTienda(datosDir, tiendaDato);
+  return { nubes: leerNubes(datosDir), ...listarModelos(datosDir) };
+}
+
+// Borrar un GGUF instalado (descargado o importado): quita el archivo y, si
+// era el activo, vuelve al Sencillo. El motor en memoria se suelta antes.
+export async function borrarModelo(datosDir, id) {
+  const clave = String(id || "");
+  if (!clave.startsWith("gguf:")) throw new Aviso("Solo se pueden borrar los modelos GGUF instalados.");
+  const archivo = path.basename(clave.slice("gguf:".length));
+  if (!archivo.toLowerCase().endsWith(".gguf") || archivo.includes("..")) throw new Aviso("Ese modelo no está.");
+  const ruta = path.join(carpetaModelos(datosDir), archivo);
+  let esArchivo = false;
+  try {
+    esArchivo = fs.statSync(ruta).isFile();
+  } catch {
+    esArchivo = false;
+  }
+  if (!esArchivo) throw new Aviso("Ese modelo ya no está.");
+  if (motor?.ruta === ruta) await soltarMotor();
+  fs.rmSync(ruta, { force: true });
+  const tiendaDato = leerTienda(datosDir);
+  if (tiendaDato.activo === clave) {
+    tiendaDato.activo = MODELO_SENCILLO;
+    escribirTienda(datosDir, tiendaDato);
+  }
+  return listarModelos(datosDir);
+}
+
 function nombreSeguro(nombre) {
   const base = path.basename(String(nombre || "modelo.gguf"));
   const limpio = base.replace(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 80) || "modelo.gguf";

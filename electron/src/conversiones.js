@@ -210,6 +210,24 @@ export function limpiarCache(db, datosDir) {
   return { borrados: libres.length };
 }
 
+// Borrar un archivo convertido individual: solo si ningún proyecto ni la
+// biblioteca lo usan. Borra la carpeta por hash (original, .md,
+// revisiones, meta), sus trozos y la fila.
+export function borrarArchivo(db, datosDir, id) {
+  const fila = leerArchivo(db, Number(id) || 0);
+  if (!fila) throw new Aviso("Ese archivo ya no está.");
+  const enProyecto = uno(db, "SELECT proyecto_id FROM doc_archivo WHERE archivo_id = ? LIMIT 1", [fila.id]);
+  if (enProyecto) throw new Aviso("Ese archivo está en el contexto de un proyecto. Quítelo del proyecto primero.");
+  const enBiblioteca = uno(db, "SELECT id FROM pieza WHERE archivo_id = ? LIMIT 1", [fila.id]);
+  if (enBiblioteca) throw new Aviso("Ese archivo está en la biblioteca. Borre la fuente primero.");
+  transaccion(db, () => {
+    run(db, "DELETE FROM trozo WHERE archivo_id = ?", [fila.id]);
+    run(db, "DELETE FROM archivo WHERE id = ?", [fila.id]);
+  });
+  fs.rmSync(carpetaDe(datosDir, fila.sha256), { recursive: true, force: true });
+  return {};
+}
+
 // ---------- Archivos del proyecto ----------
 
 export function archivosDelProyecto(db, proyectoId) {

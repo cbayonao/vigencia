@@ -81,6 +81,11 @@ async function pintarLista() {
     renombrar.type = "button";
     renombrar.addEventListener("click", () => editarNombre(fila, a));
     fila.append(renombrar);
+    const eliminar = nodo("button", "boton-texto", "Eliminar");
+    eliminar.type = "button";
+    eliminar.title = "Borra el archivo convertido de este computador";
+    eliminar.addEventListener("click", () => eliminarArchivo(a));
+    fila.append(eliminar);
     if (a.error) fila.append(nodo("span", "ayuda error", a.error));
     caja.append(fila);
   }
@@ -126,6 +131,23 @@ async function marcadosABiblioteca() {
 
 export async function verConvertido(id) {
   if (id) await abrirVista(id);
+}
+
+async function eliminarArchivo(a) {
+  if (!window.confirm(`Eliminar ${a.nombre || "el archivo"} de este computador? Si está en un proyecto o en la biblioteca, quítelo de ahí primero.`)) return;
+  const r = await window.vigencia.convertirBorrar(a.id);
+  if (!r?.ok) {
+    estado("conv-ocr", r?.error || "No pude eliminarlo.", true);
+    avisar(r?.error || "No pude eliminarlo.", "error");
+    return;
+  }
+  cv.marcados.delete(a.id);
+  if (cv.elegido?.id === a.id) {
+    cv.elegido = null;
+    $("conv-vista").hidden = true;
+  }
+  avisar(`Eliminé ${a.nombre || "el archivo"}.`);
+  await pintarLista();
 }
 
 async function editarNombre(fila, a) {

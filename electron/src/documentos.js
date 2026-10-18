@@ -130,10 +130,12 @@ export function crearProyecto(db, dato = {}) {
   if (idProceso && !uno(db, "SELECT id_proceso FROM proceso WHERE id_proceso = ?", [idProceso])) {
     throw new Aviso("Ese expediente no está.");
   }
+  // Solo local por defecto: la nube ni se lista hasta que se quite.
+  const soloLocal = dato.solo_local == null ? true : Boolean(dato.solo_local);
   const marca = ahora();
   return transaccion(db, () => {
-    const info = run(db, `INSERT INTO doc_proyecto (nombre, tipo, perfil_id, id_proceso, archivado, creado_en, actualizado_en) VALUES (?, ?, ?, ?, 0, ?, ?)`,
-      [nombre, tipo, perfil?.id || null, idProceso, marca, marca]);
+    const info = run(db, `INSERT INTO doc_proyecto (nombre, tipo, perfil_id, id_proceso, archivado, solo_local, creado_en, actualizado_en) VALUES (?, ?, ?, ?, 0, ?, ?, ?)`,
+      [nombre, tipo, perfil?.id || null, idProceso, soloLocal ? 1 : 0, marca, marca]);
     const id = Number(info.lastInsertRowid);
     const existentes = new Set(listarPiezas(db).map((p) => p.id));
     for (const pieza of enteros([...(perfil?.fuentes || []), ...(dato.fuentes || [])])) {
@@ -260,6 +262,27 @@ export function restaurarVersion(db, versionId) {
   sincronizar(db, v.proyecto_id, nueva);
   anotarVuelta(db, v.proyecto_id, { cuerpo: nueva.cuerpo, decision: `Restaurada la versión ${v.numero}` });
   return nueva;
+}
+
+// Borrar una versión individual: queda al menos una (si no, se borra el
+// proyecto entero). Los mensajes que apuntaban a ella quedan sin versión.
+// Si era la última, los bloques se sincronizan con la nueva última.
+export function borrarVersion(db, versionId) {
+  const v = uno(db, "SELECT * FROM doc_version WHERE id = ?", [Number(versionId) || 0]);
+  if (!v) throw new Aviso("Esa versión ya no está.");
+  const total = Number(uno(db, "SELECT COUNT(*) AS n FROM doc_version WHERE proyecto_id = ?", [v.proyecto_id])?.n || 0);
+  if (total <= 1) throw new Aviso("Es la única versión. Para quitarla, borre el proyecto entero.");
+  const eraUltima = !uno(db, "SELECT id FROM doc_version WHERE proyecto_id = ? AND numero > ?", [v.proyecto_id, v.numero]);
+  transaccion(db, () => {
+    run(db, "UPDATE doc_mensaje SET version_id = NULL WHERE version_id = ?", [v.id]);
+    run(db, "DELETE FROM doc_version WHERE id = ?", [v.id]);
+    tocar(db, v.proyecto_id);
+  });
+  if (eraUltima) {
+    const nueva = ultimaVersion(db, v.proyecto_id);
+    if (nueva) sincronizar(db, v.proyecto_id, nueva);
+  }
+  return ultimaVersion(db, v.proyecto_id);
 }
 
 function agregarMensaje(db, proyectoId, { rol, texto: cuerpo, versionId = null, dudas = null, origen = "local" }) {

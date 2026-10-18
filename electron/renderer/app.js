@@ -26,11 +26,12 @@ import {
 } from "../compartido/sistemas.js";
 import { coincideBusqueda, especialidadDe } from "../compartido/pp.js";
 import { planAbierto } from "../compartido/plan.js";
-import { CAPAS_DOCUMENTOS, abrirDocumentos, iniciarDocumentos, pedirProyectoDocumentos, refrescarModelosDocumentos } from "./documentos.js";
+import { CAPAS_DOCUMENTOS, abrirDocumentos, iniciarDocumentos, pedirProyectoDocumentos, quitarSoloLocal, refrescarModelosDocumentos } from "./documentos.js";
 import { abrirJuris, iniciarJuris } from "./juris.js";
 import { abrirPdf, iniciarPdf } from "./pdf.js";
 import { abrirConvertir, iniciarConvertir, pintarOcr, verConvertido } from "./convertir.js";
 import { abrirComentarios, iniciarComentarios } from "./comentarios.js";
+import { avisar } from "./aviso.js";
 
 const $ = (id) => document.getElementById(id);
 const estado = {
@@ -1545,7 +1546,13 @@ document.addEventListener("keydown", (evento) => {
   }
   if (evento.key === "Escape") {
     if (cima === "dialogo-cliente") cerrarFormulario();
-    else if (cima === "dialogo-ajustes" || cima === "dialogo-csv" || cima === "dialogo-borrar" || cima === "dialogo-eliminar" || cima === "dialogo-escrito" || cima === "dialogo-modelos" || cima === "dialogo-iniciar" || cima === "dialogo-informe" || cima === "dialogo-asignar" || cima === "dialogo-directorio" || cima === "dialogo-biblioteca" || cima === "dialogo-pieza" || cima === "dialogo-actualizar" || cima === "dialogo-sistemas" || cima === "dialogo-pp-doc" || cima === "dialogo-gasto" || CAPAS_DOCUMENTOS.includes(cima)) ocultarDialogo(cima);
+    else if (cima === "dialogo-modelos") {
+      if (pruebasSinGuardar.size && !window.confirm("Probó una clave pero no la guardó. Si cierra, se pierde. ¿Cerrar sin guardar?")) return;
+      ocultarDialogo(cima);
+      refrescarModelosDocumentos();
+      if (dialogoAlFrente() === "dialogo-escrito") $("escrito-prompt").focus();
+    }
+    else if (cima === "dialogo-ajustes" || cima === "dialogo-csv" || cima === "dialogo-borrar" || cima === "dialogo-eliminar" || cima === "dialogo-escrito" || cima === "dialogo-iniciar" || cima === "dialogo-informe" || cima === "dialogo-asignar" || cima === "dialogo-directorio" || cima === "dialogo-biblioteca" || cima === "dialogo-pieza" || cima === "dialogo-actualizar" || cima === "dialogo-sistemas" || cima === "dialogo-pp-doc" || cima === "dialogo-gasto" || CAPAS_DOCUMENTOS.includes(cima)) ocultarDialogo(cima);
     else if (cima === "dialogo-busqueda" && !$("dialogo-cerrar").hidden) ocultarDialogo(cima);
     return;
   }
@@ -1771,6 +1778,8 @@ $("config-importar").addEventListener("click", async () => {
   }
   await pintarModelos();
   await cargarModelosEscrito();
+  await refrescarModelosDocumentos();
+  avisar("Modelo importado. Ya aparece en Documentos y en el escrito.");
 });
 async function abrirConfigModelos() {
   pintarOcr();
@@ -1829,8 +1838,7 @@ $("gasto-mes").addEventListener("click", () => abrirGasto(true));
 $("gasto-todo").addEventListener("click", () => abrirGasto(false));
 $("gasto-cerrar").addEventListener("click", () => ocultarDialogo("dialogo-gasto"));
 
-function tarjetaModelo(item) {
-  const tarjeta = nodo("article", "persona");
+function tarjetaModelo(item) {  const tarjeta = nodo("article", "persona");
   const info = nodo("div");
   info.append(nodo("h3", "", item.nombre));
   info.append(nodo("p", "", item.detalle || ""));
@@ -1872,7 +1880,9 @@ function pintarMotor(estado) {
 
 async function pintarModelos() {
   const caja = $("modelos-lista");
+  pruebasSinGuardar.clear();
   caja.replaceChildren();
+  $("modelos-instalados").replaceChildren();
   $("nubes-lista").replaceChildren();
   $("modelos-error").hidden = true;
   const motor = await window.vigencia.motorEstado();
@@ -1885,10 +1895,60 @@ async function pintarModelos() {
     return;
   }
   for (const item of respuesta.modelos || []) caja.append(tarjetaModelo(item));
+  const instalados = await window.vigencia.modelosListar();
+  const ggufs = (instalados?.modelos || []).filter((m) => String(m.id || "").startsWith("gguf:"));
+  const cajaInstalados = $("modelos-instalados");
+  if (!ggufs.length) {
+    const vacio = nodo("p", "ayuda", "No hay modelos GGUF en este computador. Descargue uno arriba o importe su archivo.");
+    cajaInstalados.append(vacio);
+  }
+  for (const item of ggufs) cajaInstalados.append(tarjetaGguf(item, instalados?.activo));
   const nubes = await window.vigencia.modelosNube();
   if (nubes?.ok) {
     for (const nube of nubes.nubes || []) $("nubes-lista").append(tarjetaNube(nube));
   }
+}
+
+function tarjetaGguf(item, activo) {
+  const tarjeta = nodo("article", "persona");
+  const info = nodo("div");
+  info.append(nodo("h3", "", item.nombre));
+  info.append(nodo("p", "", item.detalle || "GGUF en este computador"));
+  if (activo === item.id) info.append(nodo("p", "modelo-estado ok", "En uso."));
+  tarjeta.append(info);
+  const acciones = nodo("div", "hermanos");
+  const usar = nodo("button", "boton-linea", "Usar");
+  usar.type = "button";
+  usar.disabled = activo === item.id;
+  usar.addEventListener("click", async () => {
+    const r = await window.vigencia.modelosUsar(item.id);
+    if (!r?.ok) {
+      $("modelos-error").hidden = false;
+      $("modelos-error").textContent = r?.error || "No pude cambiar el modelo.";
+      return;
+    }
+    await pintarModelos();
+    await cargarModelosEscrito();
+  });
+  const borrar = nodo("button", "boton-texto", "Borrar");
+  borrar.type = "button";
+  borrar.title = "Borra el archivo .gguf de este computador";
+  borrar.addEventListener("click", async () => {
+    if (!window.confirm(`Borrar ${item.nombre} de este computador? El archivo .gguf se elimina y no se puede deshacer.`)) return;
+    const r = await window.vigencia.modelosBorrar(item.id);
+    if (!r?.ok) {
+      $("modelos-error").hidden = false;
+      $("modelos-error").textContent = r?.error || "No pude borrarlo.";
+      return;
+    }
+    await pintarModelos();
+    await cargarModelosEscrito();
+    await refrescarModelosDocumentos();
+    avisar("Modelo borrado de este computador.");
+  });
+  acciones.append(usar, borrar);
+  tarjeta.append(acciones);
+  return tarjeta;
 }
 
 function tarjetaNube(nube) {
@@ -1977,6 +2037,7 @@ function tarjetaNube(nube) {
   };
   const invalidaPrueba = () => {
     marcaProbada("");
+    pruebasSinGuardar.delete(nube.id);
     guardar.disabled = true;
     guardar.textContent = "Guardar";
   };
@@ -2003,6 +2064,7 @@ function tarjetaNube(nube) {
       return;
     }
     marcaProbada(JSON.stringify([campoClave.value, campoModelo.value, base || ""]));
+    pruebasSinGuardar.set(nube.id, true);
     guardar.disabled = false;
     pintarEstado("ok", `Funciona (“${respuesta.muestra || "ok"}”). Ya puede guardar.`);
   });
@@ -2028,14 +2090,46 @@ function tarjetaNube(nube) {
       $("modelos-error").textContent = respuesta?.error || "No pude guardar la clave.";
       return;
     }
+    pruebasSinGuardar.delete(nube.id);
     $("modelos-error").hidden = true;
     campoClave.value = "";
     campoClave.placeholder = "Clave guardada (escríbala para cambiarla)";
-    estadoLinea.hidden = false;
-    estadoLinea.textContent = "Clave guardada en este computador.";
+    await pintarModelos();
     await cargarModelosEscrito();
+    let info = await refrescarModelosDocumentos(`nube:${nube.id}`);
+    if (info?.soloLocal) {
+      if (window.confirm(`Clave guardada. Este proyecto está en Solo local y por eso la nube no se lista. ¿Quitar Solo local en este proyecto para usar ${nube.nombre}?`)) {
+        await quitarSoloLocal();
+        info = await refrescarModelosDocumentos(`nube:${nube.id}`);
+        avisar("Solo local quitado. Ya puede elegir la nube en Modelo.");
+      } else {
+        avisar("Clave guardada. En proyectos con Solo local la nube no se lista.");
+      }
+    } else {
+      avisar("Clave guardada. Ya aparece en Documentos y en el escrito.");
+    }
   });
   acciones.append(probar, guardar);
+  if (nube.tieneClave) {
+    const quitar = nodo("button", "boton-texto", "Quitar");
+    quitar.type = "button";
+    quitar.title = "Olvida la clave guardada en este computador";
+    quitar.addEventListener("click", async () => {
+      if (!window.confirm(`Quitar la clave de ${nube.nombre} de este computador?`)) return;
+      const r = await window.vigencia.modelosQuitarNube(nube.id);
+      if (!r?.ok) {
+        $("modelos-error").hidden = false;
+        $("modelos-error").textContent = r?.error || "No pude quitarla.";
+        return;
+      }
+      $("modelos-error").hidden = true;
+      await pintarModelos();
+      await cargarModelosEscrito();
+      await refrescarModelosDocumentos();
+      avisar("Clave quitada de este computador.");
+    });
+    acciones.append(quitar);
+  }
   tarjeta.append(acciones);
   return tarjeta;
 }
@@ -2044,6 +2138,10 @@ function porcentajeDescarga(recibidos, total) {
   if (!total) return "Descargando…";
   return `Descargando… ${Math.min(100, Math.round((recibidos / total) * 100))}%`;
 }
+
+// Claves probadas con éxito pero aún sin guardar en esta apertura del
+// diálogo. Cerrar sin guardar las pierde: se avisa antes de cerrar.
+const pruebasSinGuardar = new Map();
 
 async function descargarRecomendado(item, boton, estadoLinea) {
   boton.disabled = true;
@@ -2067,9 +2165,10 @@ async function descargarRecomendado(item, boton, estadoLinea) {
     $("modelos-error").textContent = respuesta?.error || "No pude descargar el modelo.";
     return;
   }
-  boton.textContent = "Instalado ✓";
-  estadoLinea.textContent = "Listo. Ya puede cerrar y elegirlo en Modelo.";
+  await pintarModelos();
   await cargarModelosEscrito();
+  await refrescarModelosDocumentos();
+  avisar("Modelo instalado. Ya aparece en Documentos y en el escrito.");
 }
 
 $("motor-instalar").addEventListener("click", async () => {
@@ -2279,6 +2378,7 @@ window.vigencia.alSamaiNovedades(() => {
 });
 window.vigencia.alActualizacion((info) => abrirActualizacion(info));
 $("modelos-cerrar").addEventListener("click", () => {
+  if (pruebasSinGuardar.size && !window.confirm("Probó una clave pero no la guardó. Si cierra, se pierde. ¿Cerrar sin guardar?")) return;
   ocultarDialogo("dialogo-modelos");
   refrescarModelosDocumentos();
   if (dialogoAlFrente() === "dialogo-escrito") $("escrito-prompt").focus();

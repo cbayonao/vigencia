@@ -13,7 +13,7 @@ import { abrirBase, run, uno } from "../src/db.js";
 import { buscarFuentes, guardarPieza, listarPiezas, activarPieza } from "../src/biblioteca.js";
 import {
   borrarProyecto, conversar, prepararVuelta, crearProyecto, duplicarProyecto, elegirFuentes, guardarPerfil, guardarVersion,
-  leerProyecto, listarPerfiles, listarProyectos, restaurarVersion, actualizarProyecto,
+  leerProyecto, listarPerfiles, listarProyectos, restaurarVersion, actualizarProyecto, borrarVersion,
 } from "../src/documentos.js";
 import { textoDePdf } from "../src/pdftexto.js";
 
@@ -245,6 +245,40 @@ test("con Sencillo arma la plantilla y no revisa; un fallo del modelo no toca el
     assert.equal(r.error, true);
     assert.equal(r.actual.numero, 1);
     assert.match(r.mensajes.at(-1).texto, /no respondió/);
+  } finally {
+    tmp.borrar();
+  }
+});
+
+test("borrar una versión deja al menos una y suelta los mensajes", () => {
+  const tmp = temporal();
+  try {
+    const p = crearProyecto(tmp.db, { nombre: "M", tipo: "memorial" });
+    const v1 = guardarVersion(tmp.db, p.id, { cuerpo: "Asunto: M\n\n## A\nUno." });
+    assert.throws(() => borrarVersion(tmp.db, v1.id), /única versión/);
+    const v2 = guardarVersion(tmp.db, p.id, { cuerpo: "Asunto: M\n\n## A\nDos." });
+    run(tmp.db, "INSERT INTO doc_mensaje (proyecto_id, rol, texto, version_id, dudas, origen, creado_en) VALUES (?, 'asistente', 'listo', ?, '', 'local', 'x')", [p.id, v1.id]);
+    const ultima = borrarVersion(tmp.db, v1.id);
+    assert.equal(ultima.numero, 2);
+    assert.equal(Number(uno(tmp.db, "SELECT COUNT(*) AS n FROM doc_version WHERE proyecto_id = ?", [p.id]).n), 1);
+    assert.equal(uno(tmp.db, "SELECT version_id FROM doc_mensaje WHERE proyecto_id = ?", [p.id]).version_id, null);
+    assert.throws(() => borrarVersion(tmp.db, 99999), /ya no está/);
+  } finally {
+    tmp.borrar();
+  }
+});
+
+test("el proyecto nace solo local salvo que se pida lo contrario", () => {
+  const tmp = temporal();
+  try {
+    const a = crearProyecto(tmp.db, { nombre: "A", tipo: "tutela" });
+    assert.equal(leerProyecto(tmp.db, a.id).proyecto.solo_local, true);
+    const b = crearProyecto(tmp.db, { nombre: "B", tipo: "tutela", solo_local: false });
+    assert.equal(leerProyecto(tmp.db, b.id).proyecto.solo_local, false);
+    const c = duplicarProyecto(tmp.db, b.id);
+    assert.equal(leerProyecto(tmp.db, c.id).proyecto.solo_local, false);
+    actualizarProyecto(tmp.db, a.id, { solo_local: false });
+    assert.equal(leerProyecto(tmp.db, a.id).proyecto.solo_local, false);
   } finally {
     tmp.borrar();
   }

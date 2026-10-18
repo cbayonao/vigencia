@@ -98,7 +98,7 @@ import { pdfDesdeHtml } from "./pdf.js";
 import { alCambiar, estadoCorrida, lanzar } from "./jobs.js";
 import { fichaDeDetalle, redactarEscrito } from "../compartido/redactor.js";
 import { activarPieza, borrarPieza, guardarPieza, listarPiezas } from "./biblioteca.js";
-import { generarBorrador, generarInicial, guardarActivo, guardarModo, importarModelo, listarModelos, descargarModelo, modelosRecomendados, leerNubes, guardarNube } from "./ia.js";
+import { generarBorrador, generarInicial, guardarActivo, guardarModo, importarModelo, listarModelos, descargarModelo, modelosRecomendados, leerNubes, guardarNube, borrarModelo, quitarNube } from "./ia.js";
 import { htmlMemorial } from "./memorial.js";
 import { registrarDocumentos } from "./documentos-ipc.js";
 import { registrarJuris } from "./juris-ipc.js";
@@ -1009,6 +1009,7 @@ if (bloqueo) {
     ipcMain.handle("modelos-modo", (_evento, dato) => responder(() => guardarModo(datosDir, dato?.modo)));
     ipcMain.handle("modelos-nube", () => responder(() => ({ nubes: leerNubes(datosDir) })));
     ipcMain.handle("modelos-guardar-nube", (_evento, dato) => responder(() => guardarNube(datosDir, dato || {})));
+    ipcMain.handle("modelos-quitar-nube", (_evento, dato) => responder(() => quitarNube(datosDir, dato?.proveedor)));
     ipcMain.handle("modelos-probar", async (_evento, dato) => {
       let mensajePrueba = () => "";
       try {
@@ -1271,6 +1272,13 @@ if (bloqueo) {
       }
     });
     ipcMain.handle("modelos-usar", (_evento, dato) => responder(() => guardarActivo(datosDir, dato?.id)));
+    ipcMain.handle("modelos-borrar", async (_evento, dato) => {
+      try {
+        return { ok: true, ...(await borrarModelo(datosDir, dato?.id)) };
+      } catch (error) {
+        return { ok: false, error: mensajeHumano(error) };
+      }
+    });
     ipcMain.handle("modelos-importar", async () => {
       const elegido = await dialog.showOpenDialog(ventana, {
         title: "Importar modelo GGUF",

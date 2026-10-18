@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { abrirBase, uno } from "../src/db.js";
 import {
   agregarAProyecto, archivosDelProyecto, candidatosFts, enCache, guardarAgentes, guardarEdicion, guardarResultado, incluirEnContexto,
-  leerMarkdown, limpiarCache, prepararArchivo, renombrarArchivo, agentesParaContexto, PLANTILLA_AGENTS,
+  leerMarkdown, limpiarCache, prepararArchivo, renombrarArchivo, borrarArchivo, agentesParaContexto, PLANTILLA_AGENTS,
 } from "../src/conversiones.js";
 import { convertirRuta } from "../src/convertir/convertidores.js";
 import { actualizarProyecto, conversar, crearProyecto, prepararVuelta } from "../src/documentos.js";
@@ -126,4 +126,17 @@ test("renombrar cambia solo el rótulo y exige mínimo", async () => {
   assert.equal(r.sha256, a.sha256);
   assert.throws(() => renombrarArchivo(tmp.db, a.id, "ab"), /3 letras/);
   assert.throws(() => renombrarArchivo(tmp.db, 99999, "Nombre largo"), /ya no está/);
+});
+
+test("borrar un convertido exige que nadie lo use y borra la carpeta", async () => {
+  const tmp = temporal();
+  const a = await convertir(tmp, "texto.pdf");
+  const b = await convertir(tmp, "cid.pdf");
+  const p = crearProyecto(tmp.db, { nombre: "P", tipo: "tutela" });
+  agregarAProyecto(tmp.db, p.id, a.id);
+  assert.throws(() => borrarArchivo(tmp.db, tmp.dir, a.id), /proyecto/);
+  assert.equal(borrarArchivo(tmp.db, tmp.dir, b.id).ok ?? true, true);
+  assert.ok(!uno(tmp.db, "SELECT id FROM archivo WHERE id = ?", [b.id]));
+  assert.equal(Number(uno(tmp.db, "SELECT COUNT(*) n FROM trozo WHERE archivo_id = ?", [b.id]).n), 0);
+  assert.throws(() => borrarArchivo(tmp.db, tmp.dir, b.id), /ya no está/);
 });

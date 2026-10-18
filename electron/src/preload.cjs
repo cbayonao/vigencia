@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld("vigencia", {
   convertirCancelar: (id) => ipcRenderer.invoke("convertir-cancelar", { id }),
   convertirLeer: (id) => ipcRenderer.invoke("convertir-leer", { id }),
   convertirRenombrar: (id, nombre) => ipcRenderer.invoke("convertir-renombrar", { id, nombre }),
+  convertirBorrar: (id) => ipcRenderer.invoke("convertir-borrar", { id }),
   convertirGuardarEdicion: (id, markdown) => ipcRenderer.invoke("convertir-guardar-edicion", { id, markdown }),
   convertirGuardarComo: (id) => ipcRenderer.invoke("convertir-guardar-como", { id }),
   convertirABiblioteca: (id) => ipcRenderer.invoke("convertir-a-biblioteca", { id }),
@@ -56,6 +57,7 @@ contextBridge.exposeInMainWorld("vigencia", {
   documentosVersion: (id) => ipcRenderer.invoke("documentos-version", { id }),
   documentosDiferencias: (antes, despues) => ipcRenderer.invoke("documentos-diferencias", { antes, despues }),
   documentosRestaurar: (id) => ipcRenderer.invoke("documentos-restaurar", { id }),
+  documentosVersionBorrar: (id) => ipcRenderer.invoke("documentos-version-borrar", { id }),
   documentosGuardarTexto: (id, cuerpo, ids) => ipcRenderer.invoke("documentos-guardar-texto", { id, cuerpo, ids }),
   documentosConversar: (datos) => ipcRenderer.invoke("documentos-conversar", datos),
   alDocumento: (fn) => {
@@ -115,6 +117,8 @@ contextBridge.exposeInMainWorld("vigencia", {
     return () => ipcRenderer.removeListener("modelo-progreso", canal);
   },
   modelosUsar: (id) => ipcRenderer.invoke("modelos-usar", { id }),
+  modelosBorrar: (id) => ipcRenderer.invoke("modelos-borrar", { id }),
+  modelosQuitarNube: (proveedor) => ipcRenderer.invoke("modelos-quitar-nube", { proveedor }),
   modelosModo: (modo) => ipcRenderer.invoke("modelos-modo", { modo }),
   modelosNube: () => ipcRenderer.invoke("modelos-nube"),
   modelosGuardarNube: (datos) => ipcRenderer.invoke("modelos-guardar-nube", datos),

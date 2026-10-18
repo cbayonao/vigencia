@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { generarBorrador, listarModelos, pulirConSencillo, contextoExpediente, extraerPuntos, semejantes, filtrarPorModo, guardarModo, leerNubes, guardarNube, RECOMENDADOS, urlDeModelo, esGgufValido, tamanoDeContexto, cabeElModelo } from "../src/ia.js";
+import { generarBorrador, listarModelos, pulirConSencillo, contextoExpediente, extraerPuntos, semejantes, filtrarPorModo, guardarModo, leerNubes, guardarNube, quitarNube, borrarModelo, guardarActivo, RECOMENDADOS, urlDeModelo, esGgufValido, tamanoDeContexto, cabeElModelo } from "../src/ia.js";
 import { htmlMemorial, vistaMemorial } from "../src/memorial.js";
 import { redactarEscrito } from "../compartido/redactor.js";
 
@@ -168,6 +168,25 @@ test("los modelos listan el sencillo y los gguf importados", () => {
   assert.equal(activo, "sencillo");
   assert.ok(modelos.some((m) => m.id === "sencillo" && m.instalado));
   assert.ok(modelos.some((m) => m.id === "gguf:mini.gguf"));
+});
+
+test("borrar un gguf quita el archivo y vuelve al sencillo; quitar la nube olvida la clave", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "vigencia-ia-"));
+  fs.mkdirSync(path.join(dir, "modelos"), { recursive: true });
+  fs.writeFileSync(path.join(dir, "modelos", "mini.gguf"), "x");
+  guardarNube(dir, { proveedor: "openai", key: "secreta", modelo: "gpt-4o-mini" });
+  guardarActivo(dir, "gguf:mini.gguf");
+  assert.equal(listarModelos(dir).activo, "gguf:mini.gguf");
+  const trasBorrar = await borrarModelo(dir, "gguf:mini.gguf");
+  assert.equal(trasBorrar.activo, "sencillo");
+  assert.ok(!fs.existsSync(path.join(dir, "modelos", "mini.gguf")));
+  await assert.rejects(borrarModelo(dir, "gguf:mini.gguf"), /ya no está/);
+  await assert.rejects(borrarModelo(dir, "sencillo"), /GGUF/);
+  guardarActivo(dir, "nube:openai");
+  const trasQuitar = quitarNube(dir, "openai");
+  assert.equal(trasQuitar.activo, "sencillo");
+  assert.equal(leerNubes(dir).find((n) => n.id === "openai").tieneClave, false);
+  assert.throws(() => quitarNube(dir, "openai"), /no tiene clave/);
 });
 
 test("el contexto del modelo local queda por debajo del bloque que tumba la ventana", () => {

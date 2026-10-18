@@ -615,6 +615,14 @@ async function cambiarProyecto(cambios) {
   await abrirProyecto(doc.abierto, { conservarVista: true });
 }
 
+// Quita Solo local del proyecto abierto (con su confirmación ya pedida en
+// la ventana): la nube vuelve a listarse como modelo.
+export async function quitarSoloLocal() {
+  if (!doc.abierto || !doc.datos) return false;
+  await cambiarProyecto({ solo_local: false });
+  return true;
+}
+
 function abrirNombre() {
   $("doc-nombre-valor").value = doc.datos.proyecto.nombre;
   ui.mostrarDialogo("dialogo-doc-nombre");
@@ -654,6 +662,20 @@ async function restaurar_(id) {
   ui.ocultarDialogo("dialogo-doc-historial");
   await abrirProyecto(doc.abierto);
   await cargarInicio();
+}
+
+function pedirBorrarVersion(v) {
+  $("doc-confirmar-titulo").textContent = `Borrar la versión ${v.numero}`;
+  $("doc-confirmar-texto").textContent = `Se borra solo la versión ${v.numero} de este computador. Las demás versiones y la conversación no se tocan.`;
+  doc.confirmar = async () => {
+    const r = await window.vigencia.documentosVersionBorrar(v.id);
+    if (!r?.ok) return estadoChat(r?.error || "No pude borrarla.", true);
+    ui.ocultarDialogo("dialogo-doc-historial");
+    if (doc.versionVista === v.id) doc.versionVista = null;
+    await abrirProyecto(doc.abierto);
+    await cargarInicio();
+  };
+  ui.mostrarDialogo("dialogo-doc-confirmar");
 }
 
 async function exportar(formato) {
@@ -903,6 +925,13 @@ async function abrirHistorial() {
       res.addEventListener("click", () => restaurar_(v.id));
       botones.append(res);
     }
+    if (doc.datos.versiones.length > 1) {
+      const bor = nodo("button", "boton-texto", "Borrar");
+      bor.type = "button";
+      bor.title = "Borra solo esta versión de este computador";
+      bor.addEventListener("click", () => pedirBorrarVersion(v));
+      botones.append(bor);
+    }
     fila.append(textos, botones);
     lista.append(fila);
   }
@@ -957,6 +986,10 @@ function abrirNuevo() {
   llenarTipos($("doc-nuevo-tipo"), "tutela");
   llenarPerfiles($("doc-nuevo-perfil"), doc.inicio?.perfiles?.[0]?.id);
   llenarExpedientes($("doc-nuevo-expediente"), null);
+  // Si ya hay clave de nube, el documento nace listo para usarla; si no,
+  // nace solo local. En ambos casos se ve y se puede cambiar.
+  const hayNube = (doc.inicio?.modelos?.modelos || []).some((m) => String(m.id).startsWith("nube:"));
+  $("doc-nuevo-sololocal").checked = !hayNube;
   mostrarError("doc-nuevo-error", "");
   ui.mostrarDialogo("dialogo-doc-nuevo");
   $("doc-nuevo-nombre").focus();
@@ -969,6 +1002,7 @@ async function crearNuevo(evento) {
     tipo: $("doc-nuevo-tipo").value,
     perfil_id: Number($("doc-nuevo-perfil").value) || null,
     id_proceso: Number($("doc-nuevo-expediente").value) || null,
+    solo_local: $("doc-nuevo-sololocal").checked,
   });
   if (!r?.ok) return mostrarError("doc-nuevo-error", r?.error || "No pude crear el documento.");
   ui.ocultarDialogo("dialogo-doc-nuevo");
@@ -1699,11 +1733,26 @@ export function iniciarDocumentos(herramientas) {
   });
 }
 
-// Tras cambiar los modelos en Modelos de IA, la lista se relee.
-export async function refrescarModelosDocumentos() {
-  if (!doc.listo) return;
+// Tras cambiar los modelos en Modelos de IA, la lista se relee. Con
+// preferido (ej. la nube recién guardada) se elige solo si el actual es el
+// Sencillo, está vacío o ya no existe: no se quita la elección del usuario.
+// En Solo local la nube no se lista por diseño y no se aplica.
+export async function refrescarModelosDocumentos(preferido = "") {
+  if (!doc.listo) return { aplicado: false, soloLocal: false };
   await cargarInicio();
+  const modelos = doc.inicio?.modelos?.modelos || [];
+  const soloLocal = Boolean(doc.datos?.proyecto?.solo_local);
+  let aplicado = false;
+  if (preferido && modelos.some((m) => m.id === preferido)) {
+    const visible = !soloLocal || !String(preferido).startsWith("nube:");
+    const actualVale = doc.modelo && modelos.some((m) => m.id === doc.modelo);
+    if (visible && (!actualVale || doc.modelo === "sencillo")) {
+      doc.modelo = preferido;
+      aplicado = true;
+    }
+  }
   if (doc.datos) pintarProyecto();
+  return { aplicado, soloLocal };
 }
 
 export { escritoDeTexto };

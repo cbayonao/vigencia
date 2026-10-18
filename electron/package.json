@@ -104,8 +104,10 @@
     "tesseract.js": "^6.0.1"
   },
   "dependencies": {
+    "jpeg-js": "^0.4.4",
     "mammoth": "^1.13.0",
     "node-llama-cpp": "^3.22.1",
+    "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^4.10.38",
     "turndown": "^7.2.4",
     "xlsx": "file:vendor/xlsx-0.20.3.tgz"

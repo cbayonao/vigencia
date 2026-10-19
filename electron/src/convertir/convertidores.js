@@ -173,7 +173,9 @@ function errorClave() {
   return error;
 }
 
-export async function convertirPdf(datos, { datosDir, forzarOcr = false, onProgreso, senal, lectorOcr, maxPaginasOcr = MAX_PAGINAS_OCR } = {}) {
+// Abre un PDF con pdfjs sin red (cmaps y fuentes de su carpeta). Lo usan
+// convertirPdf e itemsDePdf.
+async function abrirPdfjs(datos) {
   const lib = await cargarPdfjs();
   const base = carpetaPdfjs();
   const tarea = lib.getDocument({
@@ -189,13 +191,16 @@ export async function convertirPdf(datos, { datosDir, forzarOcr = false, onProgr
     verbosity: 0,
   });
   // Sin onPassword, pdfjs rechaza con PasswordException: no hay a quién pedirla.
-  let doc;
   try {
-    doc = await tarea.promise;
+    return { lib, doc: await tarea.promise };
   } catch (error) {
     if (error?.name === "PasswordException" || /password/i.test(String(error?.message || ""))) throw errorClave();
     throw error;
   }
+}
+
+export async function convertirPdf(datos, { datosDir, forzarOcr = false, onProgreso, senal, lectorOcr, maxPaginasOcr = MAX_PAGINAS_OCR } = {}) {
+  const { lib, doc } = await abrirPdfjs(datos);
   const total = doc.numPages;
   const paginas = [];
   const sinTexto = [];
@@ -257,6 +262,76 @@ export async function convertirPdf(datos, { datosDir, forzarOcr = false, onProgr
   } finally {
     await doc.destroy();
   }
+}
+
+// Textos de cada página con su posición, en puntos del PDF (y hacia arriba),
+// para leer tablas como los estados de la Rama. Una página sin texto pasa por
+// el OCR si está instalado y devuelve las palabras con su caja; si el OCR no
+// da cajas, queda el texto plano en `texto` y la página dice ocr: true.
+export async function itemsDePdf(datos, { datosDir, lectorOcr, onProgreso, maxPaginasOcr = MAX_PAGINAS_OCR } = {}) {
+  const { lib, doc } = await abrirPdfjs(datos);
+  const paginas = [];
+  let aviso = "";
+  let lector = lectorOcr || null;
+  let ocrUsadas = 0;
+  try {
+    for (let n = 1; n <= doc.numPages; n++) {
+      onProgreso?.({ fase: "leyendo", pagina: n, total: doc.numPages });
+      const pagina = await doc.getPage(n);
+      const [x0, y0, x1, y1] = pagina.view;
+      const contenido = await pagina.getTextContent();
+      const items = (contenido.items || [])
+        .filter((it) => typeof it.str === "string" && it.str.trim())
+        .map((it) => ({ str: it.str, x: it.transform[4], y: it.transform[5], w: it.width, h: Math.abs(it.transform[3]) || it.height || 8 }));
+      const hoja = { numero: n, ancho: x1 - x0, alto: y1 - y0, x0, y0, items, ocr: false, texto: "" };
+      if (necesitaOcr(textoDePagina(contenido)) && ocrUsadas < maxPaginasOcr) {
+        if (!lector && estadoOcr(datosDir).listo) lector = await crearLectorOcr(datosDir);
+        if (!lector) aviso = AVISO_OCR;
+        else {
+          onProgreso?.({ fase: "ocr", pagina: n, total: doc.numPages });
+          const img = await imagenMayor(pagina, lib);
+          const png = pngDeImagenPdf(img);
+          if (png) {
+            const r = await lector.reconocer(png, { posiciones: true });
+            ocrUsadas++;
+            hoja.ocr = true;
+            hoja.texto = r.texto || "";
+            // Píxeles de la imagen a puntos: se asume que la imagen cubre la página.
+            const ex = hoja.ancho / img.width;
+            const ey = hoja.alto / img.height;
+            hoja.items = (r.palabras || []).map((p) => ({ str: p.texto, x: x0 + p.x0 * ex, y: y0 + hoja.alto - p.y1 * ey, w: (p.x1 - p.x0) * ex, h: (p.y1 - p.y0) * ey }));
+          }
+        }
+      }
+      paginas.push(hoja);
+      pagina.cleanup();
+    }
+  } finally {
+    if (lector && !lectorOcr) await lector.cerrar();
+    await doc.destroy();
+  }
+  return { paginas, aviso };
+}
+
+// Tablas de Excel, CSV, Word o HTML como filas de celdas, con las mismas
+// librerías de la conversión. null si ese tipo no trae tablas.
+export async function tablasDeDatos(datos, nombre) {
+  const ext = extensionDe(nombre);
+  if (["xlsx", "xls", "ods", "csv"].includes(ext)) {
+    const XLSX = require("xlsx");
+    const libro = ext === "csv"
+      ? XLSX.read(Buffer.from(datos).toString("utf8").replace(/^\uFEFF/, ""), { type: "string", raw: true })
+      : XLSX.read(Buffer.from(datos), { type: "buffer", cellDates: false, dense: true });
+    return libro.SheetNames.map((h) => XLSX.utils.sheet_to_json(libro.Sheets[h], { header: 1, raw: false, defval: "" }));
+  }
+  const { tablasDeHtml } = await import("../../compartido/estados.js");
+  if (ext === "docx") {
+    const mammoth = require("mammoth");
+    const { value } = await mammoth.convertToHtml({ buffer: Buffer.from(datos) });
+    return tablasDeHtml(value);
+  }
+  if (ext === "html" || ext === "htm") return tablasDeHtml(decodificarTexto(datos));
+  return null;
 }
 
 // ---------- Imagen ----------

@@ -91,9 +91,17 @@ export async function crearLectorOcr(datosDir, { idioma = "spa", logger } = {}) 
     errorHandler: () => {},
   });
   return {
-    async reconocer(imagen) {
-      const { data } = await worker.recognize(imagen);
-      return { texto: data.text || "", confianza: Number(data.confidence) || 0 };
+    // posiciones: también las palabras con su caja en píxeles (para tablas).
+    async reconocer(imagen, { posiciones = false } = {}) {
+      const { data } = await worker.recognize(imagen, {}, posiciones ? { text: true, blocks: true } : undefined);
+      const r = { texto: data.text || "", confianza: Number(data.confidence) || 0 };
+      if (posiciones) {
+        r.palabras = [];
+        for (const b of data.blocks || []) for (const p of b.paragraphs || []) for (const l of p.lines || []) for (const w of l.words || []) {
+          if (w.text?.trim() && w.bbox) r.palabras.push({ texto: w.text, ...w.bbox });
+        }
+      }
+      return r;
     },
     async cerrar() {
       await worker.terminate();

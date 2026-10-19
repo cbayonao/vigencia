@@ -1,14 +1,14 @@
 // Estados: el listado de estado del juzgado (PDF, Excel, Word o HTML) como
 // tabla que se ordena, se filtra y se corrige a mano, con el PDF al lado y
-// la fila resaltada en su página. Cruza los radicados con los expedientes
-// que el usuario sigue y ofrece seguir los demás con el mismo Agregar de la
-// lista. La lectura es de compartido/estados.js (proceso principal).
+// la fila resaltada en su página. Cruza los radicados con Mis procesos:
+// las filas de los que ya sigue quedan como historia de esos procesos, y
+// los demás se pueden seguir uno a uno o varios a la vez. La lectura es de
+// compartido/estados.js (proceso principal).
 import { COLUMNAS, filtrarFilas, marcarSeguidos, normalizarRadicadoEstado, ordenarFilas } from "../compartido/estados.js";
 import { pdfACaja, tamanoVista } from "../compartido/pdftools.js";
 import { avisar } from "./aviso.js";
 import { boton, crearEscena, zonaVacia } from "./escena.js";
 import { crearVisor, docUnico } from "./paginas.js";
-import { irA } from "./proyectos.js";
 import { estado, nodo, ofrecerLlevar } from "./pdf.js";
 
 const $ = (id) => document.getElementById(id);
@@ -27,6 +27,7 @@ const e = {
   verPdf: true,
   loteVisto: null,
   capas: new Map(),
+  elegidas: new Set(),
 };
 let es = null;
 let vista = null;
@@ -61,6 +62,7 @@ async function agregar(rutas) {
     }
   });
   await refrescarSeguidos();
+  await guardarSeguidos(e.lotes.filter((l) => nuevas.includes(l.ruta)));
   pintar();
   const ultimo = e.lotes[e.lotes.length - 1];
   if (ultimo) {
@@ -71,6 +73,7 @@ async function agregar(rutas) {
 
 function limpiar() {
   e.lotes = [];
+  e.elegidas = new Set();
   e.activa = null;
   e.loteVisto = null;
   archivo.abrir(null);
@@ -83,11 +86,11 @@ async function ofrecerTabla(lote) {
   if (r?.ok) ofrecerLlevar(r.ruta, { como: "tabla", nombre: `${lote.nombre.replace(/\.[^.]+$/, "")} (tabla)` });
 }
 
-// Radicados de los expedientes que el usuario sigue en la lista.
+// Radicados de todo lo que el usuario sigue (Mis procesos).
 export async function refrescarSeguidos() {
   try {
-    const r = await window.vigencia.listar();
-    e.seguidos = new Set((r?.procesos || []).map((p) => String(p.radicado || "").replace(/\D/g, "")).filter(Boolean));
+    const r = await window.vigencia.mis("radicados");
+    e.seguidos = new Set(r?.ok ? r.radicados : []);
   } catch {
     e.seguidos = new Set();
   }
@@ -95,9 +98,60 @@ export async function refrescarSeguidos() {
   if (e.lotes.length) pintarTabla();
 }
 
+// Las filas de los procesos que ya sigue quedan como su historia en Mis
+// procesos (sin repetir radicado, fecha del auto y actuación).
+async function guardarSeguidos(lotes) {
+  let nuevas = 0;
+  for (const l of lotes) {
+    const filas = l.filas.filter((f) => f.seguido);
+    if (!filas.length) continue;
+    const r = await window.vigencia.mis("estados-guardar", { filas, meta: l.meta, crear: false });
+    if (r?.ok) nuevas += r.nuevas;
+  }
+  if (nuevas) avisar(`${plural(nuevas, "actuación nueva guardada", "actuaciones nuevas guardadas")} en Mis procesos.`);
+}
+
+// Seguir: el proceso queda en Mis procesos con fuente Estados y la fila del
+// estado como su primera actuación. Sin consultar ningún sistema.
+async function seguirFilas(filas) {
+  const porLote = new Map();
+  for (const f of filas) {
+    const fila = original(f);
+    if (!fila?.radicado) continue;
+    if (!porLote.has(f.lote)) porLote.set(f.lote, []);
+    porLote.get(f.lote).push(fila);
+  }
+  let procesos = 0;
+  let ultima = "";
+  for (const [clave, lista] of porLote) {
+    const lote = e.lotes.find((l) => l.clave === clave);
+    const r = await window.vigencia.mis("estados-guardar", { filas: lista, meta: lote?.meta || {}, crear: true });
+    if (!r?.ok) {
+      avisar(r?.error || "No pude agregarlos.", "error");
+      continue;
+    }
+    procesos += r.procesos;
+    ultima = r.claves.at(-1) || ultima;
+  }
+  e.elegidas = new Set();
+  await refrescarSeguidos();
+  pintarElegidas();
+  if (procesos || ultima) {
+    avisar(procesos ? `${plural(procesos, "proceso agregado", "procesos agregados")} a Mis procesos.` : "Ya estaba en Mis procesos: se guardó la fila del estado.");
+    estado("pdf-estados-estado", "Quedaron en Mis procesos, con la fila del estado como actuación.");
+  }
+  return ultima;
+}
+
 function seguir(fila) {
-  if (!fila.radicado) return;
-  irA({ a: "seguir", radicado: fila.radicado });
+  if (fila.radicado) seguirFilas([fila]);
+}
+
+function pintarElegidas() {
+  if (!e.botonVarios) return;
+  const n = e.elegidas.size;
+  e.botonVarios.textContent = n ? `Agregar los seleccionados (${n})` : "Agregar los seleccionados";
+  e.botonVarios.disabled = !n;
 }
 
 async function exportar(formato) {
@@ -242,7 +296,10 @@ function pintarBarra(hayPdf) {
   });
   ver.setAttribute("aria-pressed", String(e.verPdf));
   ver.hidden = !hayPdf;
-  es.barra.replaceChildren(buscar, casilla("Solo los que sigo", "soloSeguidos"), casilla("Solo para revisar", "soloAvisos"), e.cuenta, ver);
+  e.botonVarios = boton("Agregar los seleccionados", "boton-linea", () => seguirFilas(todas().filter((f) => e.elegidas.has(f.clave))));
+  e.botonVarios.title = "Los agrega a Mis procesos con la fila del estado como actuación";
+  pintarElegidas();
+  es.barra.replaceChildren(buscar, casilla("Solo los que sigo", "soloSeguidos"), casilla("Solo para revisar", "soloAvisos"), e.cuenta, e.botonVarios, ver);
 }
 
 function pintarTabla() {
@@ -318,9 +375,20 @@ function filaTabla(f, cols, varios) {
   const seg = nodo("td", "pv-est-seguir");
   if (f.seguido) seg.append(nodo("span", "pv-est-sigue", "Usted sigue este proceso"));
   else if (f.radicado) {
+    const l = nodo("label", "pv-est-elegir");
+    const c = document.createElement("input");
+    c.type = "checkbox";
+    c.checked = e.elegidas.has(f.clave);
+    c.setAttribute("aria-label", `Elegir la fila ${f.id} para agregarla`);
+    c.addEventListener("change", () => {
+      if (c.checked) e.elegidas.add(f.clave);
+      else e.elegidas.delete(f.clave);
+      pintarElegidas();
+    });
+    l.append(c);
     const b = boton("Seguir este proceso", "boton-linea pv-est-boton", () => seguir(f));
-    b.title = "Lo agrega a su lista con el mismo Agregar de la consulta de la Rama";
-    seg.append(b);
+    b.title = "Lo agrega a Mis procesos con la fila del estado como actuación";
+    seg.append(l, b);
   }
   tr.append(seg);
   const salida = [tr];

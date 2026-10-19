@@ -1460,3 +1460,148 @@ table.pv-est { width: 100%; border-collapse: separate; border-spacing: 0; font-s
 #pv-estados .pv-barra .boton-texto { padding: 4px 8px; }
 .pv-est-lote { padding: 8px 12px; gap: 4px 12px; }
 .pv-est-lote .pv-archivo-nombre { margin: 0; }
+
+/* ---------- Mis procesos ---------- */
+:root {
+  --mis-cn: #17456e; --mis-sa: #5b3f8c; --mis-sp: #8a4b12; --mis-es: #1f6b5c; --mis-ma: #5b6b7c;
+  --mis-juzgado: #dce8f4; --mis-propio: #f6ead7; --mis-propio-tinta: #6b4410; --mis-alerta: #fbe3e0;
+}
+html[data-tema="oscuro"] {
+  --mis-cn: #9cc3e6; --mis-sa: #c7b2ef; --mis-sp: #f0bf8a; --mis-es: #8fd6c4; --mis-ma: #a7b8c7;
+  --mis-juzgado: #22374d; --mis-propio: #3b2f1d; --mis-propio-tinta: #f3d7a8; --mis-alerta: #3d2226;
+}
+.mis-cuerpo { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 12px; padding: 14px 22px 0; overflow: hidden; }
+.mis-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.mis-kpi { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; background: var(--blanco); border: 1px solid var(--linea); border-radius: 14px; padding: 12px 14px; color: var(--tinta); }
+button.mis-kpi:hover { border-color: var(--hover-borde); background: var(--hover-fondo); }
+.mis-kpi:focus-visible, .mis-tarjeta:focus-visible, .mis-chip:focus-visible, .mis-cal-evento:focus-visible, .mis-pendiente:focus-visible { outline: 2px solid var(--cobre); outline-offset: 2px; }
+.mis-kpi-valor { font-size: 28px; font-weight: 700; line-height: 1.1; color: var(--cobre); font-variant-numeric: tabular-nums; }
+.mis-kpi-titulo { font-size: 13px; font-weight: 700; }
+.mis-kpi-detalle { font-size: 12px; color: var(--suave); }
+.mis-kpi.atento .mis-kpi-detalle { color: var(--cobre); font-weight: 600; }
+.mis-kpi.alerta { border-color: var(--error-borde); }
+.mis-kpi.alerta .mis-kpi-detalle { color: var(--error); font-weight: 600; }
+.mis-kpi-fuentes { grid-column: span 2; }
+.mis-chips, .mis-filtro-linea { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.mis-chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--linea); background: var(--papel-2); color: var(--tinta); border-radius: 99px; padding: 3px 10px 3px 4px; font-size: 12.5px; }
+.mis-filtro-linea .mis-chip { padding: 4px 12px; }
+.mis-chip.elegido { border-color: var(--cobre); background: var(--cobre-suave); color: var(--cobre); font-weight: 600; }
+.mis-sigla { display: inline-grid; place-items: center; min-width: 26px; height: 20px; padding: 0 5px; border-radius: 6px; font-size: 10.5px; font-weight: 700; letter-spacing: 0.04em; color: var(--blanco); background: var(--mis-ma); }
+.mis-fuente-consulta { background: var(--mis-cn); }
+.mis-fuente-samai { background: var(--mis-sa); }
+.mis-fuente-spoa { background: var(--mis-sp); }
+.mis-fuente-estados { background: var(--mis-es); }
+.mis-barra { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
+.mis-tabs { margin: 0; flex: 0 0 auto; }
+.mis-tabs .pp-tab { flex: 0 0 auto; padding: 7px 16px; white-space: nowrap; }
+.mis-filtros { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.mis-filtros select { width: auto; max-width: 220px; padding: 6px 8px; font-size: 13px; }
+.mis-cuenta { margin: 0; }
+#mis-vista-procesos, #mis-vista-calendario { flex: 1; min-height: 0; display: flex; flex-direction: column; container-type: inline-size; }
+.mis-dos { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+.mis-dos.con-panel { grid-template-columns: minmax(300px, 1fr) minmax(360px, 1.15fr); }
+.mis-lista { min-height: 0; overflow: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); align-content: start; gap: 10px; padding: 2px 2px 18px; }
+.con-panel .mis-lista { grid-template-columns: minmax(0, 1fr); }
+.mis-lista-cabeza { display: flex; justify-content: space-between; align-items: center; gap: 8px; grid-column: 1 / -1; }
+.mis-tarjeta { background: var(--blanco); border: 1px solid var(--linea); border-radius: 14px; padding: 12px 14px; cursor: pointer; display: flex; flex-direction: column; gap: 4px; }
+.mis-tarjeta:hover { border-color: var(--hover-borde); background: var(--hover-fondo); }
+.mis-tarjeta.abierta { border-color: var(--cobre); box-shadow: inset 3px 0 0 var(--cobre); }
+.mis-tarjeta.archivada { opacity: 0.75; }
+.mis-tarjeta p { margin: 0; }
+.mis-tarjeta-cabeza { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mis-radicado { font-size: 13px; font-weight: 700; }
+.mis-marcas { margin-left: auto; display: flex; gap: 4px; flex-wrap: wrap; }
+.mis-marca { font-size: 11px; font-weight: 700; border-radius: 99px; padding: 1px 8px; background: var(--papel-2); color: var(--suave); border: 1px solid var(--linea); }
+.mis-marca.reciente { background: var(--pv-agregado); color: var(--pv-agregado-tinta); border-color: transparent; }
+.mis-marca.quieto { background: var(--mis-alerta); color: var(--error); border-color: transparent; }
+.mis-marca.vincular { background: var(--cobre-suave); color: var(--cobre); border-color: transparent; }
+.mis-despacho { font-weight: 600; font-size: 14px; }
+.mis-partes { color: var(--suave); font-size: 13px; }
+.mis-ultima { display: flex; gap: 8px; font-size: 13px; align-items: baseline; }
+.mis-ultima-fecha { flex: 0 0 auto; font-size: 11.5px; font-weight: 700; color: var(--cobre); }
+.mis-pie { margin-top: 2px; min-height: 0; font-size: 12px; }
+.mis-vacio, .mis-sin { grid-column: 1 / -1; text-align: center; padding: 30px 20px; }
+.mis-vacio .boton-cobre { margin-top: 12px; }
+.mis-subtitulo { margin: 4px 0 8px; font-size: 16px; font-weight: 700; }
+.mis-pendiente { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; text-align: left; background: var(--blanco); border: 1px solid var(--linea); border-radius: 12px; padding: 10px 12px; color: var(--tinta); grid-column: 1 / -1; }
+.mis-pendiente .ayuda { grid-column: 2; margin: 0; }
+.mis-pendiente.vencida { border-color: var(--error-borde); }
+.mis-panel { min-height: 0; overflow: auto; background: var(--blanco); border: 1px solid var(--linea); border-radius: 14px 14px 0 0; padding: 14px 16px 20px; }
+.mis-panel-cabeza p { margin: 2px 0; }
+.mis-panel-fila { display: flex; align-items: center; gap: 8px; }
+.mis-panel-fila .ayuda { margin: 0; flex: 1; min-height: 0; }
+.mis-panel-titulo { margin: 8px 0 2px; font-size: 18px; }
+.mis-acciones { justify-content: flex-start; margin: 10px 0 12px; }
+.mis-vincular { display: flex; gap: 10px; align-items: center; background: var(--cobre-suave); border-radius: 12px; padding: 10px 12px; margin-bottom: 12px; font-size: 13px; }
+.mis-vincular p { margin: 0; flex: 1; }
+.mis-pestanas .pp-tab { padding: 7px 4px; }
+.mis-seccion { margin: 0 0 16px; }
+.mis-seccion-titulo { margin: 0 0 8px; font-size: 13px; font-weight: 700; color: var(--suave); text-transform: uppercase; letter-spacing: 0.04em; }
+.mis-datos { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 0 0 16px; font-size: 13.5px; }
+.mis-datos dt { color: var(--suave); }
+.mis-datos dd { margin: 0; }
+.mis-linea, .mis-sugerencias, .mis-audiencias, .mis-archivos { list-style: none; margin: 0 0 10px; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.mis-evento { border-radius: 12px; padding: 9px 12px; border-left: 4px solid var(--mis-cn); background: var(--papel-2); }
+.mis-evento.propio { border-left-color: var(--mis-sp); background: var(--mis-propio); }
+.mis-evento p { margin: 2px 0; }
+.mis-evento-cabeza { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; }
+.mis-lado { font-weight: 700; color: var(--cobre); text-transform: uppercase; letter-spacing: 0.04em; font-size: 11px; }
+.mis-lado.propio { color: var(--mis-propio-tinta); }
+.mis-evento-fecha { color: var(--suave); font-variant-numeric: tabular-nums; }
+.mis-evento-titulo { font-weight: 600; font-size: 14px; }
+.mis-evento-detalle { font-size: 13px; white-space: pre-wrap; }
+.mis-evento-pie { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.mis-hecho { margin: 4px 0 0; font-size: 13px; }
+.mis-propia-tipo { font-size: 11px; font-weight: 700; color: var(--mis-propio-tinta); background: var(--mis-propio); border-radius: 99px; padding: 2px 8px; align-self: start; }
+.mis-pendiente-texto { font-size: 14px; }
+.mis-forma { border: 1px dashed var(--linea); border-radius: 12px; padding: 12px; margin: 12px 0; display: flex; flex-direction: column; gap: 8px; }
+.mis-forma-fila { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; }
+.mis-campo { display: flex; flex-direction: column; }
+.mis-campo .etiqueta { margin: 0 0 3px; }
+.mis-forma > .boton-cobre, .mis-forma > .boton-linea { align-self: flex-start; }
+.mis-sugerencia { border: 1px solid var(--cobre); border-radius: 12px; padding: 9px 12px; background: var(--cobre-suave); }
+.mis-sugerencia p { margin: 2px 0; }
+.mis-sugerencia .botones { justify-content: flex-start; margin-top: 6px; }
+.mis-audiencia { display: flex; gap: 12px; align-items: center; border: 1px solid var(--linea); border-radius: 12px; padding: 8px 12px; }
+.mis-audiencia.pasada { opacity: 0.6; }
+.mis-audiencia-fecha { flex: 0 0 52px; display: flex; flex-direction: column; align-items: center; border-radius: 10px; background: var(--cobre-suave); color: var(--cobre); padding: 4px 0; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+.mis-audiencia-dia { font-size: 20px; line-height: 1.1; }
+.mis-audiencia-textos { flex: 1; min-width: 0; }
+.mis-audiencia-textos p { margin: 1px 0; }
+.mis-audiencia .botones { flex-direction: column; align-items: flex-end; gap: 2px; }
+.mis-enlace { padding: 0; color: var(--cobre); text-decoration: underline; font-size: 13px; }
+.mis-archivo { border: 1px solid var(--linea); border-radius: 12px; padding: 8px 12px; }
+.mis-archivo p { margin: 1px 0; overflow-wrap: anywhere; }
+.mis-archivo.falta { border-style: dashed; }
+.mis-archivo .botones { justify-content: flex-start; margin-top: 4px; gap: 2px; }
+.mis-archivo .boton-texto, .mis-archivo .boton-linea { padding: 4px 8px; font-size: 13px; }
+.mis-visor { margin-top: 10px; border: 1px solid var(--linea); border-radius: 12px; padding: 8px; }
+.mis-paginas { height: 60vh; overflow: auto; }
+.mis-calendario { min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 8px; padding-bottom: 18px; }
+.mis-cal-barra { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.mis-cal-titulo { margin: 0 6px; min-width: 210px; text-align: center; }
+.mis-cal-barra .mis-filtro-linea { margin: 0 0 0 auto; }
+.mis-cal { display: flex; flex-direction: column; border: 1px solid var(--linea); border-radius: 12px; overflow: hidden; background: var(--blanco); }
+.mis-cal-semana { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.mis-cal-semana + .mis-cal-semana { border-top: 1px solid var(--linea); }
+.mis-cal-dia-nombre { padding: 6px 8px; font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--suave); background: var(--papel-2); }
+.mis-cal-dia { min-height: 92px; padding: 4px 5px; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.mis-cal.semana .mis-cal-dia { min-height: 320px; }
+.mis-cal-dia + .mis-cal-dia { border-left: 1px solid var(--linea); }
+.mis-cal-dia.fuera { background: var(--papel-2); color: var(--suave); }
+.mis-cal-numero { font-size: 12px; font-weight: 700; align-self: flex-end; padding: 1px 6px; border-radius: 99px; }
+.mis-cal-dia.hoy .mis-cal-numero { background: var(--cobre-boton); color: #fffaf6; }
+.mis-cal-evento { text-align: left; border: 0; border-left: 3px solid var(--mis-cn); background: var(--mis-juzgado); color: var(--tinta); border-radius: 6px; padding: 2px 5px; font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mis-cal-evento.presencial { border-left-color: var(--mis-sp); background: var(--mis-propio); }
+.mis-cal-evento.virtual { border-left-color: var(--mis-es); }
+.mis-proximas { border-radius: 14px 14px 0 0; }
+@container (max-width: 760px) {
+  .mis-dos.con-panel { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(160px, 1fr) minmax(0, 2fr); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .mis-tarjeta, .mis-kpi, .mis-chip { transition: border-color 0.15s ease, background 0.15s ease; }
+}
+.pv-est-seguir { white-space: nowrap; }
+.pv-est-elegir { display: inline-flex; vertical-align: middle; margin-right: 6px; }
+.pv-est-elegir input { width: auto; margin: 0; }
+.mis-cal.semana .mis-cal-evento { white-space: normal; }

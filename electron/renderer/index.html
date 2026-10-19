@@ -38,6 +38,10 @@
         <span class="sistemas-flecha" aria-hidden="true">«</span>
         <span class="sistemas-texto sistemas-encabezado">Sistemas</span>
       </button>
+      <button type="button" class="sistema sistema-documentos sistema-mis" id="sistema-mis" title="Todos sus procesos, audiencias y pendientes">
+        <span class="sistema-sigla">MP</span>
+        <span class="sistema-textos sistemas-texto"><span class="sistema-nombre">Mis procesos</span><span class="sistema-fuente">Todo en un lugar</span></span>
+      </button>
       <button type="button" class="sistema sistema-documentos" id="sistema-documentos" title="Documentos, redacción con IA">
         <span class="sistema-sigla">DO</span>
         <span class="sistema-textos sistemas-texto"><span class="sistema-nombre">Documentos</span><span class="sistema-fuente">Redacción con IA</span></span>
@@ -63,6 +67,48 @@
     </nav>
     <div class="escenario">
     <button type="button" class="aviso-prueba" id="aviso-prueba" hidden title="Ver el plan"></button>
+    <div class="pantalla" id="pantalla-mis" hidden>
+      <header class="barra">
+        <div>
+          <p class="marca">Vigencia</p>
+          <h1 class="nombre serif">Mis procesos</h1>
+        </div>
+        <input id="mis-buscar" class="busqueda" type="search" placeholder="Radicado, parte, cliente, despacho o actuación" aria-label="Buscar en mis procesos" autocomplete="off">
+        <div class="botones">
+          <button type="button" class="boton-cobre" id="mis-nuevo" title="Para procesos que no están en ningún sistema de consulta">Proceso manual</button>
+          <button type="button" class="boton-linea" id="mis-excel" title="Guarda un Excel con los procesos filtrados">Descargar Excel</button>
+          <button type="button" class="boton-texto" id="mis-recargar" title="Vuelve a leer la base, sin consultar ningún sistema">Recargar</button>
+        </div>
+      </header>
+      <div class="mis-cuerpo">
+        <section class="mis-kpis" id="mis-kpis" aria-label="Resumen"></section>
+        <div class="mis-barra">
+          <div class="pp-tabs mis-tabs" role="tablist" aria-label="Vista">
+            <button type="button" class="pp-tab elegida" id="mis-tab-procesos" role="tab" aria-selected="true" aria-controls="mis-vista-procesos">Procesos</button>
+            <button type="button" class="pp-tab" id="mis-tab-calendario" role="tab" aria-selected="false" aria-controls="mis-vista-calendario">Calendario de audiencias</button>
+          </div>
+          <div class="mis-filtros">
+            <select id="mis-fuente" aria-label="Fuente"></select>
+            <select id="mis-abogado" aria-label="Abogado"></select>
+            <select id="mis-despacho" aria-label="Despacho"></select>
+            <select id="mis-estado" aria-label="Estado"></select>
+            <span class="ayuda mis-cuenta" id="mis-cuenta" aria-live="polite"></span>
+          </div>
+        </div>
+        <div id="mis-vista-procesos" role="tabpanel" aria-labelledby="mis-tab-procesos">
+          <div class="mis-dos" id="mis-dos">
+            <div class="mis-lista" id="mis-lista"></div>
+            <aside class="mis-panel" id="mis-panel" aria-label="Proceso" hidden></aside>
+          </div>
+        </div>
+        <div id="mis-vista-calendario" role="tabpanel" aria-labelledby="mis-tab-calendario" hidden>
+          <div class="mis-dos con-panel">
+            <div class="mis-calendario" id="mis-calendario"></div>
+            <aside class="mis-panel mis-proximas" id="mis-proximas" aria-label="Próximas audiencias"></aside>
+          </div>
+        </div>
+      </div>
+    </div>
     <div class="pantalla" id="pantalla-consulta">
     <header class="barra">
       <div>

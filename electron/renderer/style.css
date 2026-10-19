@@ -1385,3 +1385,78 @@ p.pv-cambio-texto.doc-dif-agregado, p.pv-cambio-texto.doc-dif-quitado { padding:
 @media (prefers-reduced-motion: reduce) {
   .pv-escena *, .pv-escena *::before, .pv-escena *::after, .pdf-llevar.pv-resalta { animation: none !important; transition: none !important; }
 }
+
+/* ---------- Estados del juzgado a tabla (pdf-estados.js) ---------- */
+.juris-fuente.pdf-mosaico.pdf-mosaico-ancho { grid-column: 1 / -1; flex-direction: row; justify-content: center; gap: 10px; padding: 10px 12px; }
+.pv-tenue { opacity: 0.35; }
+.pv-est-resumen { display: flex; flex-wrap: wrap; gap: 10px; flex: 0 0 auto; }
+.pv-est-lote { flex: 1 1 320px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; padding: 10px 14px; background: var(--blanco); border: 1px solid var(--linea); border-radius: 12px; }
+.pv-est-lote .ayuda { margin: 0; }
+.pv-est-lote > .ayuda.error, .pv-est-notas { flex-basis: 100%; }
+.pv-est-notas summary { cursor: pointer; color: var(--suave); font-size: 13px; }
+.pv-est-notas p { margin: 4px 0 0; white-space: pre-line; }
+.pv-est-buscar { flex: 1 1 150px; min-width: 140px; }
+.pv-est-cuenta { margin-left: auto; }
+.pv-estados { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(240px, 34%); gap: 12px; }
+.pv-estados.sin-pdf { grid-template-columns: minmax(0, 1fr); }
+.pv-est-tabla { min-height: 0; overflow: auto; background: var(--blanco); border: 1px solid var(--linea); border-radius: 12px; }
+.pv-est-tabla:focus-visible { outline: 2px solid var(--cobre); outline-offset: 2px; }
+.pv-est-vista { min-height: 0; display: flex; flex-direction: column; gap: 6px; }
+.pv-est-vista[hidden] { display: none; }
+.pv-est-vista-titulo { margin: 0; }
+.pv-est-paginas { flex: 1; }
+table.pv-est { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12.5px; line-height: 1.35; }
+.pv-est thead th { position: sticky; top: 0; z-index: 1; background: var(--papel-2); border-bottom: 1px solid var(--linea); text-align: left; font-weight: 600; padding: 0; white-space: nowrap; }
+.pv-est thead th:not(:has(button)) { padding: 8px 10px; }
+.pv-est-orden { width: 100%; padding: 8px 10px; border: 0; background: transparent; color: var(--tinta); font: inherit; font-weight: 600; text-align: left; cursor: pointer; }
+.pv-est-orden:hover { background: var(--hover-fondo); }
+.pv-est-orden:focus-visible { outline: 2px solid var(--cobre); outline-offset: -2px; }
+.pv-est-orden.sube::after, .pv-est-orden.baja::after { content: ""; display: inline-block; margin-left: 6px; border: 4px solid transparent; vertical-align: middle; }
+.pv-est-orden.sube::after { border-bottom-color: currentColor; margin-top: -4px; }
+.pv-est-orden.baja::after { border-top-color: currentColor; margin-top: 4px; }
+.pv-est td { padding: 7px 10px; border-bottom: 1px solid var(--linea); vertical-align: top; }
+.pv-est-fila { cursor: pointer; }
+.pv-est-fila:hover td { background: var(--hover-fondo); }
+.pv-est-fila.activa td { background: var(--cobre-suave); }
+.pv-est-fila.activa td:first-child { box-shadow: inset 3px 0 0 var(--cobre); }
+.pv-est-fila.seguido td:first-child { box-shadow: inset 3px 0 0 var(--ok); }
+.pv-est-fila:has(+ .pv-est-aviso) td { border-bottom: 0; }
+.pv-est-num { white-space: nowrap; color: var(--suave); }
+.pv-est-num > span:first-child { display: block; }
+.pv-est-confianza { display: inline-block; margin-top: 4px; padding: 1px 6px; border-radius: 8px; font-size: 11px; font-weight: 600; }
+.pv-est-confianza.media { background: var(--pv-c4); color: #2b2100; }
+.pv-est-confianza.baja { background: var(--pv-quitado); color: var(--pv-quitado-tinta); }
+.pv-est-radicado { min-width: 172px; }
+.pv-est-radicado .pv-est-editable { white-space: nowrap; }
+.pv-est-rad23 { display: block; margin-top: 2px; font-family: ui-monospace, "DejaVu Sans Mono", monospace; font-size: 11px; color: var(--suave); }
+.pv-est-rad23.falta { color: var(--error); }
+.pv-est-actuacion { min-width: 140px; font-weight: 600; }
+.pv-est-anotacion { min-width: 160px; color: var(--suave); }
+.pv-est-fecha { white-space: nowrap; }
+.pv-est-editable { display: block; min-height: 1.2em; border-radius: 4px; outline: none; }
+.pv-est-editable:hover { box-shadow: 0 0 0 1px var(--hover-borde); }
+.pv-est-editable:focus { box-shadow: 0 0 0 2px var(--cobre); background: var(--blanco); cursor: text; }
+.pv-est-seguir { min-width: 130px; }
+.pv-est-sigue { display: inline-block; padding: 2px 8px; border-radius: 10px; background: var(--pv-agregado); color: var(--pv-agregado-tinta); font-size: 12px; font-weight: 600; }
+.pv-est-boton { padding: 3px 8px; font-size: 12px; white-space: nowrap; }
+.pv-est-aviso td { padding: 0 10px 7px 40px; color: var(--error); font-size: 12px; }
+.pv-est-nada { text-align: center; padding: 24px; }
+.pv-est-capa { pointer-events: none; }
+.pv-est-resalte { fill: var(--pv-c4); fill-opacity: 0.3; stroke: var(--pv-c1); stroke-width: 1.5; }
+@media (prefers-reduced-motion: no-preference) {
+  .pv-est-resalte { animation: pv-est-aparece 0.35s ease-out; }
+}
+@keyframes pv-est-aparece { from { fill-opacity: 0; } to { fill-opacity: 0.3; } }
+/* Con poco ancho (lo normal, con el panel de herramientas al lado) el PDF va
+   debajo de la tabla: la página apaisada del estado se lee mejor a lo ancho. */
+#pv-estados { container-type: inline-size; }
+@container (max-width: 980px) {
+  .pv-estados { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 3fr) minmax(200px, 2fr); }
+  .pv-estados.sin-pdf { grid-template-rows: minmax(0, 1fr); }
+}
+.pv-est-demandante, .pv-est-demandado { min-width: 140px; }
+.pv-est-clase { min-width: 110px; }
+#pv-estados .pv-barra { gap: 8px 12px; }
+#pv-estados .pv-barra .boton-texto { padding: 4px 8px; }
+.pv-est-lote { padding: 8px 12px; gap: 4px 12px; }
+.pv-est-lote .pv-archivo-nombre { margin: 0; }

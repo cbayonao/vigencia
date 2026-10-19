@@ -18,6 +18,7 @@ const SVG = {
   desbloquear: HOJA + '<g class="pv-candado"><path class="pv-arco" d="M100 70v-10a12 12 0 0 1 24 0v10"/><rect class="pv-acento" x="94" y="68" width="36" height="30" rx="6"/><circle class="pv-sobre-acento-relleno" cx="112" cy="81" r="4"/><path class="pv-sobre-acento" d="M112 84v6"/></g>',
   rellenar: '<rect class="pv-papel" x="40" y="12" width="72" height="92" rx="6"/><rect class="pv-campo-ilu" x="50" y="26" width="52" height="11" rx="2"/><rect class="pv-campo-ilu" x="50" y="46" width="52" height="11" rx="2"/><rect class="pv-campo-ilu pv-campo-activo" x="50" y="66" width="34" height="11" rx="2"/><rect class="pv-campo-ilu" x="50" y="86" width="9" height="9" rx="2"/><path class="pv-acento-linea" d="M52 90l3 3 5-6"/><g class="pv-lapiz"><path class="pv-acento" d="M118 54l10 10-28 28-12 2 2-12z"/></g>',
   comparar: '<rect class="pv-papel" x="16" y="16" width="58" height="80" rx="5"/><rect class="pv-papel" x="86" y="16" width="58" height="80" rx="5"/><path class="pv-renglon" d="M26 32h38M26 62h38M96 32h38M96 62h38"/><rect class="pv-quitado-ilu" x="24" y="42" width="42" height="9" rx="2"/><rect class="pv-agregado-ilu" x="94" y="42" width="42" height="9" rx="2"/><rect class="pv-agregado-ilu" x="94" y="72" width="30" height="9" rx="2"/>',
+  estados: '<rect class="pv-papel" x="22" y="12" width="116" height="90" rx="6"/><path class="pv-renglon" d="M32 28h96M32 44h96M32 60h96M32 76h96M32 92h60"/><path class="pv-renglon" d="M58 22v76M84 22v76M110 22v76"/><rect class="pv-acento pv-tenue" x="30" y="53" width="100" height="14" rx="3"/><circle class="pv-acento" cx="132" cy="96" r="13"/><path class="pv-sobre-acento" d="M126 96.5l4 4 8-8"/>',
   listo: '<circle class="pv-acento" cx="12" cy="12" r="11"/><path class="pv-sobre-acento" d="M7 12.5l3.2 3.2L17 9"/>',
 };
 
@@ -78,7 +79,8 @@ export function rutasPdf(e) {
 
 const traeArchivos = (e) => [...(e.dataTransfer?.types || [])].includes("Files");
 
-export function soltable(el, alSoltar) {
+// filtro: qué rutas sirven (por defecto, solo PDF).
+export function soltable(el, alSoltar, filtro = rutasPdf) {
   let dentro = 0;
   el.addEventListener("dragenter", (e) => {
     if (!traeArchivos(e)) return;
@@ -100,15 +102,15 @@ export function soltable(el, alSoltar) {
     e.stopPropagation();
     dentro = 0;
     el.classList.remove("sobre");
-    const rutas = rutasPdf(e);
+    const rutas = filtro(e);
     if (rutas.length) alSoltar(rutas);
-    else avisar("Suelte un archivo PDF.", "error");
+    else avisar(filtro === rutasPdf ? "Suelte un archivo PDF." : "Ese tipo de archivo no sirve aquí.", "error");
   });
 }
 
 // La vista de una herramienta: cabeza con ayuda de una línea, barra de
 // acciones, cuerpo y pie (progreso o resultado, anunciado a lectores).
-export function crearEscena(id, { titulo, ayuda, llena = false, alSoltar = null }) {
+export function crearEscena(id, { titulo, ayuda, llena = false, alSoltar = null, filtro = rutasPdf }) {
   const raiz = nodo("section", `pv-escena${llena ? " llena" : ""}`);
   raiz.id = `pv-${id}`;
   raiz.hidden = true;
@@ -125,7 +127,7 @@ export function crearEscena(id, { titulo, ayuda, llena = false, alSoltar = null 
   const pie = nodo("div", "pv-pie");
   pie.setAttribute("aria-live", "polite");
   raiz.append(cabeza, barra, cuerpo, pie);
-  if (alSoltar) soltable(raiz, alSoltar);
+  if (alSoltar) soltable(raiz, alSoltar, filtro);
   $("pdf-escenas").append(raiz);
   return {
     raiz, cabeza, barra, cuerpo, pie,
@@ -146,7 +148,7 @@ export function crearEscena(id, { titulo, ayuda, llena = false, alSoltar = null 
   };
 }
 
-export function zonaVacia({ ilustracion: nombre, titulo, texto, boton: textoBoton = "Elegir PDF", alElegir, alSoltar }) {
+export function zonaVacia({ ilustracion: nombre, titulo, texto, boton: textoBoton = "Elegir PDF", alElegir, alSoltar, filtro = rutasPdf }) {
   const zona = nodo("div", "pv-vacia");
   zona.tabIndex = 0;
   zona.setAttribute("role", "button");
@@ -160,7 +162,7 @@ export function zonaVacia({ ilustracion: nombre, titulo, texto, boton: textoBoto
       alElegir();
     }
   });
-  if (alSoltar) soltable(zona, alSoltar);
+  if (alSoltar) soltable(zona, alSoltar, filtro);
   return zona;
 }
 

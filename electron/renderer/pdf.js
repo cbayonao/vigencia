@@ -6,6 +6,7 @@
 //   pdf-archivo.js  Comprimir, Proteger, Desbloquear
 //   pdf-rellenar.js Rellenar (campos sobre la página)
 //   pdf-comparar.js Comparar (dos visores y los cambios)
+//   pdf-estados.js  Estados del juzgado a tabla
 //   firma.js        Firmar
 // Las piezas comunes están en escena.js (vacío, progreso, resultado) y
 // paginas.js (el visor de páginas).
@@ -15,11 +16,12 @@ import { conAvance, irA, llenarProyectos } from "./proyectos.js";
 import { iniciarFirma, mostrarVisorFirma } from "./firma.js";
 import { iniciarArchivoPdf } from "./pdf-archivo.js";
 import { iniciarCompararPdf } from "./pdf-comparar.js";
+import { iniciarEstadosPdf, refrescarSeguidos } from "./pdf-estados.js";
 import { iniciarPaginasPdf } from "./pdf-paginas.js";
 import { iniciarRellenarPdf } from "./pdf-rellenar.js";
 
 const $ = (id) => document.getElementById(id);
-const HERRAMIENTAS_PDF = ["unir", "separar", "rotar", "firmar", "comprimir", "proteger", "desbloquear", "rellenar", "comparar"];
+const HERRAMIENTAS_PDF = ["unir", "separar", "rotar", "firmar", "comprimir", "proteger", "desbloquear", "rellenar", "comparar", "estados"];
 export const pdf = { llevar: null, llevado: null, listo: false, herramienta: "unir", separar: "", rotar: "", firmar: "", comprimir: "", proteger: "", desbloquear: "", rellenar: "", compararA: "", compararB: "" };
 
 // Cada herramienta de un archivo deja aquí qué hacer al elegirlo:
@@ -75,6 +77,7 @@ const COMO_LLEVAR = {
   elegido: "el PDF que eligió",
   resultado: "el PDF que acaba de guardar",
   temporal: "una copia temporal sin contraseña, aunque no haya guardado una",
+  tabla: "la tabla del estado en Markdown",
 };
 
 // Deja listo el panel Usar con la IA para un PDF: el elegido, el que salió
@@ -160,6 +163,8 @@ export async function pintarUno(clave) {
 
 export async function abrirPdf() {
   await llenarProyectos($("pdf-llevar-proyecto"), { vacio: "Elija un proyecto" });
+  // Al volver de Seguir este proceso, la tabla de Estados ya lo marca.
+  if (pdf.herramienta === "estados") refrescarSeguidos();
 }
 
 export function iniciarPdf() {
@@ -197,6 +202,7 @@ export function iniciarPdf() {
   iniciarArchivoPdf();
   iniciarRellenarPdf();
   iniciarCompararPdf();
+  iniciarEstadosPdf();
   iniciarFirma();
   elegirHerramienta(pdf.herramienta);
 }

@@ -104,6 +104,7 @@ import { registrarDocumentos } from "./documentos-ipc.js";
 import { registrarJuris } from "./juris-ipc.js";
 import { registrarConvertir } from "./convertir-ipc.js";
 import { limpiarTemporales, registrarPdftools } from "./pdftools-ipc.js";
+import { registrarEstados } from "./estados-ipc.js";
 import { consultarVersion, descargarActualizacion } from "./actualizar.js";
 import { directorioDatos } from "./rutas.js";
 
@@ -814,6 +815,7 @@ if (bloqueo) {
       convertirDatos,
       db: () => db,
     });
+    registrarEstados({ ipcMain, dialog, ventana: () => ventana, mensajeHumano, datosDir: () => datosDir });
     ipcMain.handle("listar", () => responder(() => ({
       procesos: listarProcesos(db),
       clientes: listarClientes(db),

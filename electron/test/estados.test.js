@@ -281,3 +281,32 @@ test("seguidos, filtro, orden, CSV, Excel y Markdown", () => {
   assert.equal(csv, "\uFEFFA;B\r\n\"uno; dos\";\"dijo \"\"no\"\"\"\r\n");
   assert.match(estadoAMarkdown({ meta: { juzgado: "JUZGADO 1", estado: "7" }, filas: m }), /^# JUZGADO 1, Estado No\. 7\n[\s\S]*\| Rechaza; archiva \|/);
 });
+
+test("leer un archivo de estado: PDF con texto, PDF escaneado sin OCR y tipo que no sirve", async () => {
+  const fs = await import("node:fs");
+  const os = await import("node:os");
+  const path = await import("node:path");
+  const { leerArchivoEstado } = await import("../src/estados-ipc.js");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "estados-"));
+  try {
+    const ruta = path.join(dir, "estado.pdf");
+    fs.writeFileSync(ruta, await armarEstado([{ registros: [R("00839"), R("00840")] }]));
+    const r = await leerArchivoEstado(ruta, { datosDir: dir });
+    assert.equal(r.ok, true);
+    assert.equal(r.tipo, "pdf");
+    assert.equal(r.filas.length, 2);
+    assert.ok(r.columnas.includes("demandante"));
+    const vacio = await PDFDocument.create();
+    vacio.addPage([612, 792]);
+    const escaneado = path.join(dir, "escaneado.pdf");
+    fs.writeFileSync(escaneado, Buffer.from(await vacio.save()));
+    const s = await leerArchivoEstado(escaneado, { datosDir: dir });
+    assert.equal(s.ok, false);
+    assert.match(s.error, /OCR/);
+    const otro = path.join(dir, "foto.png");
+    fs.writeFileSync(otro, "x");
+    assert.match((await leerArchivoEstado(otro)).error, /PDF, Excel, CSV, Word o HTML/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

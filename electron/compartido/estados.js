@@ -114,7 +114,7 @@ export function metaDeTexto(texto) {
   const t = String(texto || "").replace(/\s+/g, " ");
   const meta = {};
   const juz = /\b(JUZGADO|TRIBUNAL|SALA|CORTE|COMISI[OÓ]N)\b.*?(?=\s+(?:LISTADO|ESTADO|FECHA|P[AÁ]GINA|TRASLADO)\b|$)/i.exec(t);
-  if (juz) meta.juzgado = juz[0].trim();
+  if (juz) meta.juzgado = juz[0].replace(/[\s,;.:-]+$/, "").trim();
   const est = /\bESTADO\s*(?:No\.?|N[°º]|N[UÚ]MERO|#)?\s*(\d{1,4})\b/i.exec(t);
   if (est) meta.estado = est[1];
   const fecha = /\bFECHA\s*(?:DEL ESTADO|DE FIJACI[OÓ]N)?\s*:?\s*(\d{1,2}\/\d{1,2}\/\d{4})/i.exec(t);
@@ -557,6 +557,11 @@ export function tablasDeHtml(html) {
 export function marcarSeguidos(filas, radicadosSeguidos) {
   const set = new Set([...(radicadosSeguidos || [])].map((r) => String(r).replace(/\D/g, "")));
   return filas.map((f) => ({ ...f, seguido: Boolean(f.radicado) && set.has(f.radicado) }));
+}
+
+// Las columnas que traen algo, para no pintar columnas vacías.
+export function columnasConDatos(filas) {
+  return columnasUsadas(filas);
 }
 
 export function filtrarFilas(filas, { texto = "", soloSeguidos = false, soloAvisos = false } = {}) {

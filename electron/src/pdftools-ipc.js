@@ -29,7 +29,7 @@ export function guardarTemporal(bytes, nombre, base = os.tmpdir()) {
   const dir = path.join(carpetaTemporalPdf(base), crypto.randomBytes(8).toString("hex"));
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   const limpio = String(nombre || "documento.pdf").replace(/[\\/:*?"<>|]+/g, " ").trim() || "documento.pdf";
-  const ruta = path.join(dir, limpio.toLowerCase().endsWith(".pdf") ? limpio : `${limpio}.pdf`);
+  const ruta = path.join(dir, /\.(pdf|md)$/i.test(limpio) ? limpio : `${limpio}.pdf`);
   fs.writeFileSync(ruta, bytes, { mode: 0o600 });
   return ruta;
 }
@@ -406,13 +406,15 @@ export function registrarPdftools({ ipcMain, dialog, shell = null, ventana, mens
       if (!convertirDatos) return { ok: false, error: "El conversor todavía no está listo." };
       const ruta = String(dato?.ruta || "");
       if (!ruta) return { ok: false, error: "Elija primero el PDF." };
-      if (path.extname(ruta).toLowerCase() !== ".pdf") return { ok: false, error: "Eso no es un PDF." };
+      // También la tabla en Markdown que deja Estados.
+      const ext = path.extname(ruta).toLowerCase();
+      if (ext !== ".pdf" && ext !== ".md") return { ok: false, error: "Eso no es un PDF." };
       const problema = revisarRuta(ruta);
       if (problema) return { ok: false, error: problema };
       const nombre = String(dato?.nombre || "").trim().slice(0, 120) || path.basename(ruta);
       const r = await convertirDatos({
         datos: fs.readFileSync(ruta),
-        nombre: nombre.toLowerCase().endsWith(".pdf") ? nombre : `${nombre}.pdf`,
+        nombre: nombre.toLowerCase().endsWith(ext) ? nombre : `${nombre}${ext}`,
         meta: { herramienta: "pdf" },
         proyectoId: Number(dato?.proyectoId) || null,
         forzarOcr: Boolean(dato?.forzarOcr),

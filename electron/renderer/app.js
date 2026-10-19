@@ -4090,6 +4090,12 @@ window.addEventListener("vigencia:ir", async (e) => {
   if (d.a === "documentos") {
     pedirProyectoDocumentos(Number(d.proyectoId) || null, { contexto: Boolean(d.contexto) });
     elegirSistema("documentos");
+  } else if (d.a === "seguir") {
+    // Seguir este proceso (Estados): el mismo Agregar de la lista.
+    elegirSistema(SISTEMA_INICIAL);
+    $("nuevo").value = String(d.radicado || "");
+    $("nuevo").dispatchEvent(new Event("input"));
+    $("agregar").click();
   } else if (d.a === "convertir") {
     elegirSistema("convertir");
     if (d.archivoId) await verConvertido(Number(d.archivoId));

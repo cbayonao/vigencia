@@ -1,5 +1,10 @@
 # Registro de cambios
 
+## Sin publicar (rama feature/estados-tabla)
+- Estados del juzgado a tabla (Herramientas PDF): se sueltan uno o varios listados de estado de la Rama (PDF, o el mismo estado en Excel, CSV, Word o HTML) y salen como tabla que se ordena, se filtra, se busca y se corrige a mano. Al tocar una fila, el PDF muestra su lugar resaltado en la página.
+- Lee el formato Siglo XXI (radicado partido en dos líneas, celdas de varias líneas, títulos repetidos en cada página y columnas corridas) y otros títulos (Radicación, Accionante, Accionado, Anotación, Fecha Providencia, Cuaderno, Folios). El radicado queda en 23 dígitos cuando es seguro y si no, como viene. Juzgado, número y fecha del estado salen del encabezado; el pie (constancia y secretario) queda aparte, sin perder texto.
+- Cada fila trae su confianza y sus avisos (radicado completado o incompleto, sin fecha, anotación que sigue en otra página, leído con OCR o sin columnas).
+- Marca "Usted sigue este proceso" en los radicados de su lista y ofrece "Seguir este proceso" con el mismo Agregar de la consulta. Exporta a Excel y CSV, y Usar con la IA recibe la tabla en Markdown.
 ## Sin publicar (rama feature/pdf-visual)
 - Herramientas PDF con vista: cada herramienta muestra las páginas en el panel derecho, con zona grande para soltar, estado de avance y tarjeta de resultado con Abrir, Mostrar en carpeta y Usar con la IA. Tema claro y oscuro, todo con teclado.
 - Unir: tarjetas con la primera página, páginas y peso; se ordenan arrastrando o con Alt y flechas, se quitan con Supr, se agregan soltando y se pueden elegir páginas de cada archivo. Abajo se ve cómo queda.

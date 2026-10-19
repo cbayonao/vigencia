@@ -370,6 +370,7 @@
               <button type="button" class="juris-fuente pdf-mosaico" id="pdf-tab-desbloquear" role="tab" aria-selected="false"><span class="pdf-mosaico-icono" aria-hidden="true">🔓</span><span class="juris-fuente-nombre">Desbloquear</span></button>
               <button type="button" class="juris-fuente pdf-mosaico" id="pdf-tab-rellenar" role="tab" aria-selected="false"><span class="pdf-mosaico-icono" aria-hidden="true">📝</span><span class="juris-fuente-nombre">Rellenar</span></button>
               <button type="button" class="juris-fuente pdf-mosaico" id="pdf-tab-comparar" role="tab" aria-selected="false"><span class="pdf-mosaico-icono" aria-hidden="true">🔍</span><span class="juris-fuente-nombre">Comparar</span></button>
+              <button type="button" class="juris-fuente pdf-mosaico pdf-mosaico-ancho" id="pdf-tab-estados" role="tab" aria-selected="false"><span class="pdf-mosaico-icono" aria-hidden="true">📋</span><span class="juris-fuente-nombre">Estados del juzgado a tabla</span></button>
             </div>
           </section>
           <section class="juris-card" id="pdf-panel-unir" aria-label="Unir PDF">
@@ -530,6 +531,19 @@
             <div class="fila-fin">
               <span class="ayuda" id="pdf-comparar-estado"></span>
               <button type="button" class="boton-cobre" id="pdf-comparar-boton" disabled>Comparar</button>
+            </div>
+          </section>
+          <section class="juris-card" id="pdf-panel-estados" aria-label="Estados del juzgado" hidden>
+            <p class="etiqueta primera">Estados del juzgado</p>
+            <p class="ayuda" id="pdf-estados-nombre">Ningún estado elegido.</p>
+            <div class="fila-fin">
+              <button type="button" class="boton-linea" id="pdf-elegir-estados">Elegir estados</button>
+              <button type="button" class="boton-texto" id="pdf-estados-limpiar" hidden>Limpiar</button>
+            </div>
+            <div class="fila-fin">
+              <span class="ayuda" id="pdf-estados-estado"></span>
+              <button type="button" class="boton-linea" id="pdf-estados-csv" disabled>Exportar CSV</button>
+              <button type="button" class="boton-cobre" id="pdf-estados-excel" disabled>Exportar a Excel</button>
             </div>
           </section>
           <section class="juris-card pdf-llevar" id="pdf-llevar" aria-label="Usar el PDF con la IA">

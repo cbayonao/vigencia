@@ -796,4 +796,22 @@ export const MIGRACIONES = [
       if (!cols.has("proceso_clave")) db.exec("ALTER TABLE doc_proyecto ADD COLUMN proceso_clave TEXT NOT NULL DEFAULT ''");
     },
   },
+  {
+    version: 20,
+    nombre: "juzgados aprendidos",
+    up(db) {
+      // Prefijo de 12 dígitos de cada juzgado, aprendido de estados con
+      // radicados completos. Sirve para armar el radicado de los estados que
+      // solo traen el número corto.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS rad_juzgado (
+          clave TEXT PRIMARY KEY,
+          juzgado TEXT NOT NULL,
+          prefijo TEXT NOT NULL,
+          veces INTEGER NOT NULL DEFAULT 1,
+          actualizado_en TEXT NOT NULL
+        );
+      `);
+    },
+  },
 ];

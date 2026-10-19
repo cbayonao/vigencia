@@ -6,6 +6,11 @@
 - Estados en otro formato: ahora también se leen los estados hechos en Word con el título "NOTIFICACIÓN POR ESTADO DEL ..." (un registro por línea, la clase junto al número del proceso, por ejemplo "Ejecutivo No 2023-00073", la fecha del auto en letras y el cuaderno como "1 y 2."). Salen en la misma tabla: clase, número como viene, demandante, demandado, actuación, fecha del auto (dd/mm/aaaa) y cuaderno. La fecha del estado se toma del título.
 - Estos estados no traen el radicado de 23 dígitos, solo el número corto: la columna Radicado queda vacía, el número va en Radicado como viene, la fila avisa y no se cruza con los procesos que usted sigue.
 - El lector detecta el formato de cada página y usa el lector de ese formato; el listado de la Rama se lee igual que antes. Las palabras que Word parte en pedazos se vuelven a juntar.
+- Radicado armado: en los estados que solo traen el número corto (2023-00073, 2023-73, 26-489, No 2024-00210, 202400210, con recurso 2023-00073-01) el radicado de 23 dígitos se arma con el juzgado del título del estado. El juzgado sale, en este orden, de lo aprendido de estados con radicados completos y de los procesos de la consulta nacional y SAMAI que usted ya tiene, o del catálogo de despachos de la Rama que trae la app (municipio, corporación, especialidad y número del juzgado).
+- El radicado armado se ve distinto en la tabla (Armado, no viene en el PDF) y sirve para cruzar con los procesos que usted sigue. Si se tuvo que suponer algo (el juzgado 001 cuando hay varios en el municipio, o un juzgado que no está en el catálogo) queda como Supuesto, con confianza Dudosa, y no se puede agregar a Mis procesos hasta verificarlo o corregirlo.
+- Verificar en la consulta: una sola consulta a la Rama por ese número, sin guardar nada, que confirma si el radicado existe.
+- Los despachos comisorios y los números sin año no se arman.
+- Base de datos: migración 20 agrega la tabla rad_juzgado (juzgados aprendidos). No cambia nada de lo que ya existe.
 
 ## 3.8.0 (19 de octubre de 2026)
 

@@ -20,6 +20,8 @@
 // qué se saca de la celda del proceso) va en FORMATOS, uno por forma, y todos
 // devuelven la misma fila. Lo que un formato no trae queda vacío.
 
+import { armarRadicado, normal } from "./radicado.js";
+
 export const COLUMNAS = [
   { id: "radicado", nombre: "Radicado" },
   { id: "clase", nombre: "Clase de proceso" },
@@ -46,15 +48,7 @@ const SINONIMOS = [
   ["folios", ["folios", "folio", "fls", "fl"]],
 ];
 
-export function normal(texto) {
-  return String(texto ?? "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[.:#°º]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
+export { normal };
 
 // Columna de un título, o "" si no es título.
 export function columnaDeTitulo(texto) {
@@ -485,6 +479,30 @@ function columnasUsadas(filas) {
   return COLUMNAS.filter((c) => filas.some((f) => String(f[c.id] || "").trim())).map((c) => c.id);
 }
 
+// ---------- Radicado armado ----------
+
+// Formatos sin radicado de 23 dígitos: se arma con el juzgado del estado y el
+// número corto (compartido/radicado.js). Queda marcado en radicadoArmado
+// (armado o supuesto) para no confundirlo con uno leído del PDF.
+export function completarRadicados(resultado, contexto = {}) {
+  if (!resultado?.meta?.formato || !resultado.meta.juzgado) return resultado;
+  for (const f of resultado.filas || []) {
+    if (f.radicado || !f.radicadoTexto) continue;
+    const a = armarRadicado(resultado.meta.juzgado, f.radicadoTexto, contexto);
+    if (!a.radicado) {
+      f.radicadoNota = a.motivo;
+      continue;
+    }
+    f.radicado = a.radicado;
+    f.radicadoArmado = a.confianza;
+    f.radicadoNota = a.motivo;
+    f.avisos = f.avisos.filter((x) => !/número corto/.test(x));
+    f.avisos.push(a.confianza === "armado" ? `Radicado armado con el juzgado del estado (no viene en el PDF). ${a.motivo}` : `Radicado supuesto: revíselo antes de seguir el proceso. ${a.motivo}`);
+    if (a.confianza === "supuesto") f.confianza = "baja";
+  }
+  return resultado;
+}
+
 // ---------- Sin posiciones: OCR sin cajas o texto suelto ----------
 
 // Cada línea que empieza con un radicado abre un registro; lo demás se pega
@@ -688,6 +706,6 @@ export function csvDeFilas(columnas, filas) {
 export function estadoAMarkdown(lote) {
   const m = lote.meta || {};
   const cabeza = [m.juzgado, m.estado ? `Estado No. ${m.estado}` : "", m.fecha ? `del ${m.fecha}` : ""].filter(Boolean).join(", ");
-  const filas = (lote.filas || []).map((f) => `| ${[f.radicado || f.radicadoTexto, f.clase, f.demandante, f.demandado, f.actuacion, f.anotacion, f.fecha].map((c) => String(c || "").replace(/\|/g, "/")).join(" | ")} |`);
+  const filas = (lote.filas || []).map((f) => `| ${[f.radicado ? `${f.radicado}${f.radicadoArmado ? ` (${f.radicadoArmado})` : ""}` : f.radicadoTexto, f.clase, f.demandante, f.demandado, f.actuacion, f.anotacion, f.fecha].map((c) => String(c || "").replace(/\|/g, "/")).join(" | ")} |`);
   return [`# ${cabeza || lote.nombre || "Estado"}`, "", "| Radicado | Clase | Demandante | Demandado | Actuación | Anotación | Fecha auto |", "| --- | --- | --- | --- | --- | --- | --- |", ...filas, ""].join("\n");
 }

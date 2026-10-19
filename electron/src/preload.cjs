@@ -94,6 +94,7 @@ contextBridge.exposeInMainWorld("vigencia", {
   estadosLeer: (ruta) => ipcRenderer.invoke("estados-leer", { ruta }),
   estadosExportar: (formato, lotes) => ipcRenderer.invoke("estados-exportar", { formato, lotes }),
   estadosMarkdown: (lote) => ipcRenderer.invoke("estados-markdown", { lote }),
+  estadosVerificar: (radicado) => ipcRenderer.invoke("estados-verificar", { radicado }),
   // partes: [{ ruta, indices }] para unir solo esas páginas.
   pdfUnir: (rutas, partes) => ipcRenderer.invoke("pdf-unir", { rutas, partes }),
   // partes: [[índices], ...]; con más de una, un PDF por parte en una carpeta.

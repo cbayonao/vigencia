@@ -1,5 +1,12 @@
 # Registro de cambios
 
+## Sin publicar (rama feature/estados-formatos)
+
+### Estados del juzgado a tabla
+- Estados en otro formato: ahora también se leen los estados hechos en Word con el título "NOTIFICACIÓN POR ESTADO DEL ..." (un registro por línea, la clase junto al número del proceso, por ejemplo "Ejecutivo No 2023-00073", la fecha del auto en letras y el cuaderno como "1 y 2."). Salen en la misma tabla: clase, número como viene, demandante, demandado, actuación, fecha del auto (dd/mm/aaaa) y cuaderno. La fecha del estado se toma del título.
+- Estos estados no traen el radicado de 23 dígitos, solo el número corto: la columna Radicado queda vacía, el número va en Radicado como viene, la fila avisa y no se cruza con los procesos que usted sigue.
+- El lector detecta el formato de cada página y usa el lector de ese formato; el listado de la Rama se lee igual que antes. Las palabras que Word parte en pedazos se vuelven a juntar.
+
 ## 3.8.0 (19 de octubre de 2026)
 
 ### Mis procesos

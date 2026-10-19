@@ -14,6 +14,11 @@
 //    dígitos (el código del municipio) y llega hasta el siguiente.
 // 4. Las celdas partidas en varias líneas se juntan; la descripción se parte
 //    en actuación (primera línea) y anotación (el resto).
+//
+// Formatos: cada juzgado arma el estado a su manera. Los pasos de arriba son
+// comunes; lo que cambia (cómo empieza un registro, cómo se lee la fecha,
+// qué se saca de la celda del proceso) va en FORMATOS, uno por forma, y todos
+// devuelven la misma fila. Lo que un formato no trae queda vacío.
 
 export const COLUMNAS = [
   { id: "radicado", nombre: "Radicado" },
@@ -37,7 +42,7 @@ const SINONIMOS = [
   ["actuacion", ["descripcion actuacion", "actuacion", "descripcion", "decision", "providencia"]],
   ["anotacion", ["anotacion", "anotaciones", "observacion", "observaciones"]],
   ["fecha", ["fecha auto", "fecha providencia", "fecha del auto", "fecha de auto", "fecha de la providencia", "fecha actuacion", "fecha"]],
-  ["cuaderno", ["cuad", "cuaderno", "cuad no", "c"]],
+  ["cuaderno", ["cuad", "cuaderno", "cuad no", "cdno", "c"]],
   ["folios", ["folios", "folio", "fls", "fl"]],
 ];
 
@@ -65,6 +70,14 @@ export function columnaDeTitulo(texto) {
 // ---------- Radicado ----------
 
 const RE_FECHA = /\b(\d{1,2})\/(\d{1,2})\/(\d{4})\b/;
+const MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+
+// "2 de octubre de 2024" a 02/10/2024; "" si no lo es.
+export function fechaLarga(texto) {
+  const m = /\b(\d{1,2})\s+de\s+([a-z]+)\s+(?:de|del)\s+(\d{4})\b/.exec(normal(texto));
+  const mes = m ? MESES.indexOf(m[2] === "setiembre" ? "septiembre" : m[2]) + 1 : 0;
+  return mes ? `${m[1].padStart(2, "0")}/${String(mes).padStart(2, "0")}/${m[3]}` : "";
+}
 
 // Inicio de un registro: cinco dígitos del municipio, o el número entero.
 export function iniciaRadicado(texto) {
@@ -113,15 +126,17 @@ export function normalizarRadicadoEstado(crudo) {
 export function metaDeTexto(texto) {
   const t = String(texto || "").replace(/\s+/g, " ");
   const meta = {};
-  const juz = /\b(JUZGADO|TRIBUNAL|SALA|CORTE|COMISI[OÓ]N)\b.*?(?=\s+(?:LISTADO|ESTADO|FECHA|P[AÁ]GINA|TRASLADO)\b|$)/i.exec(t);
+  const juz = /\b(JUZGADO|TRIBUNAL|SALA|CORTE|COMISI[OÓ]N)\b.*?(?=\s+(?:LISTADO|ESTADO|FECHA|NOTIFICACI[OÓ]N|P[AÁ]GINA|TRASLADO)\b|$)/i.exec(t);
   if (juz) meta.juzgado = juz[0].replace(/[\s,;.:-]+$/, "").trim();
   const est = /\bESTADO\s*(?:No\.?|N[°º]|N[UÚ]MERO|#)?\s*(\d{1,4})\b/i.exec(t);
   if (est) meta.estado = est[1];
   const fecha = /\bFECHA\s*(?:DEL ESTADO|DE FIJACI[OÓ]N)?\s*:?\s*(\d{1,2}\/\d{1,2}\/\d{4})/i.exec(t);
   if (fecha) meta.fecha = fechaCorta(fecha[1]);
+  const larga = /\bESTADO\s+(?:DEL|DE)\s+(\d{1,2}\s+DE\s+[A-ZÁÉÍÓÚ]+\s+DE[L]?\s+\d{4})/i.exec(t);
+  if (!meta.fecha && larga) meta.fecha = fechaLarga(larga[1]);
   const pag = /\bP[AÁ]GINA\s*:?\s*(\d+)/i.exec(t);
   if (pag) meta.pagina = Number(pag[1]);
-  if (/LISTADO DE ESTADO|ESTADOS? ELECTR[OÓ]NICOS?/i.test(t)) meta.tipo = "estado";
+  if (/LISTADO DE ESTADO|NOTIFICACI[OÓ]N POR ESTADO|ESTADOS? ELECTR[OÓ]NICOS?/i.test(t)) meta.tipo = "estado";
   else if (/TRASLADO/i.test(t)) meta.tipo = "traslado";
   return meta;
 }
@@ -141,7 +156,9 @@ function limpios(items) {
 }
 
 // Agrupa en líneas por altura (y de arriba hacia abajo) y ordena por x.
-export function lineas(items, tolerancia = null) {
+// Con `pegar`, dos pedazos que se tocan en x van sin espacio (Word parte las
+// palabras en varios textos: "JIMÉNE" + "Z").
+export function lineas(items, tolerancia = null, pegar = false) {
   const orden = [...items].sort((a, b) => b.y - a.y || a.x - b.x);
   const salida = [];
   for (const it of orden) {
@@ -152,7 +169,7 @@ export function lineas(items, tolerancia = null) {
   }
   for (const l of salida) {
     l.items.sort((a, b) => a.x - b.x);
-    l.texto = l.items.map((i) => i.str).join(" ");
+    l.texto = l.items.map((i, k) => (k && !(pegar && i.x - (l.items[k - 1].x + l.items[k - 1].w) <= 1.5) ? " " : "") + i.str).join("");
   }
   return salida;
 }
@@ -243,6 +260,50 @@ function cruza(it, cortes) {
   return it.w > 0 && fuera / it.w > 0.34;
 }
 
+// ---------- Formatos ----------
+
+// Celda del proceso con la clase delante: "Ejecutivo No 2023-00073".
+const RE_CLASE_NO = /^(.*?[A-Za-zÁÉÍÓÚáéíóúñÑ.])\s+No\.?\s*(\S.*)$/;
+
+// detecta: textos de la columna del radicado (una línea cada uno).
+export const FORMATOS = [
+  {
+    // Listado Siglo XXI: radicado partido en dos líneas, fecha dd/mm/aaaa.
+    id: "listado",
+    detecta: (textos) => textos.some(iniciaRadicado),
+    inicia: iniciaRadicado,
+    pegar: false,
+    unaLinea: false,
+    fecha: fechaCorta,
+    completar: () => {},
+  },
+  {
+    // Tabla de Word ("NOTIFICACIÓN POR ESTADO DEL ..."): un registro por
+    // línea, la clase junto al número corto (año y consecutivo), fecha en
+    // letras y cuaderno "1 y 2.". No trae el radicado de 23 dígitos.
+    id: "clase-numero",
+    detecta: (textos) => textos.some((t) => RE_CLASE_NO.test(t) && !iniciaRadicado(t)),
+    inicia: (t) => RE_CLASE_NO.test(t),
+    pegar: true,
+    unaLinea: true,
+    fecha: (t) => fechaCorta(t) || fechaLarga(t),
+    completar: (fila) => {
+      const m = RE_CLASE_NO.exec(fila.radicadoTexto);
+      if (m) {
+        if (!fila.clase) fila.clase = m[1].trim();
+        fila.radicadoTexto = m[2].replace(/\s*-\s*/g, "-").trim();
+      }
+      fila.cuaderno = fila.cuaderno.replace(/[\s.]+$/, "");
+      fila.avisos = fila.avisos.filter((a) => !/radicado/i.test(a));
+      if (!fila.radicado) fila.avisos.push("Este estado trae solo el número corto del proceso; el radicado de 23 dígitos no se puede armar.");
+    },
+  },
+];
+
+export function detectarFormato(textos) {
+  return FORMATOS.find((f) => f.detecta(textos)) || FORMATOS[0];
+}
+
 // ---------- PDF con posiciones ----------
 
 // paginas: [{ numero, ancho, alto, items: [{ x, y, w, h, str }], ocr }]
@@ -272,15 +333,21 @@ export function leerEstado(paginas, { origen = "pdf" } = {}) {
     const arriba = halladoAqui ? items.filter((it) => it.y > titulos.arriba) : [];
     const banda = halladoAqui ? items.filter((it) => it.y >= titulos.abajo && it.y <= titulos.arriba) : [];
     const datos = halladoAqui ? items.filter((it) => it.y < titulos.abajo) : items;
-    Object.assign(meta, Object.fromEntries(Object.entries(metaDeTexto(lineas(arriba).map((l) => l.texto).join(" "))).filter(([k, v]) => v && k !== "pagina" && !meta[k])));
-    const sueltos = banda.filter((it) => !titulos.titulos.some((t) => it.x >= t.x0 - 1 && it.x + it.w <= t.x1 + 1));
-    if (sueltos.length) notas.push({ pagina: n, texto: lineas(sueltos).map((l) => l.texto).join(" "), aviso: "Texto junto a los títulos." });
     const cortes = cortesDeColumnas(titulos.titulos, datos.filter((it) => it.w < 300));
     const tipos = titulos.titulos.map((t) => t.columna);
     const kRad = tipos.indexOf("radicado");
-    // Inicios de registro.
     const enRad = kRad >= 0 ? datos.filter((it) => columnaDe(it, cortes) === kRad && !cruza(it, cortes)) : [];
-    let inicios = lineas(enRad, 3).filter((l) => iniciaRadicado(l.texto));
+    const formato = detectarFormato(lineas(enRad, 3, true).map((l) => l.texto));
+    if (formato !== FORMATOS[0] && !meta.formato) meta.formato = formato.id;
+    Object.assign(meta, Object.fromEntries(Object.entries(metaDeTexto(lineas(arriba, null, formato.pegar).map((l) => l.texto).join(" "))).filter(([k, v]) => v && k !== "pagina" && !meta[k])));
+    const sueltos = banda.filter((it) => !titulos.titulos.some((t) => it.x >= t.x0 - 1 && it.x + it.w <= t.x1 + 1));
+    if (sueltos.length) {
+      const texto = lineas(sueltos, null, formato.pegar).map((l) => l.texto).join(" ");
+      notas.push({ pagina: n, texto, aviso: "Texto junto a los títulos." });
+      for (const [k, v] of Object.entries(metaDeTexto(texto))) if (v && k !== "pagina" && !meta[k]) meta[k] = v;
+    }
+    // Inicios de registro.
+    let inicios = lineas(enRad, 3, formato.pegar).filter((l) => formato.inicia(l.texto));
     let sinColumna = false;
     if (!inicios.length && kRad < 0) {
       inicios = lineas(datos, 3).filter((l) => l.items.some((it) => iniciaRadicado(it.str)));
@@ -308,13 +375,13 @@ export function leerEstado(paginas, { origen = "pdf" } = {}) {
       } else notas.push({ pagina: n, texto: lineas(antes).map((l) => l.texto).join("\n"), aviso: "" });
     }
     grupos.forEach((grupo, j) => {
-      const { fila, cola } = filaDeGrupo(grupo, { cortes, tipos, pagina: n, ultima: j === grupos.length - 1, origen: pagina.ocr ? "ocr" : origen });
+      const { fila, cola } = filaDeGrupo(grupo, { cortes, tipos, formato, pagina: n, ultima: j === grupos.length - 1, origen: pagina.ocr ? "ocr" : origen });
       if (sinColumna) {
         fila.avisos.push("Este estado no tiene columna de radicado; el número se buscó en toda la línea.");
         fila.confianza = "baja";
       }
       filas.push(fila);
-      if (cola.length) notas.push({ pagina: n, texto: lineas(cola).map((l) => l.texto).join("\n"), aviso: "" });
+      if (cola.length) notas.push({ pagina: n, texto: lineas(cola, null, formato.pegar).map((l) => l.texto).join("\n"), aviso: "" });
     });
     if (!titulos.titulos.some((t) => t.columna === "radicado")) avisos.push(`Página ${n}: no hay columna de radicado.`);
   }
@@ -329,12 +396,16 @@ export function leerEstado(paginas, { origen = "pdf" } = {}) {
   return { meta, filas, notas: notas.filter((x) => x.texto || x.aviso), avisos, columnas: columnasUsadas(filas) };
 }
 
-function filaDeGrupo(grupo, { cortes, tipos, pagina, ultima, origen }) {
+function filaDeGrupo(grupo, { cortes, tipos, formato = FORMATOS[0], pagina, ultima, origen }) {
   const avisos = [];
   // Una línea muy por debajo del resto, al final de la página, es el pie.
   const orden = [...grupo].sort((a, b) => b.y - a.y);
   let cola = [];
-  if (ultima) {
+  if (formato.unaLinea) {
+    // Un registro, una línea: lo que cae más abajo no es del registro.
+    const alto = Math.max(...orden.map((i) => i.h));
+    cola = orden.filter((it) => orden[0].y - it.y > alto * 1.2);
+  } else if (ultima) {
     for (let i = 1; i < orden.length; i++) {
       const salto = orden[i - 1].y - orden[i].y;
       if (salto > Math.max(28, orden[i].h * 3.2)) {
@@ -352,7 +423,7 @@ function filaDeGrupo(grupo, { cortes, tipos, pagina, ultima, origen }) {
     (celdas[id] ||= []).push(it);
     if (cruza(it, cortes)) avisos.push(`"${it.str.slice(0, 40)}" cruza dos columnas; quedó en ${COLUMNAS.find((c) => c.id === id)?.nombre || "una columna sin título"}.`);
   }
-  const texto = (id) => lineas(celdas[id] || [], 3).map((l) => l.texto);
+  const texto = (id) => lineas(celdas[id] || [], 3, formato.pegar).map((l) => l.texto);
   const desc = texto("actuacion");
   const tieneAnotacion = tipos.includes("anotacion");
   const fila = {
@@ -384,16 +455,19 @@ function filaDeGrupo(grupo, { cortes, tipos, pagina, ultima, origen }) {
   fila.radicadoNota = rad.nota;
   if (rad.aviso) avisos.push(rad.aviso);
   const fechaTexto = texto("fecha").join(" ");
-  fila.fecha = fechaCorta(fechaTexto);
-  if (!fila.fecha && tipos.includes("fecha")) avisos.push(fechaTexto ? `La fecha "${fechaTexto}" no tiene la forma dd/mm/aaaa.` : "Sin fecha del auto.");
+  fila.fecha = formato.fecha(fechaTexto);
+  if (!fila.fecha && tipos.includes("fecha")) avisos.push(fechaTexto ? `La fecha "${fechaTexto}" no se pudo leer.` : "Sin fecha del auto.");
   if (!fila.actuacion) avisos.push("Sin actuación.");
   if (origen === "ocr") avisos.push("Leído con OCR: revise nombres y números.");
-  fila.confianza = confianza(fila, rad);
+  formato.completar(fila);
+  fila.confianza = confianza(fila, rad, formato);
   return { fila, cola };
 }
 
-function confianza(fila, rad) {
-  if (fila.origen === "texto" || !fila.radicado) return "baja";
+// Un formato sin radicado de 23 dígitos llega a "media" si lo demás está bien.
+function confianza(fila, rad, formato = FORMATOS[0]) {
+  if (fila.origen === "texto") return "baja";
+  if (!fila.radicado) return formato.id !== "listado" && fila.radicadoTexto && fila.fecha && fila.actuacion && fila.avisos.length <= 1 && fila.origen !== "ocr" ? "media" : "baja";
   if (fila.origen === "ocr" || rad.aviso || fila.avisos.length) return "media";
   return "alta";
 }

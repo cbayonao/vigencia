@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { PDFDocument, StandardFonts } from "pdf-lib";
 import { itemsDePdf, tablasDeDatos } from "../src/convertir/convertidores.js";
 import {
-  columnaDeTitulo, csvDeFilas, estadoAMarkdown, filasParaExportar, filtrarFilas, iniciaRadicado, leerEstado, leerPorLineas, leerTabla,
+  columnaDeTitulo, csvDeFilas, detectarFormato, estadoAMarkdown, fechaLarga, filasParaExportar, filtrarFilas, iniciaRadicado, leerEstado, leerPorLineas, leerTabla,
   marcarSeguidos, metaDeTexto, normalizarRadicadoEstado, ordenarFilas, tablasDeHtml,
 } from "../compartido/estados.js";
 
@@ -309,4 +309,80 @@ test("leer un archivo de estado: PDF con texto, PDF escaneado sin OCR y tipo que
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+// Segundo formato: tabla de Word "NOTIFICACIÓN POR ESTADO DEL ...", un
+// registro por línea, la clase junto al número corto y la fecha en letras.
+// Word parte palabras en varios textos pegados: se arman igual aquí.
+async function armarEstadoWord(registros) {
+  const pdf = await PDFDocument.create();
+  const f = await pdf.embedFont(StandardFonts.Helvetica);
+  const p = pdf.addPage([936, 612]);
+  const t = (texto, x, y, size = 9) => p.drawText(texto, { x, y, size, font: f });
+  // Pedazos seguidos sin hueco, como los deja Word.
+  const pegados = (partes, x, y) => partes.forEach((s) => {
+    t(s, x, y);
+    x += f.widthOfTextAtSize(s, 9);
+  });
+  t("JUZGADO PROMISCUO MUNICIPAL DE PRUEBA", 325, 516, 11);
+  pegados(["NOTIFICACIÓN POR ESTADO DEL 3 DE O", "CTU", "BRE DE 2024"], 289, 486);
+  [["PROCESO", 90], ["DEMANDANTE", 255], ["DEMANDADO", 454], ["ACTUACIÓN", 638], ["FECHA AUTO", 777], ["CDNO", 876]].forEach(([s, x]) => t(s, x, 472));
+  let y = 454;
+  for (const r of registros) {
+    pegados(r.proceso, 40, y);
+    pegados(r.demandante, 199, y);
+    t(r.demandado, 393, y);
+    pegados(r.actuacion, 592, y);
+    t(r.fecha, 755, y);
+    t(r.cdno, 888, y);
+    y -= 15;
+  }
+  t("De conformidad con lo previsto en el artículo 295 del Código General del Proceso, se NOTIFICA a las partes los autos proferidos", 40, y - 11);
+  t("presente ESTADO, el cual se fija en la secretaría por el término legal de un (1) día.", 40, y - 23);
+  return Buffer.from(await pdf.save());
+}
+
+test("estado de Word: clase junto al número corto, fecha en letras, palabras partidas y pie", async () => {
+  const pdf = await armarEstadoWord([
+    { proceso: ["Pertenencia No 20", "21", "-", "00060"], demandante: ["ANA PRUEBA JIMÉNE", "Z L."], demandado: "PERSONAS INDETERMINADAS", actuacion: ["Ordena desarchivar"], fecha: "2 de octubre de 2024", cdno: "1." },
+    { proceso: ["S", "i", "mulación No 2023", "-", "00119"], demandante: ["BETO INVENTADO"], demandado: "CARLA FALSA DE PRUEBA", actuacion: ["S", "eñala nueva fecha"], fecha: "2 de octubre de 2024", cdno: "1 y 2." },
+    { proceso: ["D. Comisorio No 0923DG", "-", "134"], demandante: ["BANCO DE PRUEBA S.A."], demandado: "DIANA EJEMPLO", actuacion: ["Señala fecha para remate"], fecha: "1 de septiembre de 2024", cdno: "1." },
+  ]);
+  const r = await leer(pdf);
+  assert.equal(r.filas.length, 3);
+  assert.deepEqual(r.meta, { paginas: 1, formato: "clase-numero", juzgado: "JUZGADO PROMISCUO MUNICIPAL DE PRUEBA", fecha: "03/10/2024", tipo: "estado" });
+  const [a, b, c] = r.filas;
+  assert.equal(a.clase, "Pertenencia");
+  assert.equal(a.radicadoTexto, "2021-00060");
+  assert.equal(a.radicado, "", "sin despacho no hay radicado de 23 dígitos");
+  assert.equal(a.demandante, "ANA PRUEBA JIMÉNEZ L.");
+  assert.equal(a.demandado, "PERSONAS INDETERMINADAS");
+  assert.equal(a.actuacion, "Ordena desarchivar");
+  assert.equal(a.anotacion, "");
+  assert.equal(a.fecha, "02/10/2024");
+  assert.equal(a.cuaderno, "1");
+  assert.equal(a.confianza, "media");
+  assert.equal(a.avisos.length, 1);
+  assert.match(a.avisos[0], /número corto/);
+  assert.equal(b.clase, "Simulación");
+  assert.equal(b.actuacion, "Señala nueva fecha");
+  assert.equal(b.cuaderno, "1 y 2");
+  assert.equal(c.clase, "D. Comisorio");
+  assert.equal(c.radicadoTexto, "0923DG-134");
+  assert.equal(c.fecha, "01/09/2024");
+  // El pie no se pega a la última fila.
+  assert.equal(c.demandado, "DIANA EJEMPLO");
+  assert.match(r.notas.map((n) => n.texto).join(" "), /artículo 295/);
+  assert.deepEqual(marcarSeguidos(r.filas, ["11001311002220220083900"]).map((f) => f.seguido), [false, false, false]);
+});
+
+test("formatos: detección y fecha en letras", () => {
+  assert.equal(detectarFormato(["11001 31 10 022", "2022 00839"]).id, "listado");
+  assert.equal(detectarFormato(["Ejecutivo No 2023-00073"]).id, "clase-numero");
+  assert.equal(detectarFormato([]).id, "listado");
+  assert.equal(fechaLarga("2 de octubre de 2024"), "02/10/2024");
+  assert.equal(fechaLarga("15 de Setiembre del 2023"), "15/09/2023");
+  assert.equal(fechaLarga("2 de octubrx de 2024"), "");
+  assert.equal(columnaDeTitulo("CDNO"), "cuaderno");
+  assert.equal(metaDeTexto("NOTIFICACIÓN POR ESTADO DEL 3 DE OCTUBRE DE 2024").fecha, "03/10/2024");
 });

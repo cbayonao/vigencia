@@ -14,7 +14,8 @@ import fs from "node:fs";
 import { PDFDocument, PDFName, PDFNumber, PDFRawStream, StandardFonts, degrees, rgb } from "pdf-lib";
 import { Aviso, filas, run, uno } from "./db.js";
 import { ahora } from "../compartido/logica.js";
-import { cajaFirma } from "../compartido/pdftools.js";
+import { cajaAPdf, giroNormal, lineaDeTexto } from "../compartido/pdftools.js";
+import { AVISO_CLAVE } from "./convertir/convertidores.js";
 
 function leerPdf(ruta) {
   let datos;
@@ -40,16 +41,26 @@ async function cargar(ruta) {
   try {
     return await PDFDocument.load(datos, { ignoreEncryption: false });
   } catch (error) {
-    if (/encrypt/i.test(String(error?.message || ""))) throw new Aviso("Ese PDF tiene contraseña y no se puede abrir.");
+    if (/encrypt/i.test(String(error?.message || ""))) throw new Aviso(AVISO_CLAVE);
     throw new Aviso("Ese PDF está dañado o no se pudo leer.");
   }
 }
 
+// Lo que se ve de la página: CropBox dentro de la MediaBox (como pdfjs) y
+// el giro /Rotate. Es la "pagina" de cajaAPdf en compartido/pdftools.js.
+export function geometriaPagina(p) {
+  const m = p.getMediaBox();
+  const c = p.getCropBox();
+  const x0 = Math.max(m.x, c.x);
+  const y0 = Math.max(m.y, c.y);
+  const x1 = Math.min(m.x + m.width, c.x + c.width);
+  const y1 = Math.min(m.y + m.height, c.y + c.height);
+  const caja = x1 > x0 && y1 > y0 ? { x0, y0, ancho: x1 - x0, alto: y1 - y0 } : { x0: m.x, y0: m.y, ancho: m.width, alto: m.height };
+  return { ...caja, rotacion: giroNormal(p.getRotation().angle) };
+}
+
 export function paginasDe(doc) {
-  return doc.getPageIndices().map((i) => {
-    const p = doc.getPage(i);
-    return { numero: i + 1, ancho: p.getWidth(), alto: p.getHeight() };
-  });
+  return doc.getPageIndices().map((i) => ({ numero: i + 1, ...geometriaPagina(doc.getPage(i)) }));
 }
 
 export async function infoPdf(ruta) {
@@ -98,76 +109,75 @@ export async function rotarPdf(ruta, indices, angulo) {
   return Buffer.from(await doc.save());
 }
 
-export async function firmarPdf(ruta, pngBase64, { paginas, posicion, ancho, caja, firmante } = {}) {
-  const limpio = String(pngBase64 || "").replace(/^data:image\/\w+;base64,/, "").trim();
-  if (!limpio) throw new Aviso("Dibuje primero su firma.");
-  let imagen;
+const MAX_MARCAS = 300;
+const MAX_IMAGEN = 500 * 1024;
+
+async function embeberImagen(doc, base64) {
+  // Copia propia: pdf-lib lee el JPG sin mirar byteOffset y los Buffer
+  // pequeños de Node viven dentro de un bloque compartido.
+  const datos = new Uint8Array(Buffer.from(String(base64 || "").replace(/^data:image\/\w+;base64,/, "").trim(), "base64"));
+  if (!datos.length) throw new Aviso("Una de las firmas está vacía.");
+  if (datos.length > MAX_IMAGEN) throw new Aviso("Esa imagen de firma pesa demasiado (máximo 500 KB).");
   try {
-    imagen = Buffer.from(limpio, "base64");
+    return await doc.embedPng(datos);
   } catch {
-    throw new Aviso("Esa firma no se pudo leer.");
-  }
-  if (imagen.length > 500 * 1024) throw new Aviso("Esa imagen de firma pesa demasiado (máximo 500 KB).");
-  const firma = textoFirmante(firmante);
-  const doc = await cargar(ruta);
-  let embebida;
-  try {
-    embebida = await doc.embedPng(imagen);
-  } catch {
-    throw new Aviso("Esa firma no es un PNG válido.");
-  }
-  const naturales = embebida.scale(1);
-  const anchoBase = Number(ancho) || 150;
-  const altoBase = naturales.width ? (naturales.height * anchoBase) / naturales.width : 50;
-  // Colocación libre (x, y en puntos PDF desde abajo-izquierda) o el
-  // preset de antes por compatibilidad. La página de referencia más los
-  // rangos extra llevan la misma caja, ajustada a cada página.
-  const extra = Array.isArray(paginas) ? paginas.filter((i) => Number.isInteger(i)) : [];
-  let cuales;
-  if (caja) {
-    const referencia = Math.max(0, (Number(caja.pagina) || 1) - 1);
-    cuales = [...new Set([referencia, ...extra])];
-  } else if (extra.length) {
-    cuales = [...new Set(extra)];
-  } else {
-    cuales = [doc.getPageCount() - 1];
-  }
-  const tocadas = [];
-  for (const i of cuales) {
-    if (i < 0 || i >= doc.getPageCount()) throw new Aviso("Esa página se sale del documento.");
-    const pagina = doc.getPage(i);
-    const W = pagina.getWidth();
-    const H = pagina.getHeight();
-    let b;
-    if (caja && Number.isFinite(Number(caja.x)) && Number.isFinite(Number(caja.y))) {
-      const w = Math.min(Math.max(20, Number(caja.ancho) || anchoBase), W - 20);
-      const h = Math.max(10, (naturales.width ? naturales.height / naturales.width : 1 / 3) * w);
-      b = {
-        x: Math.min(Math.max(10, Number(caja.x)), Math.max(10, W - w - 10)),
-        y: Math.min(Math.max(10, Number(caja.y)), Math.max(10, H - h - 10)),
-        w, h,
-      };
-    } else {
-      b = cajaFirma(posicion, { width: W, height: H }, anchoBase, altoBase);
+    try {
+      return await doc.embedJpg(datos);
+    } catch {
+      throw new Aviso("Esa firma no es una imagen PNG o JPG válida.");
     }
-    pagina.drawImage(embebida, { x: b.x, y: b.y, width: b.w, height: b.h });
-    tocadas.push(i + 1);
   }
-  const contenido = await huellaContenido(doc, false);
-  const hashContenido = contenido;
+}
+
+// Helvetica estándar solo sabe WinAnsi (español sí, emojis no).
+function textoWinAnsi(t) {
+  return String(t || "").replace(/[^\x20-\x7E\u00A0-\u00FF]/g, "").replace(/\s+/g, " ").trim().slice(0, 200);
+}
+
+// Firmar: cada marca es una firma (imagen) o un texto puesto en la página
+// tal como se ve (ver cajaAPdf). La constancia es opcional (encendida en
+// la ventana por defecto) y solo con ella hace falta quien firma.
+export async function firmarPdf(ruta, { imagenes = [], marcas = [], constancia = true, firmante } = {}) {
+  const lista = Array.isArray(marcas) ? marcas : [];
+  if (!lista.length) throw new Aviso("Ponga primero al menos una firma o un texto sobre la página.");
+  if (lista.length > MAX_MARCAS) throw new Aviso(`Son demasiadas marcas (máximo ${MAX_MARCAS}).`);
+  if ((imagenes || []).length > 20) throw new Aviso("Use máximo 20 firmas distintas.");
+  const quien = constancia ? textoFirmante(firmante) : null;
+  const doc = await cargar(ruta);
+  const embebidas = [];
+  for (const base64 of imagenes || []) embebidas.push(await embeberImagen(doc, base64));
+  let fuente = null;
+  const tocadas = new Set();
+  for (const m of lista) {
+    const i = Number(m?.pagina) - 1;
+    if (!Number.isInteger(i) || i < 0 || i >= doc.getPageCount()) throw new Aviso("Esa página se sale del documento.");
+    if (![m.x, m.y, m.w, m.h].every(Number.isFinite) || m.w <= 0 || m.h <= 0) throw new Aviso("Una marca quedó sin tamaño.");
+    const pagina = doc.getPage(i);
+    const geo = geometriaPagina(pagina);
+    if (m.tipo === "texto") {
+      const texto = textoWinAnsi(m.texto);
+      if (!texto) continue;
+      const { tamano, base } = lineaDeTexto(m);
+      fuente ||= await doc.embedFont(StandardFonts.Helvetica);
+      const b = cajaAPdf(base, geo);
+      pagina.drawText(texto, { x: b.x, y: b.y, size: Math.min(96, Math.max(4, tamano)), font: fuente, color: rgb(0.05, 0.05, 0.05), rotate: degrees(b.giro) });
+    } else {
+      const imagen = embebidas[Number(m.imagen)];
+      if (!imagen) throw new Aviso("Falta la imagen de una de las firmas.");
+      const b = cajaAPdf(m, geo);
+      pagina.drawImage(imagen, { x: b.x, y: b.y, width: b.w, height: b.h, rotate: degrees(b.giro) });
+    }
+    tocadas.add(i + 1);
+  }
+  const paginas = [...tocadas].sort((a, b) => a - b);
+  if (!constancia) return { bytes: Buffer.from(await doc.save()), codigo: "", paginas };
+  const hashContenido = await huellaContenido(doc, false);
   const codigo = hashContenido.slice(0, 12).toUpperCase();
   const fecha = ahora();
-  agregarConstancia(doc, { codigo, hashContenido, firmante: firma, paginas: tocadas, fecha });
+  agregarConstancia(doc, { codigo, hashContenido, firmante: quien, paginas, fecha });
   doc.setKeywords([`VIGENCIA-FIRMA codigo=${codigo} hash=${hashContenido}`]);
   const final = Buffer.from(await doc.save());
-  return {
-    bytes: final,
-    codigo,
-    hashContenido,
-    hashFinal: sha(final),
-    paginas: tocadas,
-    fecha,
-  };
+  return { bytes: final, codigo, hashContenido, hashFinal: sha(final), paginas, fecha };
 }
 
 function sha(datos) {
@@ -209,11 +219,11 @@ function agregarConstancia(doc, { codigo, hashContenido, firmante, paginas, fech
   let y = H - 70;
   pagina.drawText("CONSTANCIA DE FIRMA ELECTRÓNICA", { x: 60, y, size: 16, color: tinta });
   y -= 22;
-  pagina.drawText("Vigencia · Ley 527 de 1999 (art. 7) y Decreto 2364 de 2012", { x: 60, y, size: 10, color: gris });
+  pagina.drawText("Vigencia. Ley 527 de 1999 (art. 7) y Decreto 2364 de 2012", { x: 60, y, size: 10, color: gris });
   y -= 30;
   linea(`Código de verificación: ${codigo}`, 60, y, 12);
   y -= 24;
-  linea(`Firmante: ${firmante.nombre}${firmante.documento ? ` · Documento: ${firmante.documento}` : ""}`, 60, y);
+  linea(`Firmante: ${firmante.nombre}${firmante.documento ? `, documento ${firmante.documento}` : ""}`, 60, y);
   y -= 20;
   linea(`Fecha de firma: ${fechaCortaActa(fecha)}`, 60, y);
   y -= 20;
@@ -293,24 +303,35 @@ function exigirDb(db) {
 
 export function listarFirmas(db) {
   exigirDb(db);
-  return filas(db, "SELECT id, nombre, creado_en FROM firma_perfil ORDER BY nombre COLLATE NOCASE, id").map((f) => ({
+  return filas(db, "SELECT id, nombre, png, creado_en FROM firma_perfil ORDER BY id").map((f) => ({
     id: Number(f.id),
     nombre: f.nombre,
+    png: f.png,
     creado_en: f.creado_en,
   }));
 }
 
-export function leerFirma(db, id) {
+function nombreFirma(nombre) {
+  const limpio = String(nombre || "").replace(/\s+/g, " ").trim().slice(0, 60);
+  if (limpio.length < 2) throw new Aviso("Póngale un nombre a la firma (mínimo 2 letras).");
+  return limpio;
+}
+
+function exigirFirma(db, id) {
+  if (!uno(db, "SELECT id FROM firma_perfil WHERE id = ?", [Number(id) || 0])) throw new Aviso("Esa firma ya no está.");
+  return Number(id);
+}
+
+export function renombrarFirma(db, id, nombre) {
   exigirDb(db);
-  const f = uno(db, "SELECT * FROM firma_perfil WHERE id = ?", [Number(id) || 0]);
-  if (!f) throw new Aviso("Esa firma ya no está.");
-  return { id: Number(f.id), nombre: f.nombre, png: f.png, creado_en: f.creado_en };
+  const limpio = nombreFirma(nombre);
+  run(db, "UPDATE firma_perfil SET nombre = ? WHERE id = ?", [limpio, exigirFirma(db, id)]);
+  return { id: Number(id), nombre: limpio };
 }
 
 export function guardarFirma(db, { nombre, png }) {
   exigirDb(db);
-  const limpio = String(nombre || "").replace(/\s+/g, " ").trim().slice(0, 60);
-  if (limpio.length < 2) throw new Aviso("Póngale un nombre a la firma (mínimo 2 letras).");
+  const limpio = nombreFirma(nombre);
   const datos = String(png || "").replace(/^data:image\/\w+;base64,/, "").trim();
   if (!datos) throw new Aviso("Dibuje, suba o escriba primero su firma.");
   if (datos.length > 400000) throw new Aviso("Esa imagen pesa demasiado para guardarla.");
@@ -321,8 +342,7 @@ export function guardarFirma(db, { nombre, png }) {
 
 export function borrarFirma(db, id) {
   exigirDb(db);
-  if (!uno(db, "SELECT id FROM firma_perfil WHERE id = ?", [Number(id) || 0])) throw new Aviso("Esa firma ya no está.");
-  run(db, "DELETE FROM firma_perfil WHERE id = ?", [Number(id)]);
+  run(db, "DELETE FROM firma_perfil WHERE id = ?", [exigirFirma(db, id)]);
   return {};
 }
 
@@ -464,7 +484,7 @@ export async function rellenarPdf(ruta, valores, { aplanar = true } = {}) {
         f.setText(String(valor ?? ""));
       }
     } catch {
-      throw new Aviso(`El campo “${nombre}” no aceptó ese valor.`);
+      throw new Aviso(`El campo ${nombre} no aceptó ese valor.`);
     }
   }
   if (aplanar) {

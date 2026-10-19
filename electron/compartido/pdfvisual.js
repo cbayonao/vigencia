@@ -130,10 +130,10 @@ export function fuerzaClave(clave) {
 // 5 copiar, 6 comentar, 9 llenar formularios, 10 accesibilidad (siempre
 // queda), 11 armar páginas, 12 imprimir en alta.
 export const PERMISOS = [
-  { id: "imprimir", nombre: "Imprimir", bits: [3, 12] },
-  { id: "copiar", nombre: "Copiar texto", bits: [5] },
-  { id: "modificar", nombre: "Modificar y armar páginas", bits: [4, 11] },
-  { id: "comentar", nombre: "Comentar y llenar formularios", bits: [6, 9] },
+  { id: "imprimir", nombre: "Imprimir", accion: "imprimir", bits: [3, 12] },
+  { id: "copiar", nombre: "Copiar texto", accion: "copiar texto", bits: [5] },
+  { id: "modificar", nombre: "Modificar y armar páginas", accion: "cambiar páginas", bits: [4, 11] },
+  { id: "comentar", nombre: "Comentar y llenar formularios", accion: "comentar o llenar formularios", bits: [6, 9] },
 ];
 
 // elegidos: { imprimir: true, ... }. Todo permitido da -4, lo de siempre.
@@ -147,11 +147,12 @@ export function permisosP(elegidos = {}) {
 }
 
 export function resumenPermisos(elegidos = {}) {
-  const puede = PERMISOS.filter((p) => elegidos[p.id] !== false).map((p) => p.nombre.toLowerCase());
-  const noPuede = PERMISOS.filter((p) => elegidos[p.id] === false).map((p) => p.nombre.toLowerCase());
+  const puede = PERMISOS.filter((p) => elegidos[p.id] !== false).map((p) => p.accion);
+  const noPuede = PERMISOS.filter((p) => elegidos[p.id] === false).map((p) => p.accion);
   if (!noPuede.length) return "Quien tenga la contraseña puede hacer todo: imprimir, copiar, modificar y comentar.";
-  const si = puede.length ? `Quien la abra puede ${puede.join(", ")}.` : "Quien la abra solo puede leerlo.";
-  return `${si} No puede ${noPuede.join(", ")}. Los lectores serios respetan estos permisos, pero no todos.`;
+  const lista = (x, y) => (x.length > 1 ? `${x.slice(0, -1).join(", ")} ${y} ${x[x.length - 1]}` : x[0]);
+  const si = puede.length ? `Quien la abra puede ${lista(puede, "y")}.` : "Quien la abra solo puede leerlo.";
+  return `${si} No puede ${lista(noPuede, "ni")}. Los lectores serios respetan estos permisos, pero no todos.`;
 }
 
 // ---------- Comparar ----------
@@ -220,4 +221,43 @@ export function cambiosPorPagina(textoA, textoB) {
     cambios.push({ ...c, paginaA, paginaB });
   }
   return { cambios, cuenta: dif.cuenta, porA, porB };
+}
+
+// Dentro de un párrafo cambiado: qué palabras se quitaron y cuáles se
+// agregaron. Devuelve tramos { tipo: "igual" | "quitado" | "agregado",
+// texto }. Párrafos muy largos se marcan enteros (la tabla crece n por m).
+export function diferenciaPalabras(antes, despues, maximo = 600) {
+  const a = String(antes || "").split(/(\s+)/).filter(Boolean);
+  const b = String(despues || "").split(/(\s+)/).filter(Boolean);
+  if (a.length > maximo || b.length > maximo) {
+    return [{ tipo: "quitado", texto: a.join("") }, { tipo: "agregado", texto: b.join("") }].filter((t) => t.texto);
+  }
+  const n = a.length;
+  const m = b.length;
+  const tabla = Array.from({ length: n + 1 }, () => new Uint16Array(m + 1));
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) tabla[i][j] = a[i] === b[j] ? tabla[i + 1][j + 1] + 1 : Math.max(tabla[i + 1][j], tabla[i][j + 1]);
+  }
+  const salida = [];
+  const poner = (tipo, texto) => {
+    const ultimo = salida[salida.length - 1];
+    if (ultimo?.tipo === tipo) ultimo.texto += texto;
+    else salida.push({ tipo, texto });
+  };
+  let i = 0;
+  let j = 0;
+  while (i < n && j < m) {
+    if (a[i] === b[j]) {
+      poner("igual", a[i]);
+      i++;
+      j++;
+    } else if (tabla[i + 1][j] >= tabla[i][j + 1]) {
+      poner("quitado", a[i++]);
+    } else {
+      poner("agregado", b[j++]);
+    }
+  }
+  while (i < n) poner("quitado", a[i++]);
+  while (j < m) poner("agregado", b[j++]);
+  return salida;
 }

@@ -3,7 +3,7 @@ import test from "node:test";
 import { cajaAPdf, parsearRangos, pdfACaja, pdfAPunto, puntoAPdf, tamanoVista } from "../compartido/pdftools.js";
 import {
   PERMISOS, alternarCorte, cambiosPorPagina, cortesAPartes, cortesCada, cuantasGiradas, fuerzaClave, girarPaginas,
-  indicesARangos, paginasDeTexto, parteDeCadaPagina, permisosP, porcentajeAhorro, resumenPermisos, sinMarcas, tamanoHumano,
+  diferenciaPalabras, indicesARangos, paginasDeTexto, parteDeCadaPagina, permisosP, porcentajeAhorro, resumenPermisos, sinMarcas, tamanoHumano,
 } from "../compartido/pdfvisual.js";
 
 test("los índices vuelven a rangos que parsearRangos entiende", () => {
@@ -85,6 +85,7 @@ test("los permisos dan el número P del PDF", () => {
   assert.notEqual(nada & 512, 0);
   assert.match(resumenPermisos({}), /hacer todo/);
   assert.match(resumenPermisos({ copiar: false }), /No puede copiar texto/);
+  assert.equal(resumenPermisos({ copiar: false, modificar: false }).split(".").slice(0, 2).join("."), "Quien la abra puede imprimir y comentar o llenar formularios. No puede copiar texto ni cambiar páginas");
   assert.match(resumenPermisos({ imprimir: false, copiar: false, modificar: false, comentar: false }), /solo puede leerlo/);
 });
 
@@ -129,4 +130,14 @@ test("comparar ubica cada cambio en su página", () => {
   assert.deepEqual(r.porA, { 1: 1, 2: 1 });
   // Sin marcas (lector viejo) todo queda en la página 1.
   assert.equal(cambiosPorPagina("Hola.", "Chao.").cambios[0].paginaB, 1);
+});
+
+test("en un párrafo cambiado se marcan solo las palabras distintas", () => {
+  const t = diferenciaPalabras("El plazo es de diez días hábiles.", "El plazo es de cinco días hábiles.");
+  assert.deepEqual(t.filter((x) => x.tipo !== "igual"), [{ tipo: "quitado", texto: "diez" }, { tipo: "agregado", texto: "cinco" }]);
+  assert.equal(t.filter((x) => x.tipo !== "agregado").map((x) => x.texto).join(""), "El plazo es de diez días hábiles.");
+  assert.equal(t.filter((x) => x.tipo !== "quitado").map((x) => x.texto).join(""), "El plazo es de cinco días hábiles.");
+  const largo = diferenciaPalabras("a ".repeat(700), "b ".repeat(700));
+  assert.deepEqual(largo.map((x) => x.tipo), ["quitado", "agregado"]);
+  assert.deepEqual(diferenciaPalabras("", "nuevo"), [{ tipo: "agregado", texto: "nuevo" }]);
 });

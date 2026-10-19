@@ -3,9 +3,17 @@
 // imagen dibujada, comprimir imágenes y proteger/desbloquear (AES-256
 // propio en pdfcifrado.js). Lo que pdf-lib no hace (cifrar ya está;
 // pasar a Office vive en Convertir) no se ofrece.
+//
+// Firmar es firma electrónica (Ley 527 de 1999, art. 7, y Decreto 2364 de
+// 2012): imagen visible donde el usuario la pone + constancia final con el
+// hash del contenido, el firmante y la fecha. No es firma digital con
+// certificado (esa da presunción legal, art. 28, y pide entidad
+// acreditada): aquí la prueba la guarda el acta.
+import crypto from "node:crypto";
 import fs from "node:fs";
-import { PDFDocument, PDFName, PDFNumber, PDFRawStream, degrees } from "pdf-lib";
-import { Aviso } from "./db.js";
+import { PDFDocument, PDFName, PDFNumber, PDFRawStream, StandardFonts, degrees, rgb } from "pdf-lib";
+import { Aviso, filas, run, uno } from "./db.js";
+import { ahora } from "../compartido/logica.js";
 import { cajaFirma } from "../compartido/pdftools.js";
 
 function leerPdf(ruta) {
@@ -90,7 +98,7 @@ export async function rotarPdf(ruta, indices, angulo) {
   return Buffer.from(await doc.save());
 }
 
-export async function firmarPdf(ruta, pngBase64, { paginas, posicion, ancho }) {
+export async function firmarPdf(ruta, pngBase64, { paginas, posicion, ancho, caja, firmante } = {}) {
   const limpio = String(pngBase64 || "").replace(/^data:image\/\w+;base64,/, "").trim();
   if (!limpio) throw new Aviso("Dibuje primero su firma.");
   let imagen;
@@ -99,6 +107,8 @@ export async function firmarPdf(ruta, pngBase64, { paginas, posicion, ancho }) {
   } catch {
     throw new Aviso("Esa firma no se pudo leer.");
   }
+  if (imagen.length > 500 * 1024) throw new Aviso("Esa imagen de firma pesa demasiado (máximo 500 KB).");
+  const firma = textoFirmante(firmante);
   const doc = await cargar(ruta);
   let embebida;
   try {
@@ -107,14 +117,221 @@ export async function firmarPdf(ruta, pngBase64, { paginas, posicion, ancho }) {
     throw new Aviso("Esa firma no es un PNG válido.");
   }
   const naturales = embebida.scale(1);
-  const cuales = paginas?.length ? paginas : [doc.getPageCount() - 1];
+  const anchoBase = Number(ancho) || 150;
+  const altoBase = naturales.width ? (naturales.height * anchoBase) / naturales.width : 50;
+  // Colocación libre (x, y en puntos PDF desde abajo-izquierda) o el
+  // preset de antes por compatibilidad. La página de referencia más los
+  // rangos extra llevan la misma caja, ajustada a cada página.
+  const extra = Array.isArray(paginas) ? paginas.filter((i) => Number.isInteger(i)) : [];
+  let cuales;
+  if (caja) {
+    const referencia = Math.max(0, (Number(caja.pagina) || 1) - 1);
+    cuales = [...new Set([referencia, ...extra])];
+  } else if (extra.length) {
+    cuales = [...new Set(extra)];
+  } else {
+    cuales = [doc.getPageCount() - 1];
+  }
+  const tocadas = [];
   for (const i of cuales) {
     if (i < 0 || i >= doc.getPageCount()) throw new Aviso("Esa página se sale del documento.");
     const pagina = doc.getPage(i);
-    const caja = cajaFirma(posicion, { width: pagina.getWidth(), height: pagina.getHeight() }, Number(ancho) || 150, naturales.width ? (naturales.height * (Number(ancho) || 150)) / naturales.width : 50);
-    pagina.drawImage(embebida, { x: caja.x, y: caja.y, width: caja.w, height: caja.h });
+    const W = pagina.getWidth();
+    const H = pagina.getHeight();
+    let b;
+    if (caja && Number.isFinite(Number(caja.x)) && Number.isFinite(Number(caja.y))) {
+      const w = Math.min(Math.max(20, Number(caja.ancho) || anchoBase), W - 20);
+      const h = Math.max(10, (naturales.width ? naturales.height / naturales.width : 1 / 3) * w);
+      b = {
+        x: Math.min(Math.max(10, Number(caja.x)), Math.max(10, W - w - 10)),
+        y: Math.min(Math.max(10, Number(caja.y)), Math.max(10, H - h - 10)),
+        w, h,
+      };
+    } else {
+      b = cajaFirma(posicion, { width: W, height: H }, anchoBase, altoBase);
+    }
+    pagina.drawImage(embebida, { x: b.x, y: b.y, width: b.w, height: b.h });
+    tocadas.push(i + 1);
   }
-  return Buffer.from(await doc.save());
+  const contenido = await huellaContenido(doc, false);
+  const hashContenido = contenido;
+  const codigo = hashContenido.slice(0, 12).toUpperCase();
+  const fecha = ahora();
+  agregarConstancia(doc, { codigo, hashContenido, firmante: firma, paginas: tocadas, fecha });
+  doc.setKeywords([`VIGENCIA-FIRMA codigo=${codigo} hash=${hashContenido}`]);
+  const final = Buffer.from(await doc.save());
+  return {
+    bytes: final,
+    codigo,
+    hashContenido,
+    hashFinal: sha(final),
+    paginas: tocadas,
+    fecha,
+  };
+}
+
+function sha(datos) {
+  return crypto.createHash("sha256").update(datos).digest("hex");
+}
+
+// Huella del contenido: copia normalizada de las páginas (sin metadatos
+// ni la constancia) guardada siempre igual. Firmar y verificar usan el
+// mismo camino, así el hash coincide aunque pdf-lib reordene objetos.
+async function huellaContenido(doc, excluirUltima) {
+  const indices = excluirUltima ? doc.getPageIndices().slice(0, -1) : doc.getPageIndices();
+  const copia = await PDFDocument.create();
+  const paginas = await copia.copyPages(doc, indices);
+  for (const p of paginas) copia.addPage(p);
+  return sha(Buffer.from(await copia.save({ useObjectStreams: false })));
+}
+
+function textoFirmante(firmante = {}) {
+  const nombre = String(firmante?.nombre || "").replace(/\s+/g, " ").trim().slice(0, 120);
+  if (!nombre) throw new Aviso("Escriba quién firma (nombre del firmante).");
+  const documento = String(firmante?.documento || "").replace(/\s+/g, " ").trim().slice(0, 40);
+  return { nombre, documento };
+}
+
+// Constancia de firma electrónica (Decreto 2364 de 2012): última página
+// del PDF con quién firmó, cuándo, qué páginas y el hash del contenido.
+// Quien verifica quita esta página y compara el hash.
+function agregarConstancia(doc, { codigo, hashContenido, firmante, paginas, fecha }) {
+  const W = 612;
+  const H = 792;
+  const pagina = doc.addPage([W, H]);
+  const tinta = rgb(0.09, 0.16, 0.23);
+  const gris = rgb(0.35, 0.35, 0.35);
+  const linea = (texto, x, y, tamano = 11, color = tinta) => {
+    pagina.drawText(String(texto).slice(0, 95), { x, y, size: tamano, color });
+  };
+  let y = H - 70;
+  pagina.drawText("CONSTANCIA DE FIRMA ELECTRÓNICA", { x: 60, y, size: 16, color: tinta });
+  y -= 22;
+  pagina.drawText("Vigencia · Ley 527 de 1999 (art. 7) y Decreto 2364 de 2012", { x: 60, y, size: 10, color: gris });
+  y -= 30;
+  linea(`Código de verificación: ${codigo}`, 60, y, 12);
+  y -= 24;
+  linea(`Firmante: ${firmante.nombre}${firmante.documento ? ` · Documento: ${firmante.documento}` : ""}`, 60, y);
+  y -= 20;
+  linea(`Fecha de firma: ${fechaCortaActa(fecha)}`, 60, y);
+  y -= 20;
+  linea(`Páginas firmadas: ${paginas.join(", ")}`, 60, y);
+  y -= 20;
+  linea(`Hash SHA-256 del contenido firmado:`, 60, y);
+  y -= 18;
+  pagina.drawText(hashContenido.slice(0, 48), { x: 60, y, size: 9, color: tinta });
+  y -= 16;
+  pagina.drawText(hashContenido.slice(48), { x: 60, y, size: 9, color: tinta });
+  y -= 30;
+  const declaracion = [
+    "El firmante declara que aprueba el contenido de este documento",
+    "y que los datos de creación de su firma le corresponden",
+    "exclusivamente (Decreto 2364 de 2012, art. 4). Cualquier",
+    "alteración posterior del contenido cambia el hash y se detecta",
+    "al verificar en Herramientas PDF, Firmar, Verificar.",
+  ];
+  for (const t of declaracion) {
+    linea(t, 60, y, 10, gris);
+    y -= 16;
+  }
+  y -= 10;
+  const nota = [
+    "Esta constancia es firma electrónica, no firma digital con",
+    "certificado: para la presunción del art. 28 de la Ley 527 se",
+    "requiere certificado de una entidad acreditada (Certicámara,",
+    "Andes SCD, GSE).",
+  ];
+  for (const t of nota) {
+    linea(t, 60, y, 10, gris);
+    y -= 16;
+  }
+}
+
+function fechaCortaActa(marca) {
+  const t = String(marca || "");
+  return t ? `${t.slice(0, 10)} ${t.slice(11, 16)}` : "";
+}
+
+// Verificar: lee el código y el hash de los metadatos, reconstruye el
+// contenido sin la constancia y compara. No necesita internet.
+export async function verificarPdf(ruta, db = null) {
+  const datos = leerPdf(ruta);
+  let doc;
+  try {
+    doc = await PDFDocument.load(datos, { ignoreEncryption: false });
+  } catch (error) {
+    if (/encrypt/i.test(String(error?.message || ""))) throw new Aviso("Ese PDF tiene contraseña y no se puede verificar.");
+    throw new Aviso("Ese PDF está dañado o no se pudo leer.");
+  }
+  const claves = typeof doc.getKeywords === "function" ? String(doc.getKeywords() || "") : "";
+  const m = claves.match(/VIGENCIA-FIRMA\s+codigo=([0-9A-F]{12})\s+hash=([0-9a-f]{64})/);
+  if (!m) throw new Aviso("Ese PDF no trae constancia de Vigencia. Solo se verifican los firmados aquí.");
+  if (doc.getPageCount() < 2) throw new Aviso("Ese PDF no trae la página de constancia.");
+  const hash = await huellaContenido(doc, true);
+  const integro = hash === m[2];
+  const acta = db ? uno(db, "SELECT * FROM firma_acta WHERE codigo = ?", [m[1]]) : null;
+  return {
+    integro,
+    codigo: m[1],
+    hash,
+    esperado: m[2],
+    firmante: acta?.firmante || "",
+    documento: acta?.documento || "",
+    fecha: acta?.fecha || "",
+    paginas: acta?.paginas || "",
+    enRegistro: Boolean(acta),
+  };
+}
+
+// ---------- Firmas guardadas y actas (solo este computador) ----------
+
+function exigirDb(db) {
+  if (!db) throw new Aviso("La base no está lista.");
+}
+
+export function listarFirmas(db) {
+  exigirDb(db);
+  return filas(db, "SELECT id, nombre, creado_en FROM firma_perfil ORDER BY nombre COLLATE NOCASE, id").map((f) => ({
+    id: Number(f.id),
+    nombre: f.nombre,
+    creado_en: f.creado_en,
+  }));
+}
+
+export function leerFirma(db, id) {
+  exigirDb(db);
+  const f = uno(db, "SELECT * FROM firma_perfil WHERE id = ?", [Number(id) || 0]);
+  if (!f) throw new Aviso("Esa firma ya no está.");
+  return { id: Number(f.id), nombre: f.nombre, png: f.png, creado_en: f.creado_en };
+}
+
+export function guardarFirma(db, { nombre, png }) {
+  exigirDb(db);
+  const limpio = String(nombre || "").replace(/\s+/g, " ").trim().slice(0, 60);
+  if (limpio.length < 2) throw new Aviso("Póngale un nombre a la firma (mínimo 2 letras).");
+  const datos = String(png || "").replace(/^data:image\/\w+;base64,/, "").trim();
+  if (!datos) throw new Aviso("Dibuje, suba o escriba primero su firma.");
+  if (datos.length > 400000) throw new Aviso("Esa imagen pesa demasiado para guardarla.");
+  if (Number(uno(db, "SELECT COUNT(*) AS n FROM firma_perfil").n) >= 20) throw new Aviso("Ya tiene 20 firmas guardadas. Borre una primero.");
+  const r = run(db, "INSERT INTO firma_perfil (nombre, png, creado_en) VALUES (?, ?, ?)", [limpio, datos, ahora()]);
+  return { id: Number(r.lastInsertRowid), nombre: limpio };
+}
+
+export function borrarFirma(db, id) {
+  exigirDb(db);
+  if (!uno(db, "SELECT id FROM firma_perfil WHERE id = ?", [Number(id) || 0])) throw new Aviso("Esa firma ya no está.");
+  run(db, "DELETE FROM firma_perfil WHERE id = ?", [Number(id)]);
+  return {};
+}
+
+export function guardarActa(db, { codigo, fecha, firmante, documento, hashContenido, hashFinal, paginas, pdfNombre }) {
+  exigirDb(db);
+  run(db, `INSERT OR IGNORE INTO firma_acta (codigo, fecha, firmante, documento, hash_contenido, hash_final, paginas, pdf_nombre, creado_en)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
+    codigo, fecha, firmante || "", documento || "", hashContenido || "", hashFinal || "",
+    (paginas || []).join(", "), String(pdfNombre || "").slice(0, 120), ahora(),
+  ]);
+  return {};
 }
 
 export const NIVELES_COMPRIMIR = [

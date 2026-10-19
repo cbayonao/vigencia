@@ -809,6 +809,7 @@ if (bloqueo) {
       mensajeHumano,
       datosDir: () => datosDir,
       convertirDatos,
+      db: () => db,
     });
     ipcMain.handle("listar", () => responder(() => ({
       procesos: listarProcesos(db),

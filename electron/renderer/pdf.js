@@ -1,6 +1,6 @@
 // Pantalla Herramientas PDF: unir, separar, rotar y firmar. Todo pasa en
 // este computador (pdf-lib); la ventana solo elige archivos y avisa.
-import { ANGULOS, NIVELES_COMPRIMIR, POSICIONES_FIRMA, cajaFirma } from "../compartido/pdftools.js";
+import { ANGULOS, NIVELES_COMPRIMIR } from "../compartido/pdftools.js";
 import { diferencias } from "../compartido/documentos.js";
 import { avisar } from "./aviso.js";
 import { conAvance, irA, llenarProyectos } from "./proyectos.js";
@@ -48,7 +48,7 @@ const AYUDA_PDF = {
   unir: ["Unir", "Junta varios PDF en uno solo, en el orden que usted deje.", ["Agregue con Elegir o arrastrando.", "Ordene con ↑ ↓ o arrastrando la fila.", "Pulse Unir y guardar."]],
   separar: ["Separar", "Saca unas páginas a un PDF nuevo, sin tocar el original.", ["Elija el PDF.", "Escriba las páginas, por ejemplo 1-3, 5.", "Pulse Separar y guardar."]],
   rotar: ["Girar", "Endereza páginas chuecas 90, 180 o 270 grados.", ["Elija el PDF.", "Páginas vacío significa todas.", "Elija el giro y pulse Girar y guardar."]],
-  firmar: ["Firmar", "Pone su firma dibujada donde usted diga.", ["Elija el PDF.", "Dibuje, suba o escriba su firma.", "Elija página, posición y tamaño."]],
+  firmar: ["Firmar", "Pone su firma donde usted la arrastre, con constancia verificable.", ["Elija el PDF y acomode la firma sobre la página.", "Escriba quien firma y acepte la declaración.", "Firme, guarde y verifique cuando quiera."]],
   comprimir: ["Comprimir", "Achica las fotos sin tocar el texto ni las tablas.", ["Elija el PDF.", "Elija la calidad.", "Si no tiene fotos, casi no cambia."]],
   proteger: ["Proteger", "Le pone contraseña AES-256: sin ella nadie lo abre.", ["Elija el PDF.", "Escriba la contraseña y guárdela bien.", "El original queda intacto."]],
   desbloquear: ["Desbloquear", "Quita la contraseña y deja el PDF limpio.", ["Elija el PDF con contraseña.", "Escriba la contraseña actual.", "Sin la contraseña no se puede."]],
@@ -85,7 +85,10 @@ function elegirHerramienta(cual) {
     tab.setAttribute("aria-selected", String(h === cual));
   }
   pintarAyudaPdf();
-  if (cual === "firmar") pintarVistaFirma();
+  if (cual === "firmar") {
+    pintarVistaFirma();
+    cargarPerfilesFirma();
+  }
 }
 
 // ---------- Usar con la IA: convertir o llevar al contexto ----------
@@ -269,16 +272,16 @@ async function pintarUno(clave) {
     estado(`pdf-${clave}-estado`, info && pdf[clave] ? (info.error || "") : "", Boolean(info && !info.ok));
     if (clave === "firmar") {
       pdf.firmarInfo = null;
-      pintarVistaFirma();
+      prepararFirma();
     }
     return null;
   }
   ayuda.textContent = `${info.nombre}: ${info.paginas} ${info.paginas === 1 ? "página" : "páginas"}.`;
   estado(`pdf-${clave}-estado`, "");
   if (clave === "firmar") {
-    pdf.firmarInfo = info;
-    pintarVistaFirma();
-  }
+      pdf.firmarInfo = info;
+      prepararFirma();
+    }
   return info;
 }
 
@@ -344,42 +347,214 @@ function firmaHayTrazo() {
   return !trazoVacio();
 }
 
-function paginaVista() {
-  const detalle = pdf.firmarInfo?.detalle || [];
-  const pedido = String($("pdf-firma-paginas").value || "").trim().toLowerCase();
-  let indice = 0;
-  const m = pedido.match(/^(\d+)/);
-  if (m) indice = Math.min(detalle.length - 1, Math.max(0, Number(m[1]) - 1));
-  const d = detalle[indice] || { ancho: 612, alto: 792 };
-  return { width: Number(d.ancho) || 612, height: Number(d.alto) || 792 };
+// ---------- Firmar: la página de verdad, la firma donde usted la ponga ----------
+// Todo en canvas (la CSP bloquea data: y estilos en línea): la página se
+// dibuja con pdfjs y la firma se arrastra con el dedo o el ratón.
+
+let visorMod = null;
+const firma = {
+  doc: null, paginas: 0, pagina: 1, datos: null,
+  caja: null, // {x, y, w} en puntos PDF, y medida desde abajo
+  memoria: new Map(), // página -> canvas ya dibujado (máximo 5)
+  turno: 0,
+  accion: null, // {modo: "mover"|"agrandar", dx, dy}
+  verificarRuta: "",
+};
+
+async function visor() {
+  if (!visorMod) visorMod = await import("./vendor/visor.js");
+  return visorMod;
 }
 
-function pintarVistaFirma() {
-  const vista = document.querySelector("#pantalla-pdf .pdf-vista");
+function detallePaginaFirma() {
+  const d = pdf.firmarInfo?.detalle?.[firma.pagina - 1];
+  return { width: Number(d?.ancho) || 612, height: Number(d?.alto) || 792 };
+}
+
+function altoCaja(w) {
+  const c = lienzo();
+  const aspecto = c.height / Math.max(1, c.width);
+  return Math.max(24, w * aspecto);
+}
+
+function cajaDefecto() {
+  const p = detallePaginaFirma();
+  const w = Math.min(Number($("pdf-firma-ancho").value) || 150, p.width - 20);
+  return { x: Math.max(10, (p.width - w) / 2), y: 80, w };
+}
+
+function prepararFirma() {
+  firma.pagina = 1;
+  firma.caja = null;
+  firma.datos = null;
+  firma.memoria.clear();
+  cerrarDocFirma();
+  pintarVistaFirma();
+  cargarPerfilesFirma();
+}
+
+async function cerrarDocFirma() {
+  try {
+    await visorMod?.cerrarPdf(firma.doc);
+  } catch {
+    /* ya cerrado */
+  }
+  firma.doc = null;
+}
+
+async function paginaDibujada(pagina) {
+  const guardada = firma.memoria.get(pagina);
+  if (guardada) return guardada;
+  const v = await visor();
+  if (!firma.datos) {
+    const r = await window.vigencia.pdfArchivo(pdf.firmar);
+    if (!r?.ok) throw new Error(r?.error || "No pude leer el PDF.");
+    const bin = atob(r.base64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    firma.datos = bytes;
+    firma.paginas = r.paginas || 0;
+  }
+  if (!firma.doc) {
+    const { doc, paginas } = await v.cargarPdf(firma.datos);
+    firma.doc = doc;
+    firma.paginas = paginas;
+  }
+  const p = detallePaginaFirma();
+  const escala = Math.min(1.5, 560 / p.width);
+  const copia = document.createElement("canvas");
+  await v.pintarPagina(firma.doc, pagina, copia, escala);
+  firma.memoria.set(pagina, copia);
+  while (firma.memoria.size > 5) firma.memoria.delete(firma.memoria.keys().next().value);
+  return copia;
+}
+
+function rectEnVista() {
+  const vista = $("pdf-firma-vista-canvas");
+  const p = detallePaginaFirma();
+  const k = vista.width / p.width;
+  const c = firma.caja || cajaDefecto();
+  const h = altoCaja(c.w);
+  return { x: c.x * k, y: (p.height - c.y - h) * k, w: c.w * k, h: h * k, k };
+}
+
+async function pintarVistaFirma() {
+  const turno = ++firma.turno;
   const previo = $("pdf-firma-vista-canvas");
   const vacia = $("pdf-firma-vista-vacia");
-  if (!vista || !previo) return;
-  const pagina = paginaVista();
-  const anchoVista = 330;
-  const altoVista = Math.max(80, Math.round((anchoVista * pagina.height) / pagina.width));
-  previo.width = anchoVista;
-  previo.height = altoVista;
-  const ctx = previo.getContext("2d");
-  ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, previo.width, previo.height);
-  ctx.strokeStyle = "#c9b8a4";
-  ctx.lineWidth = 2;
-  ctx.strokeRect(1, 1, previo.width - 2, previo.height - 2);
-  if (!firmaHayTrazo()) {
+  if (!previo) return;
+  const total = pdf.firmarInfo?.paginas || 0;
+  if (!pdf.firmar || !total) {
+    $("pdf-firma-pagina-num").textContent = "Sin PDF";
+    previo.width = 330;
+    previo.height = 120;
+    const ctx = previo.getContext("2d");
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, previo.width, previo.height);
     if (vacia) vacia.hidden = false;
     return;
   }
+  firma.pagina = Math.min(total, Math.max(1, firma.pagina));
+  $("pdf-firma-pagina-num").textContent = `Página ${firma.pagina} de ${total}`;
   if (vacia) vacia.hidden = true;
-  const firma = lienzo();
-  const ancho = Number($("pdf-firma-ancho").value) || 150;
-  const caja = cajaFirma($("pdf-firma-posicion").value, pagina, ancho, ancho / 3);
-  const k = previo.width / pagina.width;
-  ctx.drawImage(firma, caja.x * k, (pagina.height - caja.y - caja.h) * k, caja.w * k, caja.h * k);
+  try {
+    const copia = await paginaDibujada(firma.pagina);
+    if (turno !== firma.turno) return;
+    previo.width = copia.width;
+    previo.height = copia.height;
+    const ctx = previo.getContext("2d");
+    ctx.drawImage(copia, 0, 0);
+  } catch (error) {
+    if (turno !== firma.turno) return;
+    estado("pdf-firmar-estado", error?.message || "No pude dibujar la página. Igual puede firmar con tamaño y página.", true);
+    return;
+  }
+  if (!firmaHayTrazo()) return;
+  if (!firma.caja) firma.caja = cajaDefecto();
+  const ctx = previo.getContext("2d");
+  const r = rectEnVista();
+  ctx.drawImage(lienzo(), r.x, r.y, r.w, r.h);
+  ctx.strokeStyle = "#17456e";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(r.x, r.y, r.w, r.h);
+  const lado = 12;
+  ctx.fillStyle = "#17456e";
+  ctx.fillRect(r.x + r.w - lado, r.y + r.h - lado, lado, lado);
+}
+
+function vistaAPdf(cx, cy) {
+  const vista = $("pdf-firma-vista-canvas");
+  const p = detallePaginaFirma();
+  const k = vista.width / p.width;
+  return { x: cx / k, y: p.height - cy / k };
+}
+
+function iniciarArrastreFirma() {
+  const vista = $("pdf-firma-vista-canvas");
+  const punto = (e) => {
+    const rect = vista.getBoundingClientRect();
+    return { x: (e.clientX - rect.left) * (vista.width / rect.width), y: (e.clientY - rect.top) * (vista.height / rect.height) };
+  };
+  vista.addEventListener("pointerdown", (e) => {
+    if (!pdf.firmar || !firmaHayTrazo()) return;
+    e.preventDefault();
+    if (!firma.caja) firma.caja = cajaDefecto();
+    const { x, y } = punto(e);
+    const r = rectEnVista();
+    const lado = 14;
+    if (x >= r.x + r.w - lado && x <= r.x + r.w && y >= r.y + r.h - lado && y <= r.y + r.h) {
+      firma.accion = { modo: "agrandar" };
+    } else if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
+      firma.accion = { modo: "mover", dx: x - r.x, dy: y - r.y };
+    } else {
+      // Clic afuera: la firma se centra ahí, como en Adobe.
+      const p = detallePaginaFirma();
+      const w = firma.caja.w;
+      const q = vistaAPdf(x, y);
+      const h = altoCaja(w);
+      firma.caja = {
+        x: Math.min(Math.max(10, q.x - w / 2), Math.max(10, p.width - w - 10)),
+        y: Math.min(Math.max(10, q.y - h / 2), Math.max(10, p.height - h - 10)),
+        w,
+      };
+      pintarVistaFirma();
+      return;
+    }
+    try {
+      vista.setPointerCapture(e.pointerId);
+    } catch {
+      /* ratones y táctiles reales siempre traen puntero activo */
+    }
+  });
+  vista.addEventListener("pointermove", (e) => {
+    if (!firma.accion) return;
+    const { x, y } = punto(e);
+    const p = detallePaginaFirma();
+    const vistaEl = $("pdf-firma-vista-canvas");
+    const k = vistaEl.width / p.width;
+    if (firma.accion.modo === "agrandar") {
+      const arriba = vistaAPdf(x, y);
+      const w = Math.min(Math.max(40, arriba.x - firma.caja.x), p.width - 20);
+      firma.caja.w = w;
+      firma.caja.x = Math.min(Math.max(10, firma.caja.x), Math.max(10, p.width - w - 10));
+      const h = altoCaja(w);
+      firma.caja.y = Math.min(Math.max(10, firma.caja.y), Math.max(10, p.height - h - 10));
+      $("pdf-firma-ancho").value = Math.round(Math.min(350, Math.max(60, w)));
+      pintarAncho();
+    } else {
+      const h = altoCaja(firma.caja.w);
+      const nx = (x - firma.accion.dx) / k;
+      const arriba = (y - firma.accion.dy) / k;
+      firma.caja.x = Math.min(Math.max(10, nx), Math.max(10, p.width - firma.caja.w - 10));
+      firma.caja.y = Math.min(Math.max(10, p.height - arriba - h), Math.max(10, p.height - h - 10));
+    }
+    pintarVistaFirma();
+  });
+  const soltar = () => {
+    firma.accion = null;
+  };
+  vista.addEventListener("pointerup", soltar);
+  vista.addEventListener("pointercancel", soltar);
 }
 
 function pintarAncho() {
@@ -532,7 +707,7 @@ async function pintarCampos() {
       sel.replaceChildren(...(c.opciones || []).map((o) => opcion(o, o)));
       l.append(sel);
     } else if (c.tipo === "firma-digital") {
-      l.append(nodo("span", "ayuda", "Firma certificada: se firma a mano en Firmar."));
+      l.append(nodo("span", "ayuda", "Firma de certificado: se firma en Firmar (firma electrónica con constancia)."));
     } else {
       const campo = document.createElement("input");
       campo.dataset.campo = c.nombre;
@@ -617,21 +792,37 @@ async function comparar() {
 }
 
 async function firmar() {
-  if (trazoVacio()) {
-    estado("pdf-firmar-estado", "Dibuje, suba o escriba primero su firma.", true);
+  if (!pdf.firmar) {
+    estado("pdf-firmar-estado", "Elija primero el PDF.", true);
     return;
   }
+  if (trazoVacio()) {
+    estado("pdf-firmar-estado", "Dibuje, suba, escriba o use una firma guardada.", true);
+    return;
+  }
+  const firmante = String($("pdf-firmante-nombre").value || "").trim();
+  if (!firmante) {
+    estado("pdf-firmar-estado", "Escriba quien firma (nombre del firmante).", true);
+    return;
+  }
+  if (!$("pdf-firma-declaracion").checked) {
+    estado("pdf-firmar-estado", "Marque la declaración de aprobación para firmar.", true);
+    return;
+  }
+  if (!firma.caja) firma.caja = cajaDefecto();
   await ocupado("pdf-firmar-estado", "Firmando…", async () => {
     const r = await window.vigencia.pdfFirmar({
       ruta: pdf.firmar,
       firma: lienzo().toDataURL("image/png"),
       paginas: $("pdf-firma-paginas").value,
-      posicion: $("pdf-firma-posicion").value,
       ancho: Number($("pdf-firma-ancho").value),
+      caja: { pagina: firma.pagina, x: Math.round(firma.caja.x), y: Math.round(firma.caja.y), ancho: Math.round(firma.caja.w) },
+      firmante,
+      documento: $("pdf-firmante-doc").value,
     });
     if (r?.ok) {
-      estado("pdf-firmar-estado", `Guardado en ${r.ruta}`);
-      avisar("PDF firmado y guardado.");
+      estado("pdf-firmar-estado", `Firmado con código ${r.codigo}. Guardado en ${r.ruta}`);
+      avisar(`Firmado con código ${r.codigo}.`);
       ofrecerLlevar(r.ruta, { como: "resultado" });
     } else if (!r?.cancelado) {
       estado("pdf-firmar-estado", r?.error || "No pude firmar.", "error");
@@ -639,6 +830,140 @@ async function firmar() {
     } else {
       estado("pdf-firmar-estado", "");
     }
+  });
+}
+
+// ---------- Firmas guardadas (reutilizar la misma) ----------
+
+function base64ABitmap(base64) {
+  const bin = atob(String(base64 || "").replace(/^data:image\/\w+;base64,/, ""));
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new Blob([bytes], { type: "image/png" });
+}
+
+async function volcarBitmap(bmp) {
+  const c = lienzo();
+  const ctx = c.getContext("2d");
+  ctx.clearRect(0, 0, c.width, c.height);
+  const escala = Math.min(c.width / bmp.width, c.height / bmp.height);
+  const w = bmp.width * escala;
+  const h = bmp.height * escala;
+  ctx.drawImage(bmp, (c.width - w) / 2, (c.height - h) / 2, w, h);
+  if (bmp.close) bmp.close();
+  estado("pdf-firmar-estado", "");
+  pintarVistaFirma();
+}
+
+async function cargarPerfilesFirma() {
+  const sel = $("pdf-firma-perfil");
+  if (!sel) return;
+  sel.replaceChildren();
+  const nada = document.createElement("option");
+  nada.value = "";
+  nada.textContent = "Sin firmas guardadas";
+  sel.append(nada);
+  try {
+    const r = await window.vigencia.firmasListar();
+    for (const f of r?.firmas || []) {
+      const o = document.createElement("option");
+      o.value = String(f.id);
+      o.textContent = f.nombre;
+      sel.append(o);
+    }
+    if ((r?.firmas || []).length) nada.textContent = "Elija una firma";
+  } catch {
+    /* la lista queda vacía */
+  }
+}
+
+async function usarPerfilFirma() {
+  const id = $("pdf-firma-perfil").value;
+  if (!id) {
+    estado("pdf-firmar-estado", "Elija primero una firma guardada.", true);
+    return;
+  }
+  const r = await window.vigencia.firmaLeer(id);
+  if (!r?.ok) {
+    estado("pdf-firmar-estado", r?.error || "No pude leer esa firma.", true);
+    return;
+  }
+  try {
+    await volcarBitmap(await createImageBitmap(base64ABitmap(r.firma.png)));
+    avisar(`Firma ${r.firma.nombre} lista para acomodar.`);
+  } catch {
+    estado("pdf-firmar-estado", "Esa firma guardada no se pudo dibujar.", true);
+  }
+}
+
+async function guardarPerfilFirma() {
+  if (trazoVacio()) {
+    estado("pdf-firmar-estado", "Dibuje, suba o escriba primero su firma.", true);
+    return;
+  }
+  const nombre = String($("pdf-firma-guardar-nombre").value || "").trim();
+  const r = await window.vigencia.firmaGuardar({ nombre, png: lienzo().toDataURL("image/png") });
+  if (!r?.ok) {
+    estado("pdf-firmar-estado", r?.error || "No pude guardarla.", true);
+    avisar(r?.error || "No pude guardarla.", "error");
+    return;
+  }
+  $("pdf-firma-guardar-nombre").value = "";
+  await cargarPerfilesFirma();
+  $("pdf-firma-perfil").value = String(r.id);
+  avisar(`Firma ${r.nombre} guardada.`);
+}
+
+async function borrarPerfilFirma() {
+  const id = $("pdf-firma-perfil").value;
+  if (!id) {
+    estado("pdf-firmar-estado", "Elija primero una firma guardada.", true);
+    return;
+  }
+  const nombre = $("pdf-firma-perfil").selectedOptions[0]?.textContent || "esa firma";
+  if (!window.confirm(`Borrar ${nombre} de este computador?`)) return;
+  const r = await window.vigencia.firmaBorrar(id);
+  if (!r?.ok) {
+    estado("pdf-firmar-estado", r?.error || "No pude borrarla.", true);
+    return;
+  }
+  await cargarPerfilesFirma();
+  avisar("Firma borrada.");
+}
+
+// ---------- Verificar un firmado ----------
+
+async function verificarFirmado() {
+  const caja = $("pdf-verificar-resultado");
+  caja.replaceChildren();
+  if (!firma.verificarRuta) {
+    estado("pdf-verificar-estado", "Elija primero el PDF firmado.", true);
+    return;
+  }
+  await ocupado("pdf-verificar-estado", "Verificando…", async () => {
+    const r = await window.vigencia.pdfVerificar(firma.verificarRuta);
+    if (!r?.ok) {
+      estado("pdf-verificar-estado", r?.error || "No pude verificar.", true);
+      avisar(r?.error || "No pude verificar.", "error");
+      return;
+    }
+    estado("pdf-verificar-estado", "");
+    const tarjeta = nodo("div", "tarjeta");
+    if (r.integro) {
+      tarjeta.append(nodo("p", "titulo-lista", "Íntegro: nadie lo cambió después de la firma."));
+      const lineas = [`Código ${r.codigo}`];
+      if (r.firmante) lineas.push(`Firmó ${r.firmante}${r.documento ? ` (${r.documento})` : ""}`);
+      if (r.fecha) lineas.push(`El ${String(r.fecha).slice(0, 10)}`);
+      if (r.paginas) lineas.push(`Páginas ${r.paginas}`);
+      if (!r.enRegistro) lineas.push("La constancia viene en el PDF; el registro local no está en este computador.");
+      tarjeta.append(nodo("p", "meta", lineas.join(" · ")));
+      avisar("Firma íntegra.");
+    } else {
+      tarjeta.append(nodo("p", "titulo-lista", "Alterado: el contenido ya no coincide con la constancia."));
+      tarjeta.append(nodo("p", "meta", `Código ${r.codigo}. El hash de hoy es distinto del que se firmó.`));
+      avisar("El documento fue alterado.", "error");
+    }
+    caja.append(tarjeta);
   });
 }
 
@@ -759,13 +1084,22 @@ export function iniciarPdf() {
   $("pdf-comprimir-nivel").value = "media";
   $("pdf-separar-boton").addEventListener("click", separar);
   $("pdf-rotar-boton").addEventListener("click", rotar);
-  $("pdf-firma-posicion").replaceChildren(...POSICIONES_FIRMA.map((p) => opcion(p.id, p.nombre)));
   $("pdf-firma-ancho").addEventListener("input", () => {
     pintarAncho();
+    if (firma.caja) {
+      const p = detallePaginaFirma();
+      firma.caja.w = Math.min(Math.max(40, Number($("pdf-firma-ancho").value) || 150), p.width - 20);
+    }
     pintarVistaFirma();
   });
-  $("pdf-firma-posicion").addEventListener("change", pintarVistaFirma);
-  $("pdf-firma-paginas").addEventListener("input", pintarVistaFirma);
+  $("pdf-firma-anterior").addEventListener("click", () => {
+    firma.pagina -= 1;
+    pintarVistaFirma();
+  });
+  $("pdf-firma-siguiente").addEventListener("click", () => {
+    firma.pagina += 1;
+    pintarVistaFirma();
+  });
   pintarAncho();
   $("pdf-firma-limpiar").addEventListener("click", limpiarFirma);
   $("pdf-firmar-boton").addEventListener("click", firmar);
@@ -783,10 +1117,23 @@ export function iniciarPdf() {
       ponerTextoEnLienzo();
     }
   });
+  $("pdf-firma-usar").addEventListener("click", usarPerfilFirma);
+  $("pdf-firma-guardar-boton").addEventListener("click", guardarPerfilFirma);
+  $("pdf-firma-borrar-perfil").addEventListener("click", borrarPerfilFirma);
+  $("pdf-verificar-elegir").addEventListener("click", async () => {
+    const r = await window.vigencia.pdfElegir(false);
+    if (!r?.ok || !(r.rutas || []).length) return;
+    firma.verificarRuta = r.rutas[0];
+    $("pdf-verificar-nombre").textContent = nombreCorto(firma.verificarRuta);
+    $("pdf-verificar-resultado").replaceChildren();
+    estado("pdf-verificar-estado", "");
+  });
+  $("pdf-verificar-boton").addEventListener("click", verificarFirmado);
   $("pdf-comprimir-boton").addEventListener("click", comprimir);
   $("pdf-proteger-boton").addEventListener("click", proteger);
   $("pdf-desbloquear-boton").addEventListener("click", desbloquear);
   $("pdf-rellenar-boton").addEventListener("click", rellenar);
   $("pdf-comparar-boton").addEventListener("click", comparar);
   iniciarLienzo();
+  iniciarArrastreFirma();
 }

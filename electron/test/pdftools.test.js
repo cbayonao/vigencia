@@ -5,7 +5,8 @@ import path from "node:path";
 import test from "node:test";
 import { PDFDocument } from "pdf-lib";
 import { ANGULOS, POSICIONES_FIRMA, cajaFirma, describirRangos, parsearRangos } from "../compartido/pdftools.js";
-import { firmarPdf, infoPdf, rotarPdf, separarPdf, unirPdfs } from "../src/pdftools.js";
+import { firmarPdf, guardarActa, guardarFirma, borrarFirma, leerFirma, listarFirmas, infoPdf, rotarPdf, separarPdf, unirPdfs, verificarPdf } from "../src/pdftools.js";
+import { abrirBase } from "../src/db.js";
 
 const PNG_1PX = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "base64");
 
@@ -51,12 +52,16 @@ test("unir, separar, rotar y firmar corren en este computador", async () => {
   assert.equal(await paginasDe(parte), 1);
   const girado = await rotarPdf(a, null, 90);
   assert.equal((await PDFDocument.load(girado)).getPage(0).getRotation().angle, 90);
-  const firmado = await firmarPdf(a, PNG_1PX.toString("base64"), { paginas: null, posicion: "abajo-derecha", ancho: 150 });
-  assert.ok(firmado.length > 500);
+  const firmado = await firmarPdf(a, PNG_1PX.toString("base64"), { paginas: null, posicion: "abajo-derecha", ancho: 150, firmante: { nombre: "Ana Pérez", documento: "123" } });
+  assert.ok(firmado.bytes.length > 500);
+  assert.match(firmado.codigo, /^[0-9A-F]{12}$/);
+  assert.equal(firmado.paginas.length, 1);
+  assert.equal(await paginasDe(firmado.bytes), 3, "contenido más la constancia");
   await assert.rejects(() => unirPdfs([a]), /al menos 2/);
   await assert.rejects(() => separarPdf(a, []), /al menos una/);
   await assert.rejects(() => rotarPdf(a, null, 45), /90, 180 o 270/);
   await assert.rejects(() => firmarPdf(a, "", {}), /Dibuje/);
+  await assert.rejects(() => firmarPdf(a, PNG_1PX.toString("base64"), { firmante: { nombre: "" } }), /quién firma/);
   fs.writeFileSync(path.join(dir, "no.pdf"), "hola");
   await assert.rejects(() => infoPdf(path.join(dir, "no.pdf")), /no es un PDF/);
 });
@@ -135,4 +140,53 @@ test("cajaFirma da números finitos en todas las posiciones", async () => {
     assert.ok(Number.isFinite(c.x) && Number.isFinite(c.y) && Number.isFinite(c.w) && Number.isFinite(c.h), p.id);
     assert.ok(c.x >= 0 && c.y >= 0 && c.x + c.w <= 612 && c.y + c.h <= 792, p.id);
   }
+});
+
+test("firmar con caja libre agrega constancia y verificar detecta cambios", async () => {
+  const dir = temporal();
+  const base = path.join(dir, "base.sqlite");
+  const db = abrirBase(base);
+  const a = await pdfDe(2, dir, "a.pdf");
+  const r = await firmarPdf(a, PNG_1PX.toString("base64"), {
+    caja: { pagina: 1, x: 100, y: 120, ancho: 150 },
+    paginas: [1],
+    firmante: { nombre: "Ana Pérez", documento: "123" },
+  });
+  assert.deepEqual(r.paginas, [1, 2]);
+  assert.equal(await paginasDe(r.bytes), 3);
+  const ruta = path.join(dir, "firmado.pdf");
+  fs.writeFileSync(ruta, r.bytes);
+  guardarActa(db, {
+    codigo: r.codigo, fecha: r.fecha, firmante: "Ana Pérez", documento: "123",
+    hashContenido: r.hashContenido, hashFinal: r.hashFinal, paginas: r.paginas, pdfNombre: "firmado.pdf",
+  });
+  const v = await verificarPdf(ruta, db);
+  assert.equal(v.integro, true);
+  assert.equal(v.codigo, r.codigo);
+  assert.equal(v.firmante, "Ana Pérez");
+  assert.equal(v.enRegistro, true);
+  // Alterado: se agrega una página después de firmar.
+  const adul = await PDFDocument.load(r.bytes);
+  adul.addPage([600, 800]);
+  const rutaMala = path.join(dir, "malo.pdf");
+  fs.writeFileSync(rutaMala, await adul.save());
+  const v2 = await verificarPdf(rutaMala, db);
+  assert.equal(v2.integro, false);
+  assert.equal(v2.codigo, r.codigo);
+  await assert.rejects(() => verificarPdf(a, db), /constancia/);
+  db.close();
+});
+
+test("las firmas guardadas viven en este computador", async () => {
+  const dir = temporal();
+  const db = abrirBase(path.join(dir, "base.sqlite"));
+  assert.deepEqual(listarFirmas(db), []);
+  assert.throws(() => guardarFirma(db, { nombre: "A", png: PNG_1PX.toString("base64") }), /2 letras/);
+  const g = guardarFirma(db, { nombre: "Mi firma", png: PNG_1PX.toString("base64") });
+  assert.equal(listarFirmas(db).length, 1);
+  assert.equal(leerFirma(db, g.id).png, PNG_1PX.toString("base64"));
+  borrarFirma(db, g.id);
+  assert.deepEqual(listarFirmas(db), []);
+  assert.throws(() => leerFirma(db, g.id), /ya no está/);
+  db.close();
 });

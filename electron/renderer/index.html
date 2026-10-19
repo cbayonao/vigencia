@@ -423,26 +423,55 @@
             <div class="fila-fin">
               <button type="button" class="boton-texto" id="pdf-firma-limpiar">Limpiar</button>
             </div>
-            <p class="etiqueta">Cómo queda en la página</p>
-            <div class="pdf-vista">
-              <canvas id="pdf-firma-vista-canvas" aria-label="Vista previa de la firma en la página"></canvas>
-              <span class="ayuda" id="pdf-firma-vista-vacia">Aquí se ve su firma sobre la página, en su tamaño y posición de verdad.</span>
-            </div>
-            <div class="doc-dos">
-              <label><span class="etiqueta">Páginas (número o “todas”)</span><input id="pdf-firma-paginas" autocomplete="off" spellcheck="false" placeholder="todas" value="todas"></label>
-              <label><span class="etiqueta">Posición</span><select id="pdf-firma-posicion"></select></label>
-            </div>
-            <label><span class="etiqueta">Tamaño: <span id="pdf-firma-ancho-valor"></span></span><input type="range" id="pdf-firma-ancho" min="80" max="300" value="150"></label>
-            <div class="fila-fin">
-              <span class="ayuda" id="pdf-firmar-estado"></span>
-              <button type="button" class="boton-cobre" id="pdf-firmar-boton">Firmar y guardar</button>
-            </div>
             <div class="fila-fin">
               <button type="button" class="boton-texto" id="pdf-firma-subir">Subir imagen</button>
               <input type="file" id="pdf-firma-archivo" accept="image/png,image/jpeg" hidden aria-label="Imagen de firma">
               <input id="pdf-firma-texto" maxlength="60" autocomplete="off" placeholder="O escríbala aquí" aria-label="Firma escrita" style="flex:1;min-width:0">
               <button type="button" class="boton-texto" id="pdf-firma-poner-texto">Poner</button>
             </div>
+            <div class="doc-dos">
+              <label><span class="etiqueta">Mis firmas guardadas</span><select id="pdf-firma-perfil" aria-label="Firmas guardadas"></select></label>
+              <label><span class="etiqueta">Guardar esta como</span><input id="pdf-firma-guardar-nombre" maxlength="60" autocomplete="off" placeholder="Ej. Mi firma"></label>
+            </div>
+            <div class="fila-fin">
+              <button type="button" class="boton-linea" id="pdf-firma-usar">Usar la guardada</button>
+              <button type="button" class="boton-texto" id="pdf-firma-borrar-perfil">Borrarla</button>
+              <button type="button" class="boton-linea" id="pdf-firma-guardar-boton">Guardar esta firma</button>
+            </div>
+            <p class="etiqueta">Dónde va (arrástrela sobre la página)</p>
+            <div class="fila-fin">
+              <button type="button" class="boton-linea" id="pdf-firma-anterior" aria-label="Página anterior">←</button>
+              <span class="ayuda" id="pdf-firma-pagina-num">Sin PDF</span>
+              <button type="button" class="boton-linea" id="pdf-firma-siguiente" aria-label="Página siguiente">→</button>
+            </div>
+            <div class="pdf-vista">
+              <canvas id="pdf-firma-vista-canvas" aria-label="Página con su firma: arrástrela donde quiera firmarla"></canvas>
+              <span class="ayuda" id="pdf-firma-vista-vacia">Elija el PDF para ver la página y acomodar su firma donde quiera.</span>
+            </div>
+            <div class="doc-dos">
+              <label><span class="etiqueta">Misma firma también en (vacío: solo esta)</span><input id="pdf-firma-paginas" autocomplete="off" spellcheck="false" placeholder="Ej. 1-3, 5"></label>
+              <label><span class="etiqueta">Tamaño: <span id="pdf-firma-ancho-valor"></span></span><input type="range" id="pdf-firma-ancho" min="60" max="350" value="150"></label>
+            </div>
+            <div class="doc-dos">
+              <label><span class="etiqueta">Quien firma (nombre)</span><input id="pdf-firmante-nombre" maxlength="120" autocomplete="off" placeholder="Nombre de quien firma"></label>
+              <label><span class="etiqueta">Documento (opcional)</span><input id="pdf-firmante-doc" maxlength="40" autocomplete="off" placeholder="Cédula de quien firma"></label>
+            </div>
+            <p class="ayuda"><label><input type="checkbox" id="pdf-firma-declaracion"> Declaro que apruebo el contenido de este documento y que esta firma es mía.</label></p>
+            <div class="fila-fin">
+              <span class="ayuda" id="pdf-firmar-estado"></span>
+              <button type="button" class="boton-cobre" id="pdf-firmar-boton">Firmar y guardar</button>
+            </div>
+            <p class="ayuda">Firma electrónica (Ley 527 de 1999, art. 7, y Decreto 2364 de 2012): su imagen queda en la página y al final se agrega la constancia con el hash, quien firmó y cuándo. Cualquier cambio posterior se detecta al verificar. No es firma digital con certificado: para la presunción del art. 28 se requiere certificado de entidad acreditada (Certicámara, Andes SCD, GSE).</p>
+            <p class="etiqueta">Verificar un firmado</p>
+            <div class="fila-agregar">
+              <span class="ayuda" id="pdf-verificar-nombre">Ningún PDF elegido.</span>
+              <button type="button" class="boton-linea" id="pdf-verificar-elegir">Elegir</button>
+            </div>
+            <div class="fila-fin">
+              <span class="ayuda" id="pdf-verificar-estado"></span>
+              <button type="button" class="boton-linea" id="pdf-verificar-boton">Verificar</button>
+            </div>
+            <div id="pdf-verificar-resultado"></div>
           </section>
           <section class="juris-card" id="pdf-panel-comprimir" aria-label="Comprimir PDF" hidden>
             <p class="etiqueta primera">PDF</p>

@@ -18,7 +18,8 @@
     "postdist:win": "node script/verificar-motor.mjs dist/win-unpacked win-x64",
     "dist:mac": "electron-builder --mac dmg",
     "postdist:mac": "node script/verificar-motor.mjs dist mac-arm64-metal",
-    "editor": "esbuild editor/editor.js --bundle --format=esm --minify --legal-comments=eof --outfile=renderer/vendor/editor.js"
+    "editor": "esbuild editor/editor.js --bundle --format=esm --minify --legal-comments=eof --outfile=renderer/vendor/editor.js",
+    "visor": "esbuild visor/visor.js --bundle --format=esm --minify --legal-comments=eof --outfile=renderer/vendor/visor.js && cp node_modules/pdfjs-dist/build/pdf.worker.min.mjs renderer/vendor/pdf.worker.min.mjs"
   },
   "build": {
     "appId": "co.vigencia.app",

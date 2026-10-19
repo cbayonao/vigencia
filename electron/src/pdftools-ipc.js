@@ -4,7 +4,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { NIVELES_COMPRIMIR, camposPdf, comprimirPdf, rellenarPdf } from "./pdftools.js";
+import { NIVELES_COMPRIMIR, borrarFirma, camposPdf, comprimirPdf, guardarActa, guardarFirma, leerFirma, listarFirmas, rellenarPdf, verificarPdf } from "./pdftools.js";
 import { protegerPdf } from "./pdfproteger.js";
 import { desbloquearPdf } from "./pdfdescifrar.js";
 import { textoDePdfCompleto } from "./pdftexto.js";
@@ -71,8 +71,14 @@ export async function textoParaComparar(ruta, { datosDir = "" } = {}) {
   return { ok: true, texto: t.texto || "" };
 }
 
-export function registrarPdftools({ ipcMain, dialog, ventana, mensajeHumano, datosDir = () => "", convertirDatos = null }) {
+export function registrarPdftools({ ipcMain, dialog, ventana, mensajeHumano, datosDir = () => "", convertirDatos = null, db = null }) {
   limpiarTemporales();
+  const requireDb = () => {
+    const base = typeof db === "function" ? db() : db;
+    if (!base) throw new Error("La base no está lista.");
+    return base;
+  };
+  const guardarFirmaDb = (dato) => guardarFirma(requireDb(), { nombre: dato?.nombre, png: dato?.png });
 
   ipcMain.handle("pdf-elegir", async (_e, dato) => {
     try {
@@ -163,18 +169,104 @@ export function registrarPdftools({ ipcMain, dialog, ventana, mensajeHumano, dat
       const total = (await infoPdf(ruta)).paginas;
       const texto = String(dato?.paginas || "").trim().toLowerCase();
       let paginas = null;
-      if (texto && texto !== "todas") {
+      if (texto === "todas") {
+        paginas = Array.from({ length: total }, (_, i) => i);
+      } else if (texto) {
         const r = parsearRangos(texto, total);
         if (r.error) return { ok: false, error: r.error };
         paginas = r.indices;
       }
-      const bytes = await firmarPdf(ruta, dato?.firma, {
+      const caja = dato?.caja ? {
+        pagina: Math.min(total, Math.max(1, Number(dato.caja.pagina) || 1)),
+        x: Number(dato.caja.x) || 0,
+        y: Number(dato.caja.y) || 0,
+        ancho: Math.min(400, Math.max(40, Number(dato.caja.ancho) || Number(dato?.ancho) || 150)),
+      } : null;
+      const r = await firmarPdf(ruta, dato?.firma, {
         paginas,
         posicion: dato?.posicion,
         ancho: Number(dato?.ancho) || 150,
+        caja,
+        firmante: { nombre: dato?.firmante, documento: dato?.documento },
       });
       const base = path.basename(ruta, ".pdf").slice(0, 60);
-      return await guardarComo("Guardar el PDF firmado", `${base}-firmado.pdf`, bytes);
+      const g = await guardarComo("Guardar el PDF firmado", `${base}-firmado.pdf`, r.bytes);
+      if (!g.ok) return g;
+      try {
+        const db = requireDb();
+        guardarActa(db, {
+          codigo: r.codigo, fecha: r.fecha, firmante: String(dato?.firmante || "").slice(0, 120),
+          documento: String(dato?.documento || "").slice(0, 40), hashContenido: r.hashContenido,
+          hashFinal: r.hashFinal, paginas: r.paginas, pdfNombre: path.basename(g.ruta),
+        });
+      } catch {
+        /* el acta en la base es respaldo: el PDF ya trae la constancia */
+      }
+      return { ...g, codigo: r.codigo, paginas: r.paginas };
+    } catch (error) {
+      return { ok: false, error: mensajeHumano(error) };
+    }
+  });
+
+  // Bytes del PDF para dibujar la página en la ventana (el visor pdfjs
+  // corre en el renderer; aquí solo se leen del disco).
+  ipcMain.handle("pdf-archivo", async (_e, dato) => {
+    try {
+      const ruta = String(dato?.ruta || "");
+      if (!ruta) return { ok: false, error: "Elija primero el PDF." };
+      if (fs.statSync(ruta).size > 100 * 1024 * 1024) return { ok: false, error: "Ese PDF pesa más de 100 MB." };
+      const info = await infoPdf(ruta);
+      return { ok: true, nombre: path.basename(ruta), base64: fs.readFileSync(ruta).toString("base64"), ...info };
+    } catch (error) {
+      return { ok: false, error: mensajeHumano(error) };
+    }
+  });
+
+  ipcMain.handle("pdf-verificar", async (_e, dato) => {
+    try {
+      const ruta = String(dato?.ruta || "");
+      if (!ruta) return { ok: false, error: "Elija primero el PDF." };
+      let db = null;
+      try {
+        db = requireDb();
+      } catch {
+        db = null;
+      }
+      return { ok: true, ...(await verificarPdf(ruta, db)) };
+    } catch (error) {
+      return { ok: false, error: mensajeHumano(error) };
+    }
+  });
+
+  ipcMain.handle("firmas-listar", async () => {
+    try {
+      return { ok: true, firmas: listarFirmas(requireDb()) };
+    } catch (error) {
+      return { ok: false, error: mensajeHumano(error) };
+    }
+  });
+
+  ipcMain.handle("firma-leer", async (_e, dato) => {
+    try {
+      const f = leerFirma(requireDb(), dato?.id);
+      return { ok: true, firma: f };
+    } catch (error) {
+      return { ok: false, error: mensajeHumano(error) };
+    }
+  });
+
+  ipcMain.handle("firma-guardar", async (_e, dato) => {
+    try {
+      return { ok: true, ...(await guardarFirmaDb(dato)) };
+    } catch (error) {
+      return { ok: false, error: mensajeHumano(error) };
+    }
+  });
+
+  ipcMain.handle("firma-borrar", async (_e, dato) => {
+    try {
+      borrarFirma(requireDb(), dato?.id);
+      return { ok: true };
     } catch (error) {
       return { ok: false, error: mensajeHumano(error) };
     }

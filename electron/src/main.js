@@ -807,6 +807,7 @@ if (bloqueo) {
     registrarPdftools({
       ipcMain,
       dialog,
+      shell,
       ventana: () => ventana,
       mensajeHumano,
       datosDir: () => datosDir,

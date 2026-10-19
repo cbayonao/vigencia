@@ -178,7 +178,8 @@ export function textoDePdf(buffer) {
 
 // Camino mejorado: pdfjs (fuentes CID y cmaps locales) y OCR si está
 // instalado; si todo falla, el lector propio de arriba. Sin red.
-export async function textoDePdfCompleto(buffer, { datosDir = "" } = {}) {
+// conPaginas deja las marcas <!-- pagina n --> (Comparar ubica así cada cambio).
+export async function textoDePdfCompleto(buffer, { datosDir = "", conPaginas = false } = {}) {
   if (!Buffer.isBuffer(buffer) || buffer.subarray(0, 5).toString("latin1") !== "%PDF-") {
     return { ok: false, error: "Ese archivo no es un PDF." };
   }
@@ -186,7 +187,8 @@ export async function textoDePdfCompleto(buffer, { datosDir = "" } = {}) {
     const { convertirPdf } = await import("./convertir/convertidores.js");
     const { quitarEncabezado } = await import("../compartido/convertir.js");
     const r = await convertirPdf(buffer, { datosDir });
-    const texto = quitarEncabezado(r.markdown).replace(/<!-- pagina \d+ -->\n*/g, "").replace(/^#+ /gm, "").trim();
+    const limpio = quitarEncabezado(r.markdown);
+    const texto = (conPaginas ? limpio : limpio.replace(/<!-- pagina \d+ -->\n*/g, "")).replace(/^#+ /gm, "").trim();
     if (texto && r.calidad >= 0.6) return { ok: true, texto, aviso: r.aviso || "" };
     const viejo = textoDePdf(buffer);
     if (viejo.ok) return viejo;

@@ -1,5 +1,13 @@
 # Registro de cambios
 
+## Sin publicar (rama feature/firma-visual)
+- Firmar como Rellenar y firmar de Adobe: el PDF se ve completo en la pantalla, con páginas seguidas, contador, anterior y siguiente, acercar, alejar y Ajustar al ancho. Las páginas giradas o recortadas se ven y se firman bien.
+- Mis firmas: dibujarla con el ratón o el touchpad (con Deshacer trazo y Limpiar), subir una imagen PNG o JPG quitando el fondo blanco, o escribir el nombre en letra cursiva (Great Vibes, licencia OFL). Se guardan en este computador y se pueden renombrar y borrar.
+- Poner firmas y campos de Nombre, Fecha (dd/mm/aaaa) y Texto libre con su tamaño de letra: se arrastran a la página o se tocan y luego se toca la página. Se mueven, se agrandan desde las esquinas sin deformarse, se duplican (también en otras páginas), se quitan con el botón o Supr y Deshacer vuelve atrás. Varias firmas en varias páginas.
+- Firmar y guardar deja siempre un PDF nuevo, nombre-firmado.pdf, y nunca escribe encima del original. La página de constancia con código es opcional (encendida por defecto). Abrir el firmado lo muestra enseguida y Usar con la IA lo recibe.
+- La ventana aclara que es firma electrónica (Ley 527 de 1999, Decreto 2364 de 2012) y no firma digital con certificado.
+- Arreglos: Verificar decía alterado a todo PDF firmado si se revisaba un segundo después; el visor no cargaba porque la app no servía el worker de pdfjs; una firma JPG pequeña fallaba al estamparla; un PDF con contraseña ahora da la guía de Desbloquear.
+
 ## Sin publicar (rama feature/pdf-contexto-ia)
 - Herramientas PDF: unir, separar, girar, firmar, comprimir, proteger, desbloquear, rellenar y comparar, todo en este computador.
 - PDF, Convertir y Documentos ya trabajan juntos: en Herramientas PDF, el panel Usar con la IA convierte a Markdown el PDF elegido o el que acaba de salir de una herramienta, o lo lleva al contexto de un proyecto. Desbloquear deja una copia temporal sin contraseña para llevarla aunque no se guarde copia.

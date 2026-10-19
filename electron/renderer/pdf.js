@@ -1,17 +1,18 @@
 // Pantalla Herramientas PDF: unir, separar, rotar y firmar. Todo pasa en
 // este computador (pdf-lib); la ventana solo elige archivos y avisa.
-import { ANGULOS, NIVELES_COMPRIMIR, POSICIONES_FIRMA, cajaFirma } from "../compartido/pdftools.js";
+import { ANGULOS, NIVELES_COMPRIMIR } from "../compartido/pdftools.js";
 import { diferencias } from "../compartido/documentos.js";
 import { avisar } from "./aviso.js";
 import { conAvance, irA, llenarProyectos } from "./proyectos.js";
+import { abrirFirma, iniciarFirma, mostrarVisorFirma } from "./firma.js";
 
 const $ = (id) => document.getElementById(id);
 const HERRAMIENTAS_PDF = ["unir", "separar", "rotar", "firmar", "comprimir", "proteger", "desbloquear", "rellenar", "comparar"];
-const pdf = { llevar: null, llevado: null, listo: false, herramienta: "unir", unir: [], separar: "", rotar: "", firmar: "", comprimir: "", proteger: "", desbloquear: "", rellenar: "", compararA: "", compararB: "", firmarInfo: null };
+export const pdf = { llevar: null, llevado: null, listo: false, herramienta: "unir", unir: [], separar: "", rotar: "", firmar: "", comprimir: "", proteger: "", desbloquear: "", rellenar: "", compararA: "", compararB: "" };
 
 let arrastreDesde = -1;
 
-function nodo(tag, clase, contenido) {
+export function nodo(tag, clase, contenido) {
   const el = document.createElement(tag);
   if (clase) el.className = clase;
   if (contenido != null) el.textContent = contenido;
@@ -25,14 +26,14 @@ function opcion(valor, etiqueta) {
   return o;
 }
 
-function estado(id, mensaje, error = false) {
+export function estado(id, mensaje, error = false) {
   const el = $(id);
   el.textContent = mensaje || "";
   el.classList.toggle("error", error);
 }
 
 // Corre una acción mostrando "trabajando" con pulso hasta que termina.
-async function ocupado(idEstado, texto, fn) {
+export async function ocupado(idEstado, texto, fn) {
   const el = $(idEstado);
   el.classList.add("procesando");
   estado(idEstado, texto);
@@ -48,7 +49,7 @@ const AYUDA_PDF = {
   unir: ["Unir", "Junta varios PDF en uno solo, en el orden que usted deje.", ["Agregue con Elegir o arrastrando.", "Ordene con ↑ ↓ o arrastrando la fila.", "Pulse Unir y guardar."]],
   separar: ["Separar", "Saca unas páginas a un PDF nuevo, sin tocar el original.", ["Elija el PDF.", "Escriba las páginas, por ejemplo 1-3, 5.", "Pulse Separar y guardar."]],
   rotar: ["Girar", "Endereza páginas chuecas 90, 180 o 270 grados.", ["Elija el PDF.", "Páginas vacío significa todas.", "Elija el giro y pulse Girar y guardar."]],
-  firmar: ["Firmar", "Pone su firma dibujada donde usted diga.", ["Elija el PDF.", "Dibuje, suba o escriba su firma.", "Elija página, posición y tamaño."]],
+  firmar: ["Firmar", "Pone sus firmas y textos donde usted los arrastre, como Rellenar y firmar de Adobe.", ["Elija el PDF.", "Arrastre sus firmas, su nombre o la fecha a la página.", "Firme y guarde una copia nueva."]],
   comprimir: ["Comprimir", "Achica las fotos sin tocar el texto ni las tablas.", ["Elija el PDF.", "Elija la calidad.", "Si no tiene fotos, casi no cambia."]],
   proteger: ["Proteger", "Le pone contraseña AES-256: sin ella nadie lo abre.", ["Elija el PDF.", "Escriba la contraseña y guárdela bien.", "El original queda intacto."]],
   desbloquear: ["Desbloquear", "Quita la contraseña y deja el PDF limpio.", ["Elija el PDF con contraseña.", "Escriba la contraseña actual.", "Sin la contraseña no se puede."]],
@@ -72,7 +73,7 @@ function pintarAyudaPdf() {
   if (vacio) vacio.hidden = true;
 }
 
-function nombreCorto(ruta) {
+export function nombreCorto(ruta) {
   return String(ruta || "").split(/[/\\]/).pop() || ruta;
 }
 
@@ -85,7 +86,7 @@ function elegirHerramienta(cual) {
     tab.setAttribute("aria-selected", String(h === cual));
   }
   pintarAyudaPdf();
-  if (cual === "firmar") pintarVistaFirma();
+  mostrarVisorFirma(cual === "firmar");
 }
 
 // ---------- Usar con la IA: convertir o llevar al contexto ----------
@@ -98,7 +99,7 @@ const COMO_LLEVAR = {
 
 // Deja listo el panel Usar con la IA para un PDF: el elegido, el que salió
 // de una herramienta o la copia temporal ya desbloqueada.
-async function ofrecerLlevar(ruta, { como = "elegido", nombre = "" } = {}) {
+export async function ofrecerLlevar(ruta, { como = "elegido", nombre = "" } = {}) {
   if (!ruta) return;
   pdf.llevar = { ruta, como, nombre: nombre || nombreCorto(ruta) };
   pdf.llevado = null;
@@ -261,24 +262,18 @@ async function elegirUno(clave) {
   if (clave !== "desbloquear" && clave !== "proteger" && info) ofrecerLlevar(pdf[clave]);
 }
 
-async function pintarUno(clave) {
+export async function pintarUno(clave) {
   const ayuda = $(`pdf-${clave}-nombre`);
   const info = await window.vigencia.pdfInfo(pdf[clave]);
   if (!info?.ok) {
     ayuda.textContent = pdf[clave] ? nombreCorto(pdf[clave]) : "Ningún PDF elegido.";
     estado(`pdf-${clave}-estado`, info && pdf[clave] ? (info.error || "") : "", Boolean(info && !info.ok));
-    if (clave === "firmar") {
-      pdf.firmarInfo = null;
-      pintarVistaFirma();
-    }
+    if (clave === "firmar") abrirFirma(null);
     return null;
   }
   ayuda.textContent = `${info.nombre}: ${info.paginas} ${info.paginas === 1 ? "página" : "páginas"}.`;
   estado(`pdf-${clave}-estado`, "");
-  if (clave === "firmar") {
-    pdf.firmarInfo = info;
-    pintarVistaFirma();
-  }
+  if (clave === "firmar") abrirFirma(info);
   return info;
 }
 
@@ -312,116 +307,6 @@ async function rotar() {
       estado("pdf-rotar-estado", "");
     }
   });
-}
-
-// ---------- Firmar ----------
-
-function lienzo() {
-  return $("pdf-firma-lienzo");
-}
-
-function trazoVacio() {
-  const c = lienzo();
-  const ctx = c.getContext("2d");
-  const datos = ctx.getImageData(0, 0, c.width, c.height).data;
-  for (let i = 3; i < datos.length; i += 4) {
-    if (datos[i] !== 0) return false;
-  }
-  return true;
-}
-
-function limpiarFirma() {
-  const c = lienzo();
-  c.getContext("2d").clearRect(0, 0, c.width, c.height);
-  estado("pdf-firmar-estado", "");
-  pintarVistaFirma();
-}
-
-// Vista previa: la página en proporción real con la firma puesta donde
-// va a quedar. Todo con canvas (la CSP bloquea data: y estilos en línea,
-// así que nada de <img> ni style.* aquí).
-function firmaHayTrazo() {
-  return !trazoVacio();
-}
-
-function paginaVista() {
-  const detalle = pdf.firmarInfo?.detalle || [];
-  const pedido = String($("pdf-firma-paginas").value || "").trim().toLowerCase();
-  let indice = 0;
-  const m = pedido.match(/^(\d+)/);
-  if (m) indice = Math.min(detalle.length - 1, Math.max(0, Number(m[1]) - 1));
-  const d = detalle[indice] || { ancho: 612, alto: 792 };
-  return { width: Number(d.ancho) || 612, height: Number(d.alto) || 792 };
-}
-
-function pintarVistaFirma() {
-  const vista = document.querySelector("#pantalla-pdf .pdf-vista");
-  const previo = $("pdf-firma-vista-canvas");
-  const vacia = $("pdf-firma-vista-vacia");
-  if (!vista || !previo) return;
-  const pagina = paginaVista();
-  const anchoVista = 330;
-  const altoVista = Math.max(80, Math.round((anchoVista * pagina.height) / pagina.width));
-  previo.width = anchoVista;
-  previo.height = altoVista;
-  const ctx = previo.getContext("2d");
-  ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, previo.width, previo.height);
-  ctx.strokeStyle = "#c9b8a4";
-  ctx.lineWidth = 2;
-  ctx.strokeRect(1, 1, previo.width - 2, previo.height - 2);
-  if (!firmaHayTrazo()) {
-    if (vacia) vacia.hidden = false;
-    return;
-  }
-  if (vacia) vacia.hidden = true;
-  const firma = lienzo();
-  const ancho = Number($("pdf-firma-ancho").value) || 150;
-  const caja = cajaFirma($("pdf-firma-posicion").value, pagina, ancho, ancho / 3);
-  const k = previo.width / pagina.width;
-  ctx.drawImage(firma, caja.x * k, (pagina.height - caja.y - caja.h) * k, caja.w * k, caja.h * k);
-}
-
-function pintarAncho() {
-  $("pdf-firma-ancho-valor").textContent = `${$("pdf-firma-ancho").value} px`;
-}
-
-async function dibujarImagenEnLienzo(file) {
-  // createImageBitmap no pasa por img-src de la CSP (new Image + data: sí
-  // lo bloquearía): el lienzo es la única fuente de verdad.
-  try {
-    const bmp = await createImageBitmap(file);
-    const c = lienzo();
-    const ctx = c.getContext("2d");
-    ctx.clearRect(0, 0, c.width, c.height);
-    const escala = Math.min(c.width / bmp.width, c.height / bmp.height, 1);
-    const w = bmp.width * escala;
-    const h = bmp.height * escala;
-    ctx.drawImage(bmp, (c.width - w) / 2, (c.height - h) / 2, w, h);
-    if (bmp.close) bmp.close();
-    estado("pdf-firmar-estado", "");
-    pintarVistaFirma();
-  } catch {
-    estado("pdf-firmar-estado", "Esa imagen no se pudo leer.", true);
-  }
-}
-
-function ponerTextoEnLienzo() {
-  const texto = String($("pdf-firma-texto").value || "").trim().slice(0, 60);
-  if (!texto) {
-    estado("pdf-firmar-estado", "Escriba su nombre primero.", true);
-    return;
-  }
-  const c = lienzo();
-  const ctx = c.getContext("2d");
-  ctx.clearRect(0, 0, c.width, c.height);
-  ctx.fillStyle = "#1a2a3a";
-  ctx.font = "italic 64px Georgia, serif";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(texto, c.width / 2, c.height / 2);
-  estado("pdf-firmar-estado", "");
-  pintarVistaFirma();
 }
 
 // ---------- Comprimir ----------
@@ -532,7 +417,7 @@ async function pintarCampos() {
       sel.replaceChildren(...(c.opciones || []).map((o) => opcion(o, o)));
       l.append(sel);
     } else if (c.tipo === "firma-digital") {
-      l.append(nodo("span", "ayuda", "Firma certificada: se firma a mano en Firmar."));
+      l.append(nodo("span", "ayuda", "Campo de firma con certificado: aquí no se llena. Su firma visible se pone en Firmar."));
     } else {
       const campo = document.createElement("input");
       campo.dataset.campo = c.nombre;
@@ -616,77 +501,6 @@ async function comparar() {
   });
 }
 
-async function firmar() {
-  if (trazoVacio()) {
-    estado("pdf-firmar-estado", "Dibuje, suba o escriba primero su firma.", true);
-    return;
-  }
-  await ocupado("pdf-firmar-estado", "Firmando…", async () => {
-    const r = await window.vigencia.pdfFirmar({
-      ruta: pdf.firmar,
-      firma: lienzo().toDataURL("image/png"),
-      paginas: $("pdf-firma-paginas").value,
-      posicion: $("pdf-firma-posicion").value,
-      ancho: Number($("pdf-firma-ancho").value),
-    });
-    if (r?.ok) {
-      estado("pdf-firmar-estado", `Guardado en ${r.ruta}`);
-      avisar("PDF firmado y guardado.");
-      ofrecerLlevar(r.ruta, { como: "resultado" });
-    } else if (!r?.cancelado) {
-      estado("pdf-firmar-estado", r?.error || "No pude firmar.", "error");
-      avisar(r?.error || "No pude firmar.", "error");
-    } else {
-      estado("pdf-firmar-estado", "");
-    }
-  });
-}
-
-function iniciarLienzo() {
-  const c = lienzo();
-  const escala = window.devicePixelRatio || 1;
-  c.width = 600 * escala;
-  c.height = 200 * escala;
-  const ctx = c.getContext("2d");
-  ctx.scale(escala, escala);
-  ctx.lineWidth = 2.5;
-  ctx.lineCap = "round";
-  ctx.strokeStyle = "#1a2a3a";
-  let dibujando = false;
-  let x = 0;
-  let y = 0;
-  const punto = (e) => {
-    const rect = c.getBoundingClientRect();
-    return [(e.clientX - rect.left) * (600 / rect.width), (e.clientY - rect.top) * (200 / rect.height)];
-  };
-  c.addEventListener("pointerdown", (e) => {
-    dibujando = true;
-    [x, y] = punto(e);
-    try {
-      c.setPointerCapture(e.pointerId);
-    } catch {
-      /* ratones y táctiles reales siempre traen puntero activo */
-    }
-  });
-  c.addEventListener("pointermove", (e) => {
-    if (!dibujando) return;
-    const [nx, ny] = punto(e);
-    ctx.beginPath();
-    ctx.moveTo(x, y);
-    ctx.lineTo(nx, ny);
-    ctx.stroke();
-    x = nx;
-    y = ny;
-  });
-  const soltar = () => {
-    if (!dibujando) return;
-    dibujando = false;
-    pintarVistaFirma();
-  };
-  c.addEventListener("pointerup", soltar);
-  c.addEventListener("pointercancel", soltar);
-}
-
 // ---------- Arranque ----------
 
 export async function abrirPdf() {
@@ -759,34 +573,10 @@ export function iniciarPdf() {
   $("pdf-comprimir-nivel").value = "media";
   $("pdf-separar-boton").addEventListener("click", separar);
   $("pdf-rotar-boton").addEventListener("click", rotar);
-  $("pdf-firma-posicion").replaceChildren(...POSICIONES_FIRMA.map((p) => opcion(p.id, p.nombre)));
-  $("pdf-firma-ancho").addEventListener("input", () => {
-    pintarAncho();
-    pintarVistaFirma();
-  });
-  $("pdf-firma-posicion").addEventListener("change", pintarVistaFirma);
-  $("pdf-firma-paginas").addEventListener("input", pintarVistaFirma);
-  pintarAncho();
-  $("pdf-firma-limpiar").addEventListener("click", limpiarFirma);
-  $("pdf-firmar-boton").addEventListener("click", firmar);
-  $("pdf-firma-subir").addEventListener("click", () => $("pdf-firma-archivo").click());
-  $("pdf-firma-archivo").addEventListener("change", () => {
-    const f = $("pdf-firma-archivo").files?.[0];
-    $("pdf-firma-archivo").value = "";
-    if (!f) return;
-    dibujarImagenEnLienzo(f);
-  });
-  $("pdf-firma-poner-texto").addEventListener("click", ponerTextoEnLienzo);
-  $("pdf-firma-texto").addEventListener("keydown", (e) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      ponerTextoEnLienzo();
-    }
-  });
   $("pdf-comprimir-boton").addEventListener("click", comprimir);
   $("pdf-proteger-boton").addEventListener("click", proteger);
   $("pdf-desbloquear-boton").addEventListener("click", desbloquear);
   $("pdf-rellenar-boton").addEventListener("click", rellenar);
   $("pdf-comparar-boton").addEventListener("click", comparar);
-  iniciarLienzo();
+  iniciarFirma();
 }

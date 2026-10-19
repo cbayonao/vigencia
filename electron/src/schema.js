@@ -684,4 +684,31 @@ export const MIGRACIONES = [
       db.exec("CREATE INDEX IF NOT EXISTS pieza_archivo ON pieza(archivo_id)");
     },
   },
+  {
+    version: 18,
+    nombre: "firmas guardadas y actas de firma electrónica",
+    up(db) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS firma_perfil (
+          id INTEGER PRIMARY KEY,
+          nombre TEXT NOT NULL,
+          png TEXT NOT NULL DEFAULT '',
+          creado_en TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS firma_acta (
+          id INTEGER PRIMARY KEY,
+          codigo TEXT NOT NULL UNIQUE,
+          fecha TEXT NOT NULL,
+          firmante TEXT NOT NULL DEFAULT '',
+          documento TEXT NOT NULL DEFAULT '',
+          hash_contenido TEXT NOT NULL DEFAULT '',
+          hash_final TEXT NOT NULL DEFAULT '',
+          paginas TEXT NOT NULL DEFAULT '',
+          pdf_nombre TEXT NOT NULL DEFAULT '',
+          creado_en TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS firma_acta_codigo ON firma_acta(codigo);
+      `);
+    },
+  },
 ];

@@ -122,6 +122,8 @@ const ICONO = path.join(RAIZ, "renderer", "icon.png");
 const TIPOS = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
+  ".mjs": "text/javascript; charset=utf-8", // worker de pdfjs (renderer/vendor)
+  ".ttf": "font/ttf", // letra de la firma escrita (renderer/fuentes)
   ".css": "text/css; charset=utf-8",
   ".svg": "image/svg+xml",
   ".png": "image/png",
@@ -809,6 +811,7 @@ if (bloqueo) {
       mensajeHumano,
       datosDir: () => datosDir,
       convertirDatos,
+      db: () => db,
     });
     ipcMain.handle("listar", () => responder(() => ({
       procesos: listarProcesos(db),

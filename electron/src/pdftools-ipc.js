@@ -4,7 +4,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { NIVELES_COMPRIMIR, camposPdf, comprimirPdf, rellenarPdf } from "./pdftools.js";
+import { NIVELES_COMPRIMIR, borrarFirma, camposPdf, comprimirPdf, guardarActa, guardarFirma, listarFirmas, rellenarPdf, renombrarFirma, verificarPdf } from "./pdftools.js";
 import { protegerPdf } from "./pdfproteger.js";
 import { desbloquearPdf } from "./pdfdescifrar.js";
 import { textoDePdfCompleto } from "./pdftexto.js";
@@ -71,8 +71,21 @@ export async function textoParaComparar(ruta, { datosDir = "" } = {}) {
   return { ok: true, texto: t.texto || "" };
 }
 
-export function registrarPdftools({ ipcMain, dialog, ventana, mensajeHumano, datosDir = () => "", convertirDatos = null }) {
+export function registrarPdftools({ ipcMain, dialog, ventana, mensajeHumano, datosDir = () => "", convertirDatos = null, db = null }) {
   limpiarTemporales();
+  const requireDb = () => {
+    const base = typeof db === "function" ? db() : db;
+    if (!base) throw new Error("La base no está lista.");
+    return base;
+  };
+  // Canal que solo responde {ok, ...} o el error en palabras.
+  const canal = (nombre, fn) => ipcMain.handle(nombre, async (_e, dato) => {
+    try {
+      return { ok: true, ...(await fn(dato || {})) };
+    } catch (error) {
+      return { ok: false, error: mensajeHumano(error) };
+    }
+  });
 
   ipcMain.handle("pdf-elegir", async (_e, dato) => {
     try {
@@ -97,15 +110,19 @@ export function registrarPdftools({ ipcMain, dialog, ventana, mensajeHumano, dat
     }
   });
 
-  async function guardarComo(titulo, sugerido, bytes) {
+  // original: el PDF de entrada; nunca se escribe encima de él.
+  async function guardarComo(titulo, sugerido, bytes, original = "") {
     const r = await dialog.showSaveDialog(ventana(), {
       title: titulo,
-      defaultPath: sugerido,
+      defaultPath: original ? path.join(path.dirname(original), sugerido) : sugerido,
       filters: FILTRO_PDF,
     });
     if (r.canceled || !r.filePath) return { ok: false, cancelado: true };
     let ruta = r.filePath;
     if (!ruta.toLowerCase().endsWith(".pdf")) ruta += ".pdf";
+    if (original && path.resolve(ruta) === path.resolve(original)) {
+      return { ok: false, error: "Ese es el PDF original. Guarde el firmado con otro nombre." };
+    }
     fs.writeFileSync(ruta, bytes);
     return { ok: true, ruta };
   }
@@ -160,25 +177,61 @@ export function registrarPdftools({ ipcMain, dialog, ventana, mensajeHumano, dat
     try {
       const ruta = String(dato?.ruta || "");
       if (!ruta) return { ok: false, error: "Elija primero el PDF." };
-      const total = (await infoPdf(ruta)).paginas;
-      const texto = String(dato?.paginas || "").trim().toLowerCase();
-      let paginas = null;
-      if (texto && texto !== "todas") {
-        const r = parsearRangos(texto, total);
-        if (r.error) return { ok: false, error: r.error };
-        paginas = r.indices;
+      const firmante = { nombre: dato?.firmante, documento: dato?.documento };
+      const r = await firmarPdf(ruta, { imagenes: dato?.imagenes, marcas: dato?.marcas, constancia: dato?.constancia !== false, firmante });
+      const base = path.basename(ruta, path.extname(ruta)).slice(0, 60);
+      const g = await guardarComo("Guardar el PDF firmado", `${base}-firmado.pdf`, r.bytes, ruta);
+      if (!g.ok) return g;
+      if (r.codigo) {
+        try {
+          guardarActa(requireDb(), {
+            codigo: r.codigo, fecha: r.fecha, firmante: String(firmante.nombre || "").slice(0, 120),
+            documento: String(firmante.documento || "").slice(0, 40), hashContenido: r.hashContenido,
+            hashFinal: r.hashFinal, paginas: r.paginas, pdfNombre: path.basename(g.ruta),
+          });
+        } catch {
+          /* el acta en la base es respaldo: el PDF ya trae la constancia */
+        }
       }
-      const bytes = await firmarPdf(ruta, dato?.firma, {
-        paginas,
-        posicion: dato?.posicion,
-        ancho: Number(dato?.ancho) || 150,
-      });
-      const base = path.basename(ruta, ".pdf").slice(0, 60);
-      return await guardarComo("Guardar el PDF firmado", `${base}-firmado.pdf`, bytes);
+      return { ...g, codigo: r.codigo, paginas: r.paginas };
     } catch (error) {
       return { ok: false, error: mensajeHumano(error) };
     }
   });
+
+  // Bytes del PDF para dibujar la página en la ventana (el visor pdfjs
+  // corre en el renderer; aquí solo se leen del disco).
+  ipcMain.handle("pdf-archivo", async (_e, dato) => {
+    try {
+      const ruta = String(dato?.ruta || "");
+      if (!ruta) return { ok: false, error: "Elija primero el PDF." };
+      if (fs.statSync(ruta).size > 100 * 1024 * 1024) return { ok: false, error: "Ese PDF pesa más de 100 MB." };
+      return { ok: true, base64: fs.readFileSync(ruta).toString("base64") };
+    } catch (error) {
+      return { ok: false, error: mensajeHumano(error) };
+    }
+  });
+
+  ipcMain.handle("pdf-verificar", async (_e, dato) => {
+    try {
+      const ruta = String(dato?.ruta || "");
+      if (!ruta) return { ok: false, error: "Elija primero el PDF." };
+      let db = null;
+      try {
+        db = requireDb();
+      } catch {
+        db = null;
+      }
+      return { ok: true, ...(await verificarPdf(ruta, db)) };
+    } catch (error) {
+      return { ok: false, error: mensajeHumano(error) };
+    }
+  });
+
+  canal("firmas-listar", () => ({ firmas: listarFirmas(requireDb()) }));
+  canal("firma-guardar", (d) => guardarFirma(requireDb(), { nombre: d.nombre, png: d.png }));
+  canal("firma-renombrar", (d) => renombrarFirma(requireDb(), d.id, d.nombre));
+  canal("firma-borrar", (d) => borrarFirma(requireDb(), d.id));
 
   ipcMain.handle("pdf-comprimir", async (_e, dato) => {
     try {

@@ -167,6 +167,7 @@ test("procesos manuales, estados guardados sin repetir, vínculo y audiencias en
     const det = detalleMisProcesos(db, clave, { hoy: "2024-06-12" });
     assert.equal(det.juzgado[0].estado_no, "074");
     assert.deepEqual(det.sugerencias.map((s) => [s.fecha, s.hora]), [["2024-08-05", "14:00"]]);
+    assert.equal(listarMisProcesos(db, { hoy: "2024-06-12" }).sugerencias.length, 0, "fuera del último año");
     guardarAudiencia(db, { clave, fecha: det.sugerencias[0].fecha, hora: det.sugerencias[0].hora, modalidad: "presencial", ref: det.sugerencias[0].ref });
     assert.equal(detalleMisProcesos(db, clave, { hoy: "2024-06-12" }).sugerencias.length, 0);
     descartarSugerencia(db, { clave: manual, fecha: "2024-07-01", hora: "" });
@@ -237,4 +238,15 @@ test("lo propio del despacho nunca cuenta como cambio del juzgado ni toca la com
   } finally {
     tmp.borrar();
   }
+});
+
+test("cada acción de Mis procesos en preload tiene su canal y al revés", () => {
+  const ipc = fs.readFileSync(new URL("../src/misprocesos.js", import.meta.url), "utf8");
+  const preload = fs.readFileSync(new URL("../src/preload.cjs", import.meta.url), "utf8");
+  const canales = [...ipc.matchAll(/canal\("mis-([a-z-]+)"/g)].map((x) => x[1]).sort();
+  const lista = preload.match(/const MIS = new Set\(\[([\s\S]*?)\]\)/)[1].match(/"[^"]+"/g).map((x) => x.slice(1, -1)).sort();
+  assert.deepEqual(lista, canales);
+  const vista = fs.readFileSync(new URL("../renderer/mis-procesos.js", import.meta.url), "utf8") + fs.readFileSync(new URL("../renderer/pdf-estados.js", import.meta.url), "utf8");
+  for (const m of vista.matchAll(/(?:llamar|vigencia\.mis)\("([a-z-]+)"/g)) assert.ok(lista.includes(m[1]), m[1]);
+  assert.equal(/style=|\.style\./.test(vista), false);
 });

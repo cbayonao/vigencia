@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 
-const RENDERER = ["app.js", "documentos.js", "juris.js", "comentarios.js", "convertir.js"];
+const RENDERER = ["app.js", "documentos.js", "juris.js", "comentarios.js", "convertir.js", "mis-procesos.js", "pdf-estados.js"];
 
 // Lo que el renderer llama por window.vigencia.* tiene que estar expuesto
 // en preload: un nombre distinto a lado y lado tumba la acción en silencio.

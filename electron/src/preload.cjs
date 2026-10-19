@@ -1,5 +1,12 @@
 const { contextBridge, ipcRenderer, webUtils } = require("electron");
 
+const MIS = new Set([
+  "listar", "detalle", "radicados", "propia-guardar", "propia-marcar", "propia-borrar", "manual-guardar",
+  "actuacion-guardar", "actuacion-borrar", "archivar", "vincular", "estados-guardar", "audiencia-guardar",
+  "audiencia-borrar", "sugerencia-descartar", "ics", "exportar", "archivos-agregar", "archivo-quitar",
+  "archivo-abrir", "archivo-ia", "proyecto",
+]);
+
 contextBridge.exposeInMainWorld("vigencia", {
   listar: () => ipcRenderer.invoke("listar"),
   rutaDeArchivo: (archivo) => {
@@ -81,6 +88,8 @@ contextBridge.exposeInMainWorld("vigencia", {
   jurisGuardar: (sentencia, texto) => ipcRenderer.invoke("juris-guardar", { sentencia, texto }),
   pdfElegir: (varios) => ipcRenderer.invoke("pdf-elegir", { varios }),
   pdfInfo: (ruta) => ipcRenderer.invoke("pdf-info", { ruta }),
+  // Mis procesos: un canal por acción, solo los de esta lista.
+  mis: (accion, dato = {}) => (MIS.has(accion) ? ipcRenderer.invoke(`mis-${accion}`, dato) : Promise.resolve({ ok: false, error: "Acción desconocida." })),
   estadosElegir: () => ipcRenderer.invoke("estados-elegir"),
   estadosLeer: (ruta) => ipcRenderer.invoke("estados-leer", { ruta }),
   estadosExportar: (formato, lotes) => ipcRenderer.invoke("estados-exportar", { formato, lotes }),
@@ -247,6 +256,11 @@ contextBridge.exposeInMainWorld("vigencia", {
     const canal = (_evento, dato) => fn(dato);
     ipcRenderer.on("revision-automatica", canal);
     return () => ipcRenderer.removeListener("revision-automatica", canal);
+  },
+  alAbrirMis: (fn) => {
+    const canal = (_evento, dato) => fn(dato);
+    ipcRenderer.on("abrir-mis", canal);
+    return () => ipcRenderer.removeListener("abrir-mis", canal);
   },
   alAbrirCambios: (fn) => {
     const canal = (_evento, dato) => fn(dato);

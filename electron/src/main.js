@@ -105,6 +105,7 @@ import { registrarJuris } from "./juris-ipc.js";
 import { registrarConvertir } from "./convertir-ipc.js";
 import { limpiarTemporales, registrarPdftools } from "./pdftools-ipc.js";
 import { registrarEstados } from "./estados-ipc.js";
+import { registrarMisProcesos, tomarRecordatorios } from "./misprocesos.js";
 import { consultarVersion, descargarActualizacion } from "./actualizar.js";
 import { directorioDatos } from "./rutas.js";
 
@@ -361,6 +362,33 @@ function notificar({ title, body, alClic = null }) {
     registrar(`no pude mostrar la notificación: ${error?.message || error}`);
     return false;
   }
+}
+
+// Recordatorios de audiencias (Mis procesos): un día y una hora antes, con
+// la misma notificación de los cambios. Al tocarla abre el proceso.
+let recordatorios = null;
+function iniciarRecordatorios() {
+  if (recordatorios) return;
+  const revisar = () => {
+    try {
+      if (!db) return;
+      for (const a of tomarRecordatorios(db)) {
+        const cuando = a.cual === "hora" ? "En una hora" : "Mañana";
+        notificar({
+          title: `${cuando}: audiencia${a.hora ? ` a las ${a.hora}` : ""}`,
+          body: [a.radicado, a.despacho, a.modalidad, a.lugar].filter(Boolean).join(", ") || "Vea Mis procesos.",
+          alClic: () => {
+            mostrarVentana();
+            enviar("abrir-mis", a.clave);
+          },
+        });
+      }
+    } catch (error) {
+      registrar(`recordatorios: ${error?.message || error}`);
+    }
+  };
+  setTimeout(revisar, 20 * 1000);
+  recordatorios = setInterval(revisar, 5 * 60 * 1000);
 }
 
 function abrirCambios(ids) {
@@ -816,6 +844,8 @@ if (bloqueo) {
       db: () => db,
     });
     registrarEstados({ ipcMain, dialog, ventana: () => ventana, mensajeHumano, datosDir: () => datosDir });
+    registrarMisProcesos({ ipcMain, dialog, shell, db: () => db, ventana: () => ventana, mensajeHumano, convertirDatos });
+    iniciarRecordatorios();
     ipcMain.handle("listar", () => responder(() => ({
       procesos: listarProcesos(db),
       clientes: listarClientes(db),

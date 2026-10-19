@@ -78,9 +78,25 @@ export function listarMisProcesos(db, { hoy = hoyLocal() } = {}) {
     pendientes,
     clientes: listarClientes(db),
     tablero: contarTablero({ procesos, audiencias, propias: pendientes, hoy }),
+    sugerencias: sugerenciasGlobales(db, procesos, hoy),
     fuentes: FUENTES,
     hoy,
   };
+}
+
+// Audiencias que sugieren las actuaciones del último año en todas las
+// fuentes, para el calendario. Solo se leen; el usuario las confirma.
+export function sugerenciasGlobales(db, procesos, hoy = hoyLocal()) {
+  const desde = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const conAudiencia = "(LOWER(actuacion) LIKE '%audiencia%' OR LOWER(anotacion) LIKE '%audiencia%' OR LOWER(actuacion) LIKE '%diligencia%')";
+  const visibles = new Map(procesos.filter((p) => !p.archivado).map((p) => [p.clave, p]));
+  const acts = [
+    ...filas(db, `SELECT 'cn:' || id_proceso AS clave, fecha_actuacion AS fecha, actuacion, COALESCE(anotacion, '') AS anotacion FROM actuacion WHERE fecha_actuacion >= ? AND ${conAudiencia}`, [desde]),
+    ...filas(db, `SELECT 'sa:' || guid AS clave, fecha, actuacion, anotacion FROM samai_actuacion WHERE ${conAudiencia}`),
+    ...filas(db, `SELECT a.clave, a.fecha, a.actuacion, a.anotacion, a.radicado FROM mp_actuacion a WHERE a.fecha >= ? AND ${conAudiencia}`, [desde]),
+  ].filter((a) => visibles.has(a.clave)).map((a) => ({ ...a, radicado: visibles.get(a.clave).radicado }));
+  const conocidas = filas(db, "SELECT clave, fecha, hora, ref FROM mp_audiencia").map((a) => a.ref || refAudiencia(a.clave, a.fecha, a.hora));
+  return sugerirAudiencias(acts, { hoy, conocidas });
 }
 
 export function listarAudiencias(db) {

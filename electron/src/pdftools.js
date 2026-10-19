@@ -179,7 +179,9 @@ function sha(datos) {
 // mismo camino, así el hash coincide aunque pdf-lib reordene objetos.
 async function huellaContenido(doc, excluirUltima) {
   const indices = excluirUltima ? doc.getPageIndices().slice(0, -1) : doc.getPageIndices();
-  const copia = await PDFDocument.create();
+  // Sin metadatos: create() pone la hora de ahora y la huella cambiaba de
+  // un segundo a otro (Verificar decía alterado a todo firmado).
+  const copia = await PDFDocument.create({ updateMetadata: false });
   const paginas = await copia.copyPages(doc, indices);
   for (const p of paginas) copia.addPage(p);
   return sha(Buffer.from(await copia.save({ useObjectStreams: false })));

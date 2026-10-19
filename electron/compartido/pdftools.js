@@ -79,6 +79,29 @@ export function cajaAPdf(caja, pagina, zoom = 1) {
   return { x: p.x, y: p.y, w, h, giro: giroNormal(pagina.rotacion) };
 }
 
+// Lo contrario de puntoAPdf: un punto del PDF a la página como se ve.
+export function pdfAPunto(x, y, pagina) {
+  const x0 = Number(pagina.x0) || 0;
+  const y0 = Number(pagina.y0) || 0;
+  const x1 = x0 + pagina.ancho;
+  const y1 = y0 + pagina.alto;
+  switch (giroNormal(pagina.rotacion)) {
+    case 90: return { u: y - y0, v: x - x0 };
+    case 180: return { u: x1 - x, v: y - y0 };
+    case 270: return { u: y1 - y, v: x1 - x };
+    default: return { u: x - x0, v: y1 - y };
+  }
+}
+
+// Un rectángulo del PDF (x, y abajo a la izquierda, w, h; el /Rect de un
+// campo) a caja en la página como se ve, en puntos a zoom 1. Rellenar pone
+// así los campos encima del dibujo de pdfjs.
+export function pdfACaja(rect, pagina) {
+  const a = pdfAPunto(rect.x, rect.y, pagina);
+  const b = pdfAPunto(rect.x + rect.w, rect.y + rect.h, pagina);
+  return { x: Math.min(a.u, b.u), y: Math.min(a.v, b.v), w: Math.abs(b.u - a.u), h: Math.abs(b.v - a.v) };
+}
+
 // Un texto puesto es una caja de alto TEXTO_ALTO veces su letra; la base
 // de la letra va TEXTO_BAJA veces la letra por encima del borde de abajo.
 export const TEXTO_ALTO = 1.3;

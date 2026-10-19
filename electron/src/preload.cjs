@@ -81,9 +81,14 @@ contextBridge.exposeInMainWorld("vigencia", {
   jurisGuardar: (sentencia, texto) => ipcRenderer.invoke("juris-guardar", { sentencia, texto }),
   pdfElegir: (varios) => ipcRenderer.invoke("pdf-elegir", { varios }),
   pdfInfo: (ruta) => ipcRenderer.invoke("pdf-info", { ruta }),
-  pdfUnir: (rutas) => ipcRenderer.invoke("pdf-unir", { rutas }),
-  pdfSeparar: (ruta, rangos) => ipcRenderer.invoke("pdf-separar", { ruta, rangos }),
-  pdfRotar: (ruta, rangos, angulo) => ipcRenderer.invoke("pdf-rotar", { ruta, rangos, angulo }),
+  // partes: [{ ruta, indices }] para unir solo esas páginas.
+  pdfUnir: (rutas, partes) => ipcRenderer.invoke("pdf-unir", { rutas, partes }),
+  // partes: [[índices], ...]; con más de una, un PDF por parte en una carpeta.
+  pdfSeparar: (ruta, rangos, partes) => ipcRenderer.invoke("pdf-separar", { ruta, rangos, partes }),
+  // giros: { índice: grados } para girar cada página distinto.
+  pdfRotar: (ruta, rangos, angulo, giros) => ipcRenderer.invoke("pdf-rotar", { ruta, rangos, angulo, giros }),
+  pdfAbrir: (ruta) => ipcRenderer.invoke("pdf-abrir", { ruta }),
+  pdfMostrar: (ruta) => ipcRenderer.invoke("pdf-mostrar", { ruta }),
   pdfFirmar: (datos) => ipcRenderer.invoke("pdf-firmar", datos),
   pdfArchivo: (ruta) => ipcRenderer.invoke("pdf-archivo", { ruta }),
   pdfVerificar: (ruta) => ipcRenderer.invoke("pdf-verificar", { ruta }),
@@ -91,8 +96,8 @@ contextBridge.exposeInMainWorld("vigencia", {
   firmaGuardar: (datos) => ipcRenderer.invoke("firma-guardar", datos),
   firmaRenombrar: (id, nombre) => ipcRenderer.invoke("firma-renombrar", { id, nombre }),
   firmaBorrar: (id) => ipcRenderer.invoke("firma-borrar", { id }),
-  pdfComprimir: (ruta, nivel) => ipcRenderer.invoke("pdf-comprimir", { ruta, nivel }),
-  pdfProteger: (ruta, clave, duenio) => ipcRenderer.invoke("pdf-proteger", { ruta, clave, duenio }),
+  pdfComprimir: (ruta, nivel, medir = false) => ipcRenderer.invoke("pdf-comprimir", { ruta, nivel, medir }),
+  pdfProteger: (ruta, clave, duenio, permisos) => ipcRenderer.invoke("pdf-proteger", { ruta, clave, duenio, permisos }),
   pdfDesbloquear: (ruta, clave) => ipcRenderer.invoke("pdf-desbloquear", { ruta, clave }),
   pdfCampos: (ruta) => ipcRenderer.invoke("pdf-campos", { ruta }),
   pdfRellenar: (ruta, valores, aplanar) => ipcRenderer.invoke("pdf-rellenar", { ruta, valores, aplanar }),

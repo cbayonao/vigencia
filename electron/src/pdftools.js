@@ -68,15 +68,21 @@ export async function infoPdf(ruta) {
   return { paginas: doc.getPageCount(), detalle: paginasDe(doc) };
 }
 
-export async function unirPdfs(rutas) {
-  const lista = (rutas || []).filter(Boolean);
+// entradas: rutas, o { ruta, indices } para tomar solo esas páginas (desde 0,
+// en ese orden).
+export async function unirPdfs(entradas) {
+  const lista = (entradas || []).map((e) => (typeof e === "string" ? { ruta: e } : e)).filter((e) => e?.ruta);
   if (lista.length < 2) throw new Aviso("Elija al menos 2 PDF para unir.");
   if (lista.length > 50) throw new Aviso("Máximo 50 PDF por unión.");
   const salida = await PDFDocument.create();
   let total = 0;
-  for (const ruta of lista) {
+  for (const { ruta, indices } of lista) {
     const doc = await cargar(ruta);
-    const copiadas = await salida.copyPages(doc, doc.getPageIndices());
+    const elegidas = Array.isArray(indices) ? indices.map(Number) : doc.getPageIndices();
+    for (const i of elegidas) {
+      if (!Number.isInteger(i) || i < 0 || i >= doc.getPageCount()) throw new Aviso("Esas páginas se salen del documento.");
+    }
+    const copiadas = await salida.copyPages(doc, elegidas);
     for (const p of copiadas) salida.addPage(p);
     total += copiadas.length;
   }
@@ -96,15 +102,23 @@ export async function separarPdf(ruta, indices) {
 }
 
 export async function rotarPdf(ruta, indices, angulo) {
-  const giro = Number(angulo);
-  if (![90, 180, 270].includes(giro)) throw new Aviso("El giro es 90, 180 o 270 grados.");
   const doc = await cargar(ruta);
   const cuales = indices?.length ? indices : doc.getPageIndices();
-  for (const i of cuales) {
-    if (i < 0 || i >= doc.getPageCount()) throw new Aviso("Esas páginas se salen del documento.");
+  return rotarPaginas(ruta, Object.fromEntries(cuales.map((i) => [i, angulo])), doc);
+}
+
+// giros: { índice desde 0: 90 | 180 | 270 }, cada página con su giro.
+export async function rotarPaginas(ruta, giros, cargado = null) {
+  const lista = Object.entries(giros || {});
+  if (!lista.length) throw new Aviso("No hay páginas giradas.");
+  const doc = cargado || (await cargar(ruta));
+  for (const [clave, angulo] of lista) {
+    const i = Number(clave);
+    const giro = Number(angulo);
+    if (![90, 180, 270].includes(giro)) throw new Aviso("El giro es 90, 180 o 270 grados.");
+    if (!Number.isInteger(i) || i < 0 || i >= doc.getPageCount()) throw new Aviso("Esas páginas se salen del documento.");
     const pagina = doc.getPage(i);
-    const actual = pagina.getRotation().angle;
-    pagina.setRotation(degrees((actual + giro) % 360));
+    pagina.setRotation(degrees((pagina.getRotation().angle + giro) % 360));
   }
   return Buffer.from(await doc.save());
 }
@@ -411,6 +425,36 @@ export async function comprimirPdf(ruta, nivelId = "media") {
 
 // Rellenar formularios: lista los campos (texto, casilla, lista, firma)
 // para pintarlos en la ventana; luego aplica los valores y aplana.
+// Dónde se ve cada campo: su /Rect en el espacio del PDF y la página
+// (desde 1). En opciones y casillas cada caja lleva el valor que marca.
+function cajasDeCampo(doc, campo, paginas) {
+  const salida = [];
+  let widgets = [];
+  try {
+    widgets = campo.acroField.getWidgets();
+  } catch {
+    return salida;
+  }
+  for (const w of widgets) {
+    let indice = paginas.get(w.P());
+    if (indice == null) {
+      const ref = doc.context.getObjectRef(w.dict);
+      indice = doc.getPages().findIndex((p) => p.node.Annots()?.asArray().some((a) => a === ref));
+    }
+    if (indice == null || indice < 0) continue;
+    const r = w.getRectangle();
+    if (!(r.width > 0 && r.height > 0)) continue;
+    let valor = "";
+    try {
+      valor = w.getOnValue()?.decodeText() || "";
+    } catch {
+      valor = "";
+    }
+    salida.push({ pagina: indice + 1, x: r.x, y: r.y, w: r.width, h: r.height, valor });
+  }
+  return salida;
+}
+
 export async function camposPdf(ruta) {
   const doc = await cargar(ruta);
   let form;
@@ -419,9 +463,10 @@ export async function camposPdf(ruta) {
   } catch {
     throw new Aviso("Ese PDF no tiene formulario para rellenar.");
   }
+  const paginas = new Map(doc.getPages().map((p, i) => [p.ref, i]));
   const campos = form.getFields().map((f) => {
     const tipo = f.constructor.name;
-    const base = { nombre: f.getName(), tipo: "texto" };
+    const base = { nombre: f.getName(), tipo: "texto", cajas: cajasDeCampo(doc, f, paginas) };
     if (tipo === "PDFCheckBox") return { ...base, tipo: "casilla" };
     if (tipo === "PDFRadioGroup") {
       let opciones = [];
@@ -445,12 +490,14 @@ export async function camposPdf(ruta) {
     }
     if (tipo === "PDFSignature") return { ...base, tipo: "firma-digital" };
     let actual = "";
+    let multilinea = false;
     try {
       actual = f.getText() || "";
+      multilinea = Boolean(f.isMultiline?.());
     } catch {
       actual = "";
     }
-    return { ...base, actual };
+    return { ...base, actual, multilinea };
   });
   if (!campos.length) throw new Aviso("Ese PDF no tiene campos para rellenar.");
   return { campos, total: campos.length };

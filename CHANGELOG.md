@@ -1,5 +1,16 @@
 # Registro de cambios
 
+## Sin publicar (rama feature/pdf-visual)
+- Herramientas PDF con vista: cada herramienta muestra las páginas en el panel derecho, con zona grande para soltar, estado de avance y tarjeta de resultado con Abrir, Mostrar en carpeta y Usar con la IA. Tema claro y oscuro, todo con teclado.
+- Unir: tarjetas con la primera página, páginas y peso; se ordenan arrastrando o con Alt y flechas, se quitan con Supr, se agregan soltando y se pueden elegir páginas de cada archivo. Abajo se ve cómo queda.
+- Separar: cuadrícula de páginas con tijeras entre ellas o Cortar cada n páginas, partes de colores y resumen; también Sacar páginas. Varias partes se guardan en una carpeta sin pisar nada.
+- Girar: cada página con sus botones, Elegir todas, girar las elegidas, teclas R y Mayús+R, Deshacer. El giro se ve al instante.
+- Comprimir: niveles como tarjetas con el peso medido, barras de antes y después con el porcentaje y una página de muestra antes y después, también de cerca.
+- Proteger y Desbloquear: candado que se cierra o se abre, medidor de fuerza de la contraseña, mostrar u ocultar, permisos (imprimir, copiar, cambiar páginas, comentar) con su resumen, y la primera página después de desbloquear.
+- Rellenar: los campos se escriben sobre la página y en la lista de al lado, que van juntas y resaltan el campo que se edita.
+- Comparar: los dos PDF lado a lado moviéndose juntos, marcas de cambios por página y panel con lo agregado, cambiado y quitado palabra por palabra; tocar un cambio lleva a su página en los dos.
+- Guardar encima del PDF original ahora dice qué hacer: guardarlo con otro nombre.
+
 ## Sin publicar (rama feature/firma-visual)
 - Firmar como Rellenar y firmar de Adobe: el PDF se ve completo en la pantalla, con páginas seguidas, contador, anterior y siguiente, acercar, alejar y Ajustar al ancho. Las páginas giradas o recortadas se ven y se firman bien.
 - Mis firmas: dibujarla con el ratón o el touchpad (con Deshacer trazo y Limpiar), subir una imagen PNG o JPG quitando el fondo blanco, o escribir el nombre en letra cursiva (Great Vibes, licencia OFL). Se guardan en este computador y se pueden renombrar y borrar.

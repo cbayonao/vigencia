@@ -22,7 +22,7 @@ function temporal() {
 test("la migración 5 deja piezas de ejemplo que se pueden editar, apagar y borrar", () => {
   const tmp = temporal();
   try {
-    assert.equal(Number(uno(tmp.db, "SELECT COUNT(*) AS n FROM schema_migracion").n), 18);
+    assert.equal(Number(uno(tmp.db, "SELECT COUNT(*) AS n FROM schema_migracion").n), 19);
     const iniciales = listarPiezas(tmp.db);
     assert.equal(iniciales.filter((pieza) => pieza.tipo === "norma").length, 3);
     assert.equal(iniciales.filter((pieza) => pieza.tipo === "estilo").length, 1);

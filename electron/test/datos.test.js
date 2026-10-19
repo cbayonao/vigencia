@@ -84,7 +84,7 @@ test("la migración agrega clientes y no borra expedientes", () => {
   assert.ok(uno(db, "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'cliente'"));
   assert.ok(uno(db, "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'pausa_boton'"));
   assert.ok(uno(db, "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'informe_revision'"));
-  assert.equal(Number(uno(db, "SELECT COUNT(*) AS n FROM schema_migracion").n), 18);
+  assert.equal(Number(uno(db, "SELECT COUNT(*) AS n FROM schema_migracion").n), 19);
   guardarPausaActualizar(db, "2026-10-10 13:00:00");
   db.close();
   const otra = abrirBase(tmp.ruta);
@@ -101,7 +101,7 @@ test("la migración agrega clientes y no borra expedientes", () => {
   assert.equal(informe.fallidos, 1);
   assert.equal(informe.fallas[0].causa, "La Rama no respondió.");
   assert.equal("id_proceso" in informe.fallas[0], false);
-  assert.equal(Number(uno(otra, "SELECT COUNT(*) AS n FROM schema_migracion").n), 18);
+  assert.equal(Number(uno(otra, "SELECT COUNT(*) AS n FROM schema_migracion").n), 19);
   assert.equal(Number(uno(otra, "SELECT COUNT(*) AS n FROM proceso").n), 1);
   otra.close();
   tmp.borrar();

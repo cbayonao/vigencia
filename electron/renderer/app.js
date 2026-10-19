@@ -29,6 +29,7 @@ import { planAbierto } from "../compartido/plan.js";
 import { CAPAS_DOCUMENTOS, abrirDocumentos, iniciarDocumentos, pedirProyectoDocumentos, quitarSoloLocal, refrescarModelosDocumentos } from "./documentos.js";
 import { abrirJuris, iniciarJuris } from "./juris.js";
 import { abrirPdf, iniciarPdf } from "./pdf.js";
+import { abrirMisProcesos, iniciarMisProcesos } from "./mis-procesos.js";
 import { abrirConvertir, iniciarConvertir, pintarOcr, verConvertido } from "./convertir.js";
 import { abrirComentarios, iniciarComentarios } from "./comentarios.js";
 import { avisar } from "./aviso.js";
@@ -3062,6 +3063,9 @@ function pintarSistemas() {
   $("sistema-convertir").classList.toggle("activo", estado.sistema === "convertir");
   $("sistema-jurisprudencia").classList.toggle("activo", estado.sistema === "juris");
   $("sistema-pdf").classList.toggle("activo", estado.sistema === "pdf");
+  $("sistema-mis").classList.toggle("activo", estado.sistema === "mis");
+  if (estado.sistema === "mis") $("sistema-mis").setAttribute("aria-current", "page");
+  else $("sistema-mis").removeAttribute("aria-current");
   if (estado.sistema === "documentos") documentos.setAttribute("aria-current", "page");
   else documentos.removeAttribute("aria-current");
   const lista = $("sistemas-lista");
@@ -3085,11 +3089,26 @@ function pintarSistemas() {
   }
 }
 
+// Todas las pantallas del escenario: se ve una a la vez.
+const PANTALLAS = ["pantalla-mis", "pantalla-consulta", "pantalla-pp", "pantalla-spoa", "pantalla-samai", "pantalla-construccion", "pantalla-convertir", "pantalla-documentos", "pantalla-juris", "pantalla-pdf"];
+
+function mostrarPantalla(visible) {
+  for (const id of PANTALLAS) $(id).hidden = id !== visible;
+}
+
+function elegirMis(clave = "") {
+  estado.sistema = "mis";
+  cerrarCombos();
+  mostrarPantalla("pantalla-mis");
+  document.title = "Mis procesos · Vigencia";
+  pintarSistemas();
+  abrirMisProcesos(clave);
+}
+
 function elegirDocumentos() {
   estado.sistema = "documentos";
   cerrarCombos();
-  for (const id of ["pantalla-consulta", "pantalla-pp", "pantalla-spoa", "pantalla-samai", "pantalla-juris", "pantalla-construccion", "pantalla-convertir", "pantalla-pdf"]) $(id).hidden = true;
-  $("pantalla-documentos").hidden = false;
+  mostrarPantalla("pantalla-documentos");
   document.title = "Documentos";
   pintarSistemas();
   abrirDocumentos();
@@ -3098,8 +3117,7 @@ function elegirDocumentos() {
 function elegirConvertir() {
   estado.sistema = "convertir";
   cerrarCombos();
-  for (const id of ["pantalla-consulta", "pantalla-pp", "pantalla-spoa", "pantalla-samai", "pantalla-juris", "pantalla-construccion", "pantalla-documentos", "pantalla-pdf"]) $(id).hidden = true;
-  $("pantalla-convertir").hidden = false;
+  mostrarPantalla("pantalla-convertir");
   document.title = "Convertir a Markdown";
   pintarSistemas();
   $("sistema-convertir").classList.add("activo");
@@ -3109,8 +3127,7 @@ function elegirConvertir() {
 function elegirJurisprudencia() {
   estado.sistema = "juris";
   cerrarCombos();
-  for (const id of ["pantalla-consulta", "pantalla-pp", "pantalla-spoa", "pantalla-samai", "pantalla-construccion", "pantalla-convertir", "pantalla-documentos", "pantalla-pdf"]) $(id).hidden = true;
-  $("pantalla-juris").hidden = false;
+  mostrarPantalla("pantalla-juris");
   document.title = "Jurisprudencia · Vigencia";
   pintarSistemas();
   abrirJuris();
@@ -3119,14 +3136,17 @@ function elegirJurisprudencia() {
 function elegirPdf() {
   estado.sistema = "pdf";
   cerrarCombos();
-  for (const id of ["pantalla-consulta", "pantalla-pp", "pantalla-spoa", "pantalla-samai", "pantalla-construccion", "pantalla-convertir", "pantalla-documentos", "pantalla-juris"]) $(id).hidden = true;
-  $("pantalla-pdf").hidden = false;
+  mostrarPantalla("pantalla-pdf");
   document.title = "Herramientas PDF · Vigencia";
   pintarSistemas();
   abrirPdf();
 }
 
 function elegirSistema(id) {
+  if (id === "mis") {
+    elegirMis();
+    return;
+  }
   if (id === "documentos") {
     elegirDocumentos();
     return;
@@ -3143,6 +3163,7 @@ function elegirSistema(id) {
     elegirPdf();
     return;
   }
+  $("pantalla-mis").hidden = true;
   $("pantalla-documentos").hidden = true;
   $("pantalla-convertir").hidden = true;
   $("pantalla-juris").hidden = true;
@@ -3437,6 +3458,8 @@ async function entrarSiVigente(info) {
   await cargar();
   if (estadoInicial.abrirCambios?.length) await verCambios(estadoInicial.abrirCambios);
   if (!estado.idAbierto && !estado.radicadoVacio) vacioInicial();
+  // Inicio: Mis procesos, salvo que haya cambios por ver o una carga en curso.
+  if (!estadoInicial.abrirCambios?.length && !trabajos.agregar?.corriendo && estado.sistema === SISTEMA_INICIAL) elegirMis();
 }
 
 async function refrescarLicencia() {
@@ -4080,6 +4103,9 @@ $("sistema-documentos").addEventListener("click", () => elegirSistema("documento
 $("sistema-convertir").addEventListener("click", () => elegirSistema("convertir"));
 $("sistema-jurisprudencia").addEventListener("click", () => elegirSistema("juris"));
 $("sistema-pdf").addEventListener("click", () => elegirSistema("pdf"));
+$("sistema-mis").addEventListener("click", () => elegirSistema("mis"));
+iniciarMisProcesos();
+window.vigencia.alAbrirMis?.((clave) => elegirMis(String(clave || "")));
 iniciarDocumentos({ mostrarDialogo, ocultarDialogo, menuDesplegable, abrirConfigModelos });
 iniciarConvertir({ abrirConfigModelos });
 iniciarJuris();
@@ -4096,6 +4122,20 @@ window.addEventListener("vigencia:ir", async (e) => {
     $("nuevo").value = String(d.radicado || "");
     $("nuevo").dispatchEvent(new Event("input"));
     $("agregar").click();
+  } else if (d.a === "mis") {
+    elegirMis(String(d.clave || ""));
+  } else if (d.a === "ver") {
+    // Desde Mis procesos: el detalle completo en la pantalla de su sistema.
+    const [tipo, ...resto] = String(d.clave || "").split(":");
+    const ref = resto.join(":");
+    if (tipo === "cn") await verCambios([Number(ref)]);
+    else if (tipo === "sa") {
+      elegirSistema("samai");
+      await verSamaiGuardado(ref);
+    } else if (tipo === "sp") {
+      elegirSistema("spoa");
+      await verSpCaso(ref);
+    }
   } else if (d.a === "convertir") {
     elegirSistema("convertir");
     if (d.archivoId) await verConvertido(Number(d.archivoId));

@@ -711,4 +711,89 @@ export const MIGRACIONES = [
       `);
     },
   },
+  {
+    version: 19,
+    nombre: "mis procesos",
+    up(db) {
+      // Solo suma tablas. Nada de esto lo lee el monitor: las actuaciones que
+      // compara siguen en actuacion, samai_actuacion y spoa_actuacion.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS mp_proceso (
+          id INTEGER PRIMARY KEY,
+          origen TEXT NOT NULL DEFAULT 'manual' CHECK (origen IN ('manual','estados')),
+          radicado TEXT NOT NULL DEFAULT '',
+          despacho TEXT NOT NULL DEFAULT '',
+          demandante TEXT NOT NULL DEFAULT '',
+          demandado TEXT NOT NULL DEFAULT '',
+          clase TEXT NOT NULL DEFAULT '',
+          cliente TEXT NOT NULL DEFAULT '',
+          cliente_id INTEGER REFERENCES cliente(id) ON DELETE SET NULL,
+          vinculo TEXT NOT NULL DEFAULT '',
+          creado_en TEXT NOT NULL,
+          actualizado_en TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS mp_proceso_radicado ON mp_proceso(radicado);
+        CREATE TABLE IF NOT EXISTS mp_actuacion (
+          id INTEGER PRIMARY KEY,
+          clave TEXT NOT NULL,
+          radicado TEXT NOT NULL DEFAULT '',
+          origen TEXT NOT NULL DEFAULT 'manual' CHECK (origen IN ('manual','estado')),
+          fecha TEXT NOT NULL DEFAULT '',
+          actuacion TEXT NOT NULL DEFAULT '',
+          anotacion TEXT NOT NULL DEFAULT '',
+          estado_no TEXT NOT NULL DEFAULT '',
+          fecha_estado TEXT NOT NULL DEFAULT '',
+          juzgado TEXT NOT NULL DEFAULT '',
+          firma TEXT,
+          creado_en TEXT NOT NULL,
+          UNIQUE(firma)
+        );
+        CREATE INDEX IF NOT EXISTS mp_actuacion_clave ON mp_actuacion(clave);
+        CREATE INDEX IF NOT EXISTS mp_actuacion_radicado ON mp_actuacion(radicado);
+        CREATE TABLE IF NOT EXISTS mp_propia (
+          id INTEGER PRIMARY KEY,
+          clave TEXT NOT NULL,
+          tipo TEXT NOT NULL DEFAULT 'nota',
+          fecha TEXT NOT NULL,
+          texto TEXT NOT NULL DEFAULT '',
+          vence TEXT NOT NULL DEFAULT '',
+          estado TEXT NOT NULL DEFAULT 'pendiente' CHECK (estado IN ('pendiente','hecho')),
+          proyecto_id INTEGER,
+          archivo_id INTEGER,
+          creado_en TEXT NOT NULL,
+          actualizado_en TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS mp_propia_clave ON mp_propia(clave, fecha);
+        CREATE TABLE IF NOT EXISTS mp_audiencia (
+          id INTEGER PRIMARY KEY,
+          clave TEXT NOT NULL,
+          fecha TEXT NOT NULL,
+          hora TEXT NOT NULL DEFAULT '',
+          modalidad TEXT NOT NULL DEFAULT '',
+          lugar TEXT NOT NULL DEFAULT '',
+          notas TEXT NOT NULL DEFAULT '',
+          origen TEXT NOT NULL DEFAULT 'manual',
+          ref TEXT NOT NULL DEFAULT '',
+          estado TEXT NOT NULL DEFAULT 'activa' CHECK (estado IN ('activa','descartada')),
+          avisos TEXT NOT NULL DEFAULT '',
+          creado_en TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS mp_audiencia_fecha ON mp_audiencia(fecha);
+        CREATE TABLE IF NOT EXISTS mp_archivo (
+          id INTEGER PRIMARY KEY,
+          clave TEXT NOT NULL,
+          ruta TEXT NOT NULL,
+          nombre TEXT NOT NULL,
+          creado_en TEXT NOT NULL,
+          UNIQUE(clave, ruta)
+        );
+        CREATE TABLE IF NOT EXISTS mp_marca (
+          clave TEXT PRIMARY KEY,
+          archivado INTEGER NOT NULL DEFAULT 0
+        );
+      `);
+      const cols = new Set(db.prepare("PRAGMA table_info(doc_proyecto)").all().map((fila) => fila.name));
+      if (!cols.has("proceso_clave")) db.exec("ALTER TABLE doc_proyecto ADD COLUMN proceso_clave TEXT NOT NULL DEFAULT ''");
+    },
+  },
 ];

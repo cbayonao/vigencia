@@ -1,5 +1,14 @@
 # Registro de cambios
 
+## Sin publicar (rama feature/mis-procesos)
+- Mis procesos, nueva pantalla de inicio y primera de la barra: todos los procesos de la consulta nacional, SAMAI, SPOA, los que llegan de un estado del juzgado y los manuales, con su fuente, la última actuación, filtros por fuente, abogado, despacho y estado, búsqueda, y tablero con activos, conteo por fuente, audiencias de la semana, pendientes y procesos quietos (más de 60 días). El detalle completo se abre en la pantalla de su sistema.
+- Lado del despacho: notas, reuniones, llamadas, memoriales, pendientes de radicar y tareas, con fecha, vencimiento y hecho. Van en tablas propias y salen junto a las del juzgado en una sola línea de tiempo, con filtro. La revisión automática no las lee: nunca generan cambios ni avisos.
+- Procesos manuales para lo que no está en ningún sistema, con sus actuaciones escritas a mano. Nadie los consulta.
+- Estados: guarda las filas de los procesos que ya sigue como su historia (sin repetir radicado, fecha del auto y actuación), Seguir este proceso y el nuevo Agregar los seleccionados los dejan en Mis procesos, y si el radicado aparece después en la consulta nacional se ofrece vincularlos.
+- Audiencias: calendario por mes y semana, próximas audiencias, programación a mano, sugerencias leídas de las actuaciones (sp.30/24 08:30am, 3 de noviembre de 2026 a las 9 a.m., 15/03/2025 3 pm) que se confirman con un clic, recordatorio un día y una hora antes, y exportación a .ics.
+- Documentos por proceso: archivos referenciados, vista del PDF, abrir, mostrar en la carpeta y Usar con la IA en el proyecto de Documentos del proceso. Los proyectos ligados al proceso aparecen ahí.
+- Exportar la lista filtrada a Excel.
+
 ## Sin publicar (rama feature/estados-tabla)
 - Estados del juzgado a tabla (Herramientas PDF): se sueltan uno o varios listados de estado de la Rama (PDF, o el mismo estado en Excel, CSV, Word o HTML) y salen como tabla que se ordena, se filtra, se busca y se corrige a mano. Al tocar una fila, el PDF muestra su lugar resaltado en la página.
 - Lee el formato Siglo XXI (radicado partido en dos líneas, celdas de varias líneas, títulos repetidos en cada página y columnas corridas) y otros títulos (Radicación, Accionante, Accionado, Anotación, Fecha Providencia, Cuaderno, Folios). El radicado queda en 23 dígitos cuando es seguro y si no, como viene. Juzgado, número y fecha del estado salen del encabezado; el pie (constancia y secretario) queda aparte, sin perder texto.

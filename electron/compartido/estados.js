@@ -45,12 +45,14 @@ export const COLUMNAS = [
 // El orden importa: gana la primera columna cuyo sinónimo calza.
 const SINONIMOS = [
   ["radicado", ["no proceso", "numero de proceso", "num proceso", "no de proceso", "proceso", "radicacion", "radicado", "no radicacion", "numero de radicacion", "no radicado", "expediente", "no expediente"]],
-  ["clase", ["clase de proceso", "clase proceso", "clase", "tipo de proceso", "tipo proceso", "tipo"]],
+  ["clase", ["clase de proceso", "clase proceso", "clase", "tipo de proceso", "tipo proceso", "tipo", "medio de control", "medio control", "tipo de accion"]],
   ["demandante", ["demandante", "demandantes", "accionante", "accionantes", "demandante accionante", "demandante/accionante", "solicitante"]],
   ["demandado", ["demandado", "demandados", "accionado", "accionados", "demandado accionado", "demandado/accionado", "causante"]],
   ["descripcion", ["auto / anotacion", "actuacion / anotacion", "auto anotacion", "actuacion anotacion"]],
   ["actuacion", ["descripcion actuacion", "actuacion", "descripcion", "decision", "providencia"]],
-  ["anotacion", ["anotacion", "anotaciones", "observacion", "observaciones"]],
+  ["anotacion", ["anotacion", "anotaciones", "observacion", "observaciones", "docum a notif", "documento a notificar"]],
+  // Columnas que no son datos del registro: no van a Otras columnas.
+  ["nada", ["reg", "item", "descargar", "ver", "enlace"]],
   ["fecha", ["fecha auto", "fecha providencia", "fecha del auto", "fecha de auto", "fecha de la providencia", "fecha actuacion", "fecha"]],
   ["cuaderno", ["cuad", "cuaderno", "cuad no", "cdno", "c"]],
   ["folios", ["folios", "folio", "fls", "fl"]],
@@ -84,7 +86,8 @@ export function fechaLarga(texto) {
 // Inicio de un registro: cinco dígitos del municipio, o el número entero.
 export function iniciaRadicado(texto) {
   const t = String(texto || "").trim();
-  return /^\d{5}(?!\d)/.test(t) || /^\d{20,23}$/.test(t.replace(/[\s.-]/g, ""));
+  // El código DANE empieza en 05 o más: "00400-00" es la cola del radicado.
+  return /^(?!00)\d{5}(?!\d)/.test(t) || /^\d{20,23}$/.test(t.replace(/[\s.-]/g, ""));
 }
 
 // 23 dígitos: municipio 5, corporación 2, especialidad 2, despacho 3, año 4,
@@ -138,7 +141,7 @@ export function metaDeTexto(texto) {
   if (!meta.fecha && larga) meta.fecha = fechaLarga(larga[1]);
   const pag = /\bP[AÁ]GINA\s*:?\s*(\d+)/i.exec(t);
   if (pag) meta.pagina = Number(pag[1]);
-  if (/LISTADO DE ESTADO|NOTIFICACI[OÓ]N POR ESTADO|FIJACI[OÓ]N DE ESTADOS|ESTADOS? ELECTR[OÓ]NICOS?/i.test(t)) meta.tipo = "estado";
+  if (/LISTADO DE ESTADO|NOTIFICACI[OÓ]N POR ESTADO|FIJACI[OÓ]N DE ESTADOS|ESTADO DE FECHA|ESTADOS? ELECTR[OÓ]NICOS?/i.test(t)) meta.tipo = "estado";
   else if (/TRASLADO/i.test(t)) meta.tipo = "traslado";
   return meta;
 }
@@ -274,6 +277,27 @@ function inicioDeRegistro(textos) {
   return (t) => RE_CLASE_NO.test(t) || Boolean(parsearNumeroCorto(t));
 }
 
+// Dónde empieza cada registro. Por defecto, en la línea de su número. Si
+// los registros van en bloques separados por blanco y cada bloque tiene un
+// solo número (celdas centradas en la fila, como SAMAI), en lo alto del
+// bloque: hay celdas que arrancan más arriba que el número.
+function topesDeRegistros(inicios, datos) {
+  const porLinea = inicios.map((l) => l.y + Math.max(...l.items.map((i) => i.h)) * 0.6);
+  const orden = [...datos].sort((a, b) => b.y - a.y);
+  if (orden.length < 2) return porLinea;
+  const alto = orden.map((i) => i.h).sort((a, b) => a - b)[Math.floor(orden.length / 2)];
+  const bloques = [];
+  for (const it of orden) {
+    const ultimo = bloques[bloques.length - 1];
+    if (ultimo && ultimo.abajo - it.y <= alto * 2.5) ultimo.abajo = Math.min(ultimo.abajo, it.y);
+    else bloques.push({ arriba: it.y, abajo: it.y });
+  }
+  const de = (l) => bloques.findIndex((b) => l.y <= b.arriba + 0.5 && l.y >= b.abajo - 0.5);
+  const cuales = inicios.map(de);
+  if (cuales.some((k) => k < 0) || new Set(cuales).size !== cuales.length) return porLinea;
+  return cuales.map((k, j) => Math.max(porLinea[j], bloques[k].arriba + 0.5));
+}
+
 // "Auto Decide - Accede A Solicitud": actuación y anotación.
 function partirDescripcion(texto) {
   const i = texto.indexOf(" - ");
@@ -328,7 +352,7 @@ export function leerEstado(paginas, { origen = "pdf" } = {}) {
       inicios = lineas(datos, 3).filter((l) => l.items.some((it) => iniciaRadicado(it.str)));
       sinColumna = inicios.length > 0;
     }
-    const topes = inicios.map((l) => l.y + Math.max(...l.items.map((i) => i.h)) * 0.6);
+    const topes = topesDeRegistros(inicios, datos);
     const grupos = topes.map(() => []);
     const antes = [];
     for (const it of datos) {
@@ -379,11 +403,11 @@ function filaDeGrupo(grupo, { cortes, tipos, pagina, ultima, origen }) {
   // Una línea muy por debajo del resto, al final de la página, es el pie.
   const orden = [...grupo].sort((a, b) => b.y - a.y);
   let cola = [];
-  // O una línea más abajo que cruza columnas: ninguna celda lo hace.
+  // O una línea más abajo que pasa sobre dos cortes: ninguna celda lo hace.
   if (ultima) {
     for (let i = 1; i < orden.length; i++) {
       const salto = orden[i - 1].y - orden[i].y;
-      const pie = orden[i].y < orden[0].y - orden[i].h && cruza(orden[i], cortes);
+      const pie = orden[i].y < orden[0].y - orden[i].h && cortes.filter((c) => c > orden[i].x && c < orden[i].x + orden[i].w).length >= 2;
       if (salto > Math.max(28, orden[i].h * 3.2) || pie) {
         const tope = pie ? orden[i].y + orden[i].h * 0.4 : -Infinity;
         cola = orden.filter((it, k) => k >= i || it.y <= tope);

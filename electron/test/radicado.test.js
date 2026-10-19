@@ -28,6 +28,10 @@ const DESPACHOS = [
   { codigo: "990024003002", nombre: "JUZGADO 002 CIVIL MUNICIPAL DE SANTIAGO DE FICTICIA" },
   { codigo: "990023110004", nombre: "JUZGADO 004 DE FAMILIA DEL CIRCUITO DE SANTIAGO DE FICTICIA" },
   { codigo: "980034089001", nombre: "JUZGADO 001 PROMISCUO MUNICIPAL DE LA INVENTADA" },
+  { codigo: "990013335010", nombre: "JUZGADO 010 ADMINISTRATIVO DE LA SECCIÓN SEGUNDA DE VILLAPRUEBA" },
+  { codigo: "990013334003", nombre: "JUZGADO 003 ADMINISTRATIVO DE LA SECCIÓN PRIMERA DE VILLAPRUEBA" },
+  { codigo: "990023333005", nombre: "JUZGADO 005 ADMINISTRATIVO DE SANTIAGO DE FICTICIA" },
+  { codigo: "990023112001", nombre: "JUZGADO 001 CIVIL DEL CIRCUITO CON CONOCIMIENTO EN ASUNTOS LABORALES DE SANTIAGO DE FICTICIA" },
   { codigo: "990022205000", nombre: "SALA LABORAL DEL TRIBUNAL SUPERIOR DE SANTIAGO DE FICTICIA" },
 ];
 const CTX = { munis: MUNIS, despachos: DESPACHOS, hoy: HOY };
@@ -51,7 +55,7 @@ test("número corto: todas las formas, año de dos dígitos y recurso", () => {
 });
 
 test("juzgado: municipio, corporación, especialidad y número", () => {
-  assert.deepEqual(analizarJuzgado("JUZGADO PROMISCUO MUNICIPAL DE VILLAPRUEBA", CTX), { municipio: "99001", corporacion: "40", especialidad: "89", despacho: "", motivo: "" });
+  assert.deepEqual(analizarJuzgado("JUZGADO PROMISCUO MUNICIPAL DE VILLAPRUEBA", CTX), { municipio: "99001", corporacion: "40", especialidad: "89", otras: [], despacho: "", motivo: "" });
   assert.equal(analizarJuzgado("Juzgado Cuarto de Familia de Ficticia", CTX).despacho, "004");
   assert.equal(analizarJuzgado("Juzgado Cuarto de Familia de Ficticia", CTX).corporacion, "31");
   assert.equal(analizarJuzgado("JUZGADO 3 LABORAL DEL CIRCUITO DE BOGOTA", CTX).municipio, "98004");
@@ -83,6 +87,18 @@ test("prefijo: aprendido, catálogo, único del municipio y supuesto", () => {
   // Dos prefijos distintos para el mismo nombre: no se usa lo aprendido.
   assert.equal(p("JUZGADO 1 CIVIL MUNICIPAL DE FICTICIA", { aprendidos: [...aprendidos, { juzgado: "JUZGADO 1 CIVIL MUNICIPAL DE FICTICIA", prefijo: "990024003001" }] }).prefijo, "990024003001");
   assert.equal(p("").prefijo, "");
+});
+
+test("prefijo de juzgados administrativos (33 o por sección), civil laboral y municipio al final", () => {
+  const p = (nombre) => resolverPrefijo(nombre, CTX);
+  // Sin sección en el nombre: la sección que tiene ese número en el catálogo.
+  assert.equal(p("Juzgado Administrativo de Villaprueba-JUZGADO ADMINISTRATIVO 010 ADMINISTRATIVO").prefijo, "990013335010");
+  assert.equal(p("JUZGADO 10 ADMINISTRATIVO SEC SEGUNDA ORAL VILLAPRUEBA").prefijo, "990013335010");
+  assert.equal(p("JUZGADO 3 ADMINISTRATIVO DE LA SECCIÓN PRIMERA DE VILLAPRUEBA").prefijo, "990013334003");
+  assert.equal(p("JUZGADO 5 ADMINISTRATIVO DE FICTICIA").prefijo, "990023333005");
+  assert.equal(p("JUZGADO 9 ADMINISTRATIVO DE FICTICIA").confianza, "supuesto");
+  assert.equal(p("Juzgado De Circuito - Civil Laboral 001 Ficticia").prefijo, "990023112001");
+  assert.equal(armarRadicado("JUZGADO 10 ADMINISTRATIVO SEC SEGUNDA ORAL VILLAPRUEBA", "2026-431", CTX).radicado, "99001333501020260043100");
 });
 
 test("armar el radicado: leído, armado, supuesto y comisorio", () => {

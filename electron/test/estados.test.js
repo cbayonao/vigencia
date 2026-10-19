@@ -452,3 +452,67 @@ test("columna de solo números cortos y tabla con Auto / Anotación", async () =
   const f = t.filas[0];
   assert.deepEqual([f.actuacion, f.anotacion, f.fecha], ["Auto Decide", "Fija fecha", "04/03/2024"]);
 });
+
+// Cuarta forma: estado de los juzgados administrativos impreso desde la web
+// (SAMAI). Celdas centradas en la fila: hay celdas que arrancan más arriba
+// que el radicado, partido en tres líneas ("99001-33-35-", "010-2026-",
+// "00400-00"). Columnas Reg, Ponente, Docum. a notif. y Descargar.
+async function armarEstadoAdministrativo(registros) {
+  const pdf = await PDFDocument.create();
+  const f = await pdf.embedFont(StandardFonts.Helvetica);
+  const p = pdf.addPage([612, 1008]);
+  const t = (texto, x, y, size = 7) => p.drawText(texto, { x, y, size, font: f });
+  t("Juzgado Administrativo de Pruebaville-JUZGADO ADMINISTRATIVO 010 ADMINISTRATIVO", 30, 970, 10);
+  t("ESTADO DE FECHA: 01/10/2026", 30, 955, 10);
+  [["Reg", 40], ["Radicacion", 63], ["Ponente", 115], ["Demandante", 183], ["Demandado", 242], ["Clase", 314], ["Actuación", 414]].forEach(([s, x]) => t(s, x, 924, 9));
+  t("Fecha", 359, 930, 9);
+  t("Providencia", 359, 918, 9);
+  t("Docum. a", 462, 930, 9);
+  t("notif.", 462, 918, 9);
+  t("Descargar", 527, 923, 12);
+  let centro = 860;
+  registros.forEach((r, i) => {
+    // Cada columna centrada en la fila: más líneas, más arriba empieza.
+    const col = (lineas, x) => lineas.forEach((l, k) => t(l, x, centro + 4 * (lineas.length - 1) - 8 * k));
+    t(String(i + 1), 40, centro);
+    col(r.rad, 63);
+    col(["JUZGADO 10", "ADMINISTRATIVO", "SEC SEGUNDA"], 115);
+    col(r.demandante, 183);
+    col(r.demandado, 242);
+    col(r.clase, 314);
+    t(r.fecha, 359, centro);
+    col(r.actuacion, 414);
+    col(r.doc, 462);
+    const alto = 8 * Math.max(r.doc.length, r.demandado.length, r.demandante.length, 4);
+    centro -= alto + 30;
+  });
+  t("1/1", 560, 30);
+  return Buffer.from(await pdf.save());
+}
+
+test("estado administrativo: celdas centradas, radicado en tres líneas y columnas que no son datos", async () => {
+  const r = await leer(await armarEstadoAdministrativo([
+    { rad: ["99001-33-35-", "010-2026-", "00400-00"], demandante: ["ANA", "PRUEBA", "FALSA"], demandado: ["ENTIDAD", "INVENTADA DE", "PENSIONES -", "MENTIRAPENSIONES,", "OTRA ENTIDAD"], clase: ["ACCIONES", "DE", "TUTELA"], fecha: "30/09/2026", actuacion: ["Auto", "concede", "impugnacion"], doc: ["CCB. ..", "Documento", "firmado", "electrónicamente", "por:JUEZ DE", "PRUEBA", "fecha firma:Sep", "30 2026"] },
+    { rad: ["99001-33-35-", "010-2026-", "00431-00"], demandante: ["BETO", "INVENTADO"], demandado: ["DIRECCION DE", "MENTIRAS"], clase: ["NULIDAD Y", "RESTABLECIMIENTO"], fecha: "29/09/2026", actuacion: ["Auto que", "admite la", "demanda"], doc: ["Admite", "demanda"] },
+  ]));
+  assert.equal(r.filas.length, 2);
+  assert.deepEqual(r.meta, { paginas: 1, juzgado: "Juzgado Administrativo de Pruebaville-JUZGADO ADMINISTRATIVO 010 ADMINISTRATIVO", fecha: "01/10/2026", tipo: "estado" });
+  const [a, b] = r.filas;
+  assert.equal(a.radicado, "99001333501020260040000");
+  assert.equal(a.radicadoTexto, "99001-33-35- 010-2026- 00400-00");
+  assert.equal(a.clase, "ACCIONES DE TUTELA");
+  assert.equal(a.demandante, "ANA PRUEBA FALSA");
+  assert.equal(a.demandado, "ENTIDAD INVENTADA DE PENSIONES - MENTIRAPENSIONES, OTRA ENTIDAD", "la celda que arranca arriba del radicado es de su fila");
+  assert.equal(a.actuacion, "Auto concede impugnacion");
+  assert.match(a.anotacion, /^CCB\. \.\. Documento firmado electrónicamente/);
+  assert.equal(a.fecha, "30/09/2026");
+  assert.equal(a.extra, "JUZGADO 10 ADMINISTRATIVO SEC SEGUNDA", "Ponente va a Otras columnas; Reg y Descargar no");
+  assert.equal(a.confianza, "alta");
+  assert.equal(b.radicado, "99001333501020260043100");
+  assert.equal(b.clase, "NULIDAD Y RESTABLECIMIENTO");
+  assert.deepEqual([b.actuacion, b.anotacion], ["Auto que admite la demanda", "Admite demanda"]);
+  assert.equal(iniciaRadicado("00400-00"), false, "la cola del radicado no abre registro");
+  assert.equal(columnaDeTitulo("Medio de control"), "clase");
+  assert.equal(columnaDeTitulo("Docum. a notif."), "anotacion");
+  assert.equal(columnaDeTitulo("Reg"), "nada");
+});

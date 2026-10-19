@@ -59,6 +59,7 @@ const ESPECIALIDADES = [
   [/promiscuo/, "89"],
   [/civil.*familia.*laboral/, "14"],
   [/civil.*familia/, "13"],
+  [/civil.*laboral|asuntos laborales/, "12"],
   [/familia/, "10", "31"],
   [/laboral/, "05"],
   [/ejecucion de penas/, "87"],
@@ -66,7 +67,11 @@ const ESPECIALIDADES = [
   [/penal.*conocimiento/, "09"],
   [/penal/, "04"],
   [/civil/, "03"],
-  [/administrativ/, "33"],
+  // Juzgados administrativos: 33, salvo donde van por sección (Bogotá:
+  // primera 34, segunda 35, tercera 36, cuarta 37). Sin sección en el nombre
+  // se prueban todas contra el catálogo.
+  ...["primera", "segunda", "tercera", "cuarta"].map((sec, k) => [new RegExp(`administrativ.*\\bsec(cion)? ${sec}\\b|\\bsec(cion)? ${sec}\\b.*administrativ`), String(34 + k)]),
+  [/administrativ/, "33", "", ["34", "35", "36", "37"]],
 ];
 const ORDINALES = ["primero", "segundo", "tercero", "cuarto", "quinto", "sexto", "septimo", "octavo", "noveno", "decimo"];
 
@@ -85,19 +90,21 @@ const nombreMuni = (m) => normal(m.nombre).replace(/\(.*\)|, d c$|,.*$/g, "").tr
 export function analizarJuzgado(nombre, { munis = [], despachos = [] } = {}) {
   const n = normal(nombre).replace(/[-,]/g, " ").replace(/\s+/g, " ");
   const esp = ESPECIALIDADES.find(([re]) => re.test(n));
-  const r = { municipio: "", corporacion: corporacionDe(n, esp?.[2]), especialidad: esp?.[1] || "", despacho: "", motivo: "" };
-  const num = /\b(?:juzgado|despacho)\s+(\d{1,3})\b/.exec(n) || /\b(\d{1,3})\s+(?:civil|penal|laboral|de familia|familia|promiscuo|administrativo)\b/.exec(n);
+  const r = { municipio: "", corporacion: corporacionDe(n, esp?.[2]), especialidad: esp?.[1] || "", otras: esp?.[3] || [], despacho: "", motivo: "" };
+  const num = /\b(?:juzgado|despacho)\s+(\d{1,3})\b/.exec(n) || /\b(\d{1,3})\s+(?:civil|penal|laboral|de familia|familia|promiscuo|administrativo)\b/.exec(n)
+    || /\b(?:civil|penal|laboral|familia|promiscuo|administrativo|municipal|circuito)\s+(\d{1,3})\b/.exec(n);
   const ord = new RegExp(`\\b(${ORDINALES.join("|")})\\b`).exec(n);
   if (num) r.despacho = num[1].padStart(3, "0");
   else if (ord) r.despacho = String(ORDINALES.indexOf(ord[1]) + 1).padStart(3, "0");
-  // Municipio: el nombre más largo que aparece completo después de "de".
+  // Municipio: el nombre más largo que aparece completo.
   let cands = [];
   for (const m of munis) {
     if (String(m.codigo).endsWith("000")) continue;
     // Nombres largos oficiales: "SANTIAGO DE CALI" también es "CALI".
     const mn = nombreMuni(m);
     const corto = mn.replace(/^(?:santiago|san jose) de /, "").replace(/ de indias$/, "");
-    const esta = (x) => x && new RegExp(`\\b(?:de|del|en)\\s+${x.replace(/[^a-z0-9 ]/g, ".")}\\b`).test(n);
+    // Después de "de" o al final del nombre ("... 001 Andes").
+    const esta = (x) => x && new RegExp(`(?:\\b(?:de|del|en)\\s+${x.replace(/[^a-z0-9 ]/g, ".")}\\b|\\s${x.replace(/[^a-z0-9 ]/g, ".")}$)`).test(n);
     if (esta(mn) || esta(corto)) cands.push({ ...m, largo: (esta(mn) ? mn : corto).length });
   }
   const largo = Math.max(0, ...cands.map((c) => c.largo));
@@ -135,6 +142,9 @@ export function resolverPrefijo(nombre, { aprendidos = [], despachos = [], munis
   if (a.despacho) {
     const prefijo = `${base}${a.despacho}`;
     if (enCatalogo(prefijo)) return { prefijo, confianza: "armado", motivo: `Juzgado del catálogo de la Rama: ${prefijo}.` };
+    // Otra especialidad posible (la sección de un administrativo): solo si una calza.
+    const otros = a.otras.map((e) => `${a.municipio}${a.corporacion}${e}${a.despacho}`).filter(enCatalogo);
+    if (otros.length === 1) return { prefijo: otros[0], confianza: "armado", motivo: `Juzgado del catálogo de la Rama: ${otros[0]}.` };
     return { prefijo, confianza: "supuesto", motivo: `El juzgado ${prefijo} no está en el catálogo de la Rama: revíselo.` };
   }
   const posibles = despachos.filter((d) => d.codigo.startsWith(base));

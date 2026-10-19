@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { PDFDocument, StandardFonts } from "pdf-lib";
 import { itemsDePdf, tablasDeDatos } from "../src/convertir/convertidores.js";
 import {
-  columnaDeTitulo, csvDeFilas, detectarFormato, estadoAMarkdown, fechaLarga, filasParaExportar, filtrarFilas, iniciaRadicado, leerEstado, leerPorLineas, leerTabla,
+  columnaDeTitulo, csvDeFilas, estadoAMarkdown, fechaLarga, filasParaExportar, filtrarFilas, iniciaRadicado, leerEstado, leerPorLineas, leerTabla,
   marcarSeguidos, metaDeTexto, normalizarRadicadoEstado, ordenarFilas, tablasDeHtml,
 } from "../compartido/estados.js";
 
@@ -350,7 +350,7 @@ test("estado de Word: clase junto al número corto, fecha en letras, palabras pa
   ]);
   const r = await leer(pdf);
   assert.equal(r.filas.length, 3);
-  assert.deepEqual(r.meta, { paginas: 1, formato: "clase-numero", juzgado: "JUZGADO PROMISCUO MUNICIPAL DE PRUEBA", fecha: "03/10/2024", tipo: "estado" });
+  assert.deepEqual(r.meta, { paginas: 1, juzgado: "JUZGADO PROMISCUO MUNICIPAL DE PRUEBA", fecha: "03/10/2024", tipo: "estado" });
   const [a, b, c] = r.filas;
   assert.equal(a.clase, "Pertenencia");
   assert.equal(a.radicadoTexto, "2021-00060");
@@ -376,13 +376,79 @@ test("estado de Word: clase junto al número corto, fecha en letras, palabras pa
   assert.deepEqual(marcarSeguidos(r.filas, ["11001311002220220083900"]).map((f) => f.seguido), [false, false, false]);
 });
 
-test("formatos: detección y fecha en letras", () => {
-  assert.equal(detectarFormato(["11001 31 10 022", "2022 00839"]).id, "listado");
-  assert.equal(detectarFormato(["Ejecutivo No 2023-00073"]).id, "clase-numero");
-  assert.equal(detectarFormato([]).id, "listado");
+test("fecha en letras, cuaderno CDNO y fecha del estado en el título", () => {
   assert.equal(fechaLarga("2 de octubre de 2024"), "02/10/2024");
   assert.equal(fechaLarga("15 de Setiembre del 2023"), "15/09/2023");
   assert.equal(fechaLarga("2 de octubrx de 2024"), "");
   assert.equal(columnaDeTitulo("CDNO"), "cuaderno");
   assert.equal(metaDeTexto("NOTIFICACIÓN POR ESTADO DEL 3 DE OCTUBRE DE 2024").fecha, "03/10/2024");
+});
+
+// Tercera forma: reporte de Justicia XXI ("FIJACIÓN DE ESTADOS"). Radicado
+// entero en una línea, celdas de varias líneas, una sola columna
+// "Auto / Anotación" y al pie el número de registros y la secretaría.
+async function armarEstadoXXI(registros, { total = registros.length } = {}) {
+  const pdf = await PDFDocument.create();
+  const f = await pdf.embedFont(StandardFonts.Helvetica);
+  const p = pdf.addPage([792, 612]);
+  const t = (texto, x, y, size = 8) => p.drawText(texto, { x, y, size, font: f });
+  t("REPUBLICA DE COLOMBIA - RAMA JUDICIAL DEL PODER PUBLICO", 228, 544, 10);
+  t("Juzgado De Circuito - Civil Laboral 007 Pruebaville", 282, 516);
+  t("Estado No.", 248, 495);
+  t("88", 309, 495);
+  t("De", 343, 495);
+  t("Lunes, 3 De Junio De 2024", 363, 495);
+  t("FIJACIÓN DE ESTADOS", 285, 475, 10);
+  [["Radicación", 67], ["Clase", 194], ["Demandante", 276], ["Demandado", 391], ["Fecha Auto", 479], ["Auto / Anotación", 559]].forEach(([s, x]) => t(s, x, 458, 10));
+  let y = 442;
+  for (const r of registros) {
+    t(r.rad, 35, y, 9);
+    r.clase.forEach((l, k) => t(l, 167, y - 11 * k, 9));
+    r.demandante.forEach((l, k) => t(l, 252, y - 11 * k, 9));
+    r.demandado.forEach((l, k) => t(l, 365, y - 11 * k, 9));
+    t(r.fecha, 481, y, 9);
+    r.auto.forEach((l, k) => t(l, 537, y - 11 * k, 9));
+    y -= 12 + 11 * Math.max(r.clase.length, r.demandante.length, r.demandado.length, r.auto.length);
+  }
+  t("Número de Registros:", 25, y - 20, 7);
+  t(String(total), 109, y - 20, 7);
+  t("En la fecha lunes, 3 de junio de 2024, se fija el presente estado por el término legal, al iniciar la jornada establecida para el despacho judicial", 25, y - 40, 8);
+  t("PEDRO PRUEBA FALSO", 318, y - 80);
+  t("Secretaría", 374, y - 96);
+  return Buffer.from(await pdf.save());
+}
+
+test("estado de Justicia XXI: radicado entero, columna Auto / Anotación y total de registros", async () => {
+  const regs = [
+    { rad: "99001310500720230004300", clase: ["Ejecutivo"], demandante: ["Empresa Inventada", "S.A.S"], demandado: ["Beto De Prueba"], fecha: "31/05/2024", auto: ["Auto Pone En", "Conocimiento - Pone En", "Conocimiento Oficio"] },
+    { rad: "99001310500720240001200", clase: ["Procesos", "Verbales"], demandante: ["Ana Falsa Uno Y Otros"], demandado: ["Cooperativa De", "Mentira Ltda."], fecha: "31/05/2024", auto: ["Auto Decide - Accede A", "Solicitud - Suspende", "Proceso"] },
+    { rad: "99001310500720240001300", clase: ["Procesos", "Ejecutivos"], demandante: ["Carla Inventada"], demandado: ["Diana Ejemplo"], fecha: "31/05/2024", auto: ["Auto Admite Demanda"] },
+  ];
+  const r = await leer(await armarEstadoXXI(regs));
+  assert.equal(r.filas.length, 3);
+  assert.deepEqual(r.meta, { paginas: 1, juzgado: "Juzgado De Circuito - Civil Laboral 007 Pruebaville", estado: "88", fecha: "03/06/2024", tipo: "estado", secretario: "PEDRO PRUEBA FALSO", registros: 3 });
+  const [a, b, c] = r.filas;
+  assert.equal(a.radicado, "99001310500720230004300");
+  assert.equal(a.demandante, "Empresa Inventada S.A.S");
+  assert.equal(a.actuacion, "Auto Pone En Conocimiento");
+  assert.equal(a.anotacion, "Pone En Conocimiento Oficio");
+  assert.equal(a.fecha, "31/05/2024");
+  assert.equal(a.confianza, "alta");
+  assert.equal(b.clase, "Procesos Verbales");
+  assert.equal(b.demandado, "Cooperativa De Mentira Ltda.");
+  assert.equal(b.actuacion, "Auto Decide");
+  assert.equal(b.anotacion, "Accede A Solicitud - Suspende Proceso");
+  assert.deepEqual([c.actuacion, c.anotacion], ["Auto Admite Demanda", ""]);
+  assert.deepEqual(r.avisos, []);
+  assert.match(r.notas.map((n) => n.texto).join(" "), /Número de Registros/);
+  // El pie dice más registros de los que se leyeron: se avisa.
+  const corto = await leer(await armarEstadoXXI(regs.slice(0, 2), { total: 3 }));
+  assert.match(corto.avisos.join(" "), /dice 3 registros y se leyeron 2/);
+});
+
+test("columna de solo números cortos y tabla con Auto / Anotación", async () => {
+  assert.equal(columnaDeTitulo("Auto / Anotación"), "descripcion");
+  const t = leerTabla([["Radicado", "Demandante", "Auto / Anotación", "Fecha"], ["2024-00012", "ANA FALSA", "Auto Decide - Fija fecha", "4 de marzo de 2024"]]);
+  const f = t.filas[0];
+  assert.deepEqual([f.actuacion, f.anotacion, f.fecha], ["Auto Decide", "Fija fecha", "04/03/2024"]);
 });

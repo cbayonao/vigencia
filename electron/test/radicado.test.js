@@ -99,7 +99,7 @@ test("armar el radicado: leído, armado, supuesto y comisorio", () => {
   assert.equal(prefijoMayoritario(["99001408900120230007300", "11111111111120240000100"]), "");
 });
 
-test("estados: completar radicados del formato sin 23 dígitos y cruzar con los seguidos", () => {
+test("estados: completar radicados cortos y cruzar con los seguidos", () => {
   const fila = (radicadoTexto) => ({ radicado: "", radicadoTexto, avisos: ["Este estado trae solo el número corto del proceso; el radicado de 23 dígitos no se puede armar."], confianza: "media" });
   const r = { meta: { formato: "clase-numero", juzgado: "JUZGADO PROMISCUO MUNICIPAL DE VILLAPRUEBA" }, filas: [fila("2023-00073"), fila("052")] };
   completarRadicados(r, CTX);
@@ -110,9 +110,11 @@ test("estados: completar radicados del formato sin 23 dígitos y cruzar con los 
   assert.equal(b.radicado, "");
   assert.match(b.radicadoNota, /comisorio/);
   assert.deepEqual(marcarSeguidos(r.filas, ["99001408900120230007300"]).map((f) => f.seguido), [true, false]);
-  // El listado de siempre no se toca.
-  const listado = { meta: { juzgado: "JUZGADO PROMISCUO MUNICIPAL DE VILLAPRUEBA" }, filas: [fila("2023-00073")] };
-  assert.equal(completarRadicados(listado, CTX).filas[0].radicado, "");
+  // Un radicado partido que quedó incompleto no se arma: no es número corto.
+  const partido = { meta: { juzgado: "JUZGADO PROMISCUO MUNICIPAL DE VILLAPRUEBA" }, filas: [fila("99001 40 89 001")] };
+  assert.equal(completarRadicados(partido, CTX).filas[0].radicado, "");
+  // Sin juzgado en el estado no hay con qué armar.
+  assert.equal(completarRadicados({ meta: {}, filas: [fila("2023-00073")] }, CTX).filas[0].radicado, "");
 });
 
 test("aprender el juzgado de un estado con radicados completos y verificar en la consulta", async () => {

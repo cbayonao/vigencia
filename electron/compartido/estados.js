@@ -15,12 +15,19 @@
 // 4. Las celdas partidas en varias líneas se juntan; la descripción se parte
 //    en actuación (primera línea) y anotación (el resto).
 //
-// Formatos: cada juzgado arma el estado a su manera. Los pasos de arriba son
-// comunes; lo que cambia (cómo empieza un registro, cómo se lee la fecha,
-// qué se saca de la celda del proceso) va en FORMATOS, uno por forma, y todos
-// devuelven la misma fila. Lo que un formato no trae queda vacío.
+// Un solo lector para cualquier estado con fila de títulos: lo que cambia de
+// un juzgado a otro sale de los datos, no de un lector por formato.
+// - Títulos: SINONIMOS dice qué campo es cada columna.
+// - Número: si la columna trae radicados (cinco dígitos del municipio) cada
+//   uno abre registro; si no, abre registro el número corto ("2023-00073") o
+//   "Clase No número", y la clase se separa del número.
+// - Fecha dd/mm/aaaa o en letras ("2 de octubre de 2024").
+// - Columna "Auto / Anotación": se parte en el primer " - ".
+// - El pie empieza en la primera línea que cruza columnas o tras un salto.
+// Lo que un estado no trae queda vacío. El radicado corto se arma después
+// con el juzgado (completarRadicados y compartido/radicado.js).
 
-import { armarRadicado, normal } from "./radicado.js";
+import { armarRadicado, normal, parsearNumeroCorto } from "./radicado.js";
 
 export const COLUMNAS = [
   { id: "radicado", nombre: "Radicado" },
@@ -41,6 +48,7 @@ const SINONIMOS = [
   ["clase", ["clase de proceso", "clase proceso", "clase", "tipo de proceso", "tipo proceso", "tipo"]],
   ["demandante", ["demandante", "demandantes", "accionante", "accionantes", "demandante accionante", "demandante/accionante", "solicitante"]],
   ["demandado", ["demandado", "demandados", "accionado", "accionados", "demandado accionado", "demandado/accionado", "causante"]],
+  ["descripcion", ["auto / anotacion", "actuacion / anotacion", "auto anotacion", "actuacion anotacion"]],
   ["actuacion", ["descripcion actuacion", "actuacion", "descripcion", "decision", "providencia"]],
   ["anotacion", ["anotacion", "anotaciones", "observacion", "observaciones"]],
   ["fecha", ["fecha auto", "fecha providencia", "fecha del auto", "fecha de auto", "fecha de la providencia", "fecha actuacion", "fecha"]],
@@ -126,11 +134,11 @@ export function metaDeTexto(texto) {
   if (est) meta.estado = est[1];
   const fecha = /\bFECHA\s*(?:DEL ESTADO|DE FIJACI[OÓ]N)?\s*:?\s*(\d{1,2}\/\d{1,2}\/\d{4})/i.exec(t);
   if (fecha) meta.fecha = fechaCorta(fecha[1]);
-  const larga = /\bESTADO\s+(?:DEL|DE)\s+(\d{1,2}\s+DE\s+[A-ZÁÉÍÓÚ]+\s+DE[L]?\s+\d{4})/i.exec(t);
+  const larga = /\bESTADO\b.{0,40}?(\d{1,2}\s+DE\s+[A-ZÁÉÍÓÚ]+\s+DEL?\s+\d{4})/i.exec(t);
   if (!meta.fecha && larga) meta.fecha = fechaLarga(larga[1]);
   const pag = /\bP[AÁ]GINA\s*:?\s*(\d+)/i.exec(t);
   if (pag) meta.pagina = Number(pag[1]);
-  if (/LISTADO DE ESTADO|NOTIFICACI[OÓ]N POR ESTADO|ESTADOS? ELECTR[OÓ]NICOS?/i.test(t)) meta.tipo = "estado";
+  if (/LISTADO DE ESTADO|NOTIFICACI[OÓ]N POR ESTADO|FIJACI[OÓ]N DE ESTADOS|ESTADOS? ELECTR[OÓ]NICOS?/i.test(t)) meta.tipo = "estado";
   else if (/TRASLADO/i.test(t)) meta.tipo = "traslado";
   return meta;
 }
@@ -254,48 +262,22 @@ function cruza(it, cortes) {
   return it.w > 0 && fuera / it.w > 0.34;
 }
 
-// ---------- Formatos ----------
+// ---------- Inicio de registro y celdas ----------
 
 // Celda del proceso con la clase delante: "Ejecutivo No 2023-00073".
 const RE_CLASE_NO = /^(.*?[A-Za-zÁÉÍÓÚáéíóúñÑ.])\s+No\.?\s*(\S.*)$/;
+const AVISO_CORTO = "Este estado trae solo el número corto del proceso; el radicado de 23 dígitos no se puede armar.";
 
-// detecta: textos de la columna del radicado (una línea cada uno).
-export const FORMATOS = [
-  {
-    // Listado Siglo XXI: radicado partido en dos líneas, fecha dd/mm/aaaa.
-    id: "listado",
-    detecta: (textos) => textos.some(iniciaRadicado),
-    inicia: iniciaRadicado,
-    pegar: false,
-    unaLinea: false,
-    fecha: fechaCorta,
-    completar: () => {},
-  },
-  {
-    // Tabla de Word ("NOTIFICACIÓN POR ESTADO DEL ..."): un registro por
-    // línea, la clase junto al número corto (año y consecutivo), fecha en
-    // letras y cuaderno "1 y 2.". No trae el radicado de 23 dígitos.
-    id: "clase-numero",
-    detecta: (textos) => textos.some((t) => RE_CLASE_NO.test(t) && !iniciaRadicado(t)),
-    inicia: (t) => RE_CLASE_NO.test(t),
-    pegar: true,
-    unaLinea: true,
-    fecha: (t) => fechaCorta(t) || fechaLarga(t),
-    completar: (fila) => {
-      const m = RE_CLASE_NO.exec(fila.radicadoTexto);
-      if (m) {
-        if (!fila.clase) fila.clase = m[1].trim();
-        fila.radicadoTexto = m[2].replace(/\s*-\s*/g, "-").trim();
-      }
-      fila.cuaderno = fila.cuaderno.replace(/[\s.]+$/, "");
-      fila.avisos = fila.avisos.filter((a) => !/radicado/i.test(a));
-      if (!fila.radicado) fila.avisos.push("Este estado trae solo el número corto del proceso; el radicado de 23 dígitos no se puede armar.");
-    },
-  },
-];
+// textos: líneas de la columna del número en la página.
+function inicioDeRegistro(textos) {
+  if (textos.some(iniciaRadicado)) return iniciaRadicado;
+  return (t) => RE_CLASE_NO.test(t) || Boolean(parsearNumeroCorto(t));
+}
 
-export function detectarFormato(textos) {
-  return FORMATOS.find((f) => f.detecta(textos)) || FORMATOS[0];
+// "Auto Decide - Accede A Solicitud": actuación y anotación.
+function partirDescripcion(texto) {
+  const i = texto.indexOf(" - ");
+  return i < 0 ? [texto, ""] : [texto.slice(0, i).trim(), texto.slice(i + 3).trim()];
 }
 
 // ---------- PDF con posiciones ----------
@@ -331,17 +313,16 @@ export function leerEstado(paginas, { origen = "pdf" } = {}) {
     const tipos = titulos.titulos.map((t) => t.columna);
     const kRad = tipos.indexOf("radicado");
     const enRad = kRad >= 0 ? datos.filter((it) => columnaDe(it, cortes) === kRad && !cruza(it, cortes)) : [];
-    const formato = detectarFormato(lineas(enRad, 3, true).map((l) => l.texto));
-    if (formato !== FORMATOS[0] && !meta.formato) meta.formato = formato.id;
-    Object.assign(meta, Object.fromEntries(Object.entries(metaDeTexto(lineas(arriba, null, formato.pegar).map((l) => l.texto).join(" "))).filter(([k, v]) => v && k !== "pagina" && !meta[k])));
+    const inicia = inicioDeRegistro(lineas(enRad, 3, true).map((l) => l.texto));
+    Object.assign(meta, Object.fromEntries(Object.entries(metaDeTexto(lineas(arriba, null, true).map((l) => l.texto).join(" "))).filter(([k, v]) => v && k !== "pagina" && !meta[k])));
     const sueltos = banda.filter((it) => !titulos.titulos.some((t) => it.x >= t.x0 - 1 && it.x + it.w <= t.x1 + 1));
     if (sueltos.length) {
-      const texto = lineas(sueltos, null, formato.pegar).map((l) => l.texto).join(" ");
+      const texto = lineas(sueltos, null, true).map((l) => l.texto).join(" ");
       notas.push({ pagina: n, texto, aviso: "Texto junto a los títulos." });
       for (const [k, v] of Object.entries(metaDeTexto(texto))) if (v && k !== "pagina" && !meta[k]) meta[k] = v;
     }
     // Inicios de registro.
-    let inicios = lineas(enRad, 3, formato.pegar).filter((l) => formato.inicia(l.texto));
+    let inicios = lineas(enRad, 3, true).filter((l) => inicia(l.texto));
     let sinColumna = false;
     if (!inicios.length && kRad < 0) {
       inicios = lineas(datos, 3).filter((l) => l.items.some((it) => iniciaRadicado(it.str)));
@@ -360,7 +341,7 @@ export function leerEstado(paginas, { origen = "pdf" } = {}) {
     // registro de la página anterior, o es texto del estado (pie, firma).
     if (antes.length) {
       const previa = filas[filas.length - 1];
-      const deDescripcion = antes.every((it) => ["actuacion", "anotacion"].includes(tipos[columnaDe(it, cortes)]) && !cruza(it, cortes));
+      const deDescripcion = antes.every((it) => ["actuacion", "anotacion", "descripcion"].includes(tipos[columnaDe(it, cortes)]) && !cruza(it, cortes));
       if (previa && deDescripcion && previa.pagina === n - 1) {
         const texto = lineas(antes).map((l) => l.texto).join(" ");
         previa.anotacion = [previa.anotacion, texto].filter(Boolean).join(" ");
@@ -369,41 +350,43 @@ export function leerEstado(paginas, { origen = "pdf" } = {}) {
       } else notas.push({ pagina: n, texto: lineas(antes).map((l) => l.texto).join("\n"), aviso: "" });
     }
     grupos.forEach((grupo, j) => {
-      const { fila, cola } = filaDeGrupo(grupo, { cortes, tipos, formato, pagina: n, ultima: j === grupos.length - 1, origen: pagina.ocr ? "ocr" : origen });
+      const { fila, cola } = filaDeGrupo(grupo, { cortes, tipos, pagina: n, ultima: j === grupos.length - 1, origen: pagina.ocr ? "ocr" : origen });
       if (sinColumna) {
         fila.avisos.push("Este estado no tiene columna de radicado; el número se buscó en toda la línea.");
         fila.confianza = "baja";
       }
       filas.push(fila);
-      if (cola.length) notas.push({ pagina: n, texto: lineas(cola, null, formato.pegar).map((l) => l.texto).join("\n"), aviso: "" });
+      if (cola.length) notas.push({ pagina: n, texto: lineas(cola, null, true).map((l) => l.texto).join("\n"), aviso: "" });
     });
     if (!titulos.titulos.some((t) => t.columna === "radicado")) avisos.push(`Página ${n}: no hay columna de radicado.`);
   }
-  // Pie del estado: secretario y constancia de fijación.
+  // Pie del estado: secretario, constancia de fijación y total de registros.
   for (const nota of notas) {
-    const m = /([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ ]{5,})\n\s*SECRETARI[OA]\b/.exec(nota.texto);
+    const m = /([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ ]{5,})\n\s*(?:SECRETARI[OA]|Secretar[ií]a)\b/.exec(nota.texto);
     if (m && !meta.secretario) meta.secretario = m[1].trim();
+    const total = /N[uú]mero de Registros:?\s*(\d+)/i.exec(nota.texto);
+    if (total && !meta.registros) meta.registros = Number(total[1]);
   }
+  if (meta.registros && meta.registros !== filas.length) avisos.push(`El estado dice ${meta.registros} registros y se leyeron ${filas.length}: revise si falta alguno.`);
   filas.forEach((f, i) => {
     f.id = i + 1;
   });
   return { meta, filas, notas: notas.filter((x) => x.texto || x.aviso), avisos, columnas: columnasUsadas(filas) };
 }
 
-function filaDeGrupo(grupo, { cortes, tipos, formato = FORMATOS[0], pagina, ultima, origen }) {
+function filaDeGrupo(grupo, { cortes, tipos, pagina, ultima, origen }) {
   const avisos = [];
   // Una línea muy por debajo del resto, al final de la página, es el pie.
   const orden = [...grupo].sort((a, b) => b.y - a.y);
   let cola = [];
-  if (formato.unaLinea) {
-    // Un registro, una línea: lo que cae más abajo no es del registro.
-    const alto = Math.max(...orden.map((i) => i.h));
-    cola = orden.filter((it) => orden[0].y - it.y > alto * 1.2);
-  } else if (ultima) {
+  // O una línea más abajo que cruza columnas: ninguna celda lo hace.
+  if (ultima) {
     for (let i = 1; i < orden.length; i++) {
       const salto = orden[i - 1].y - orden[i].y;
-      if (salto > Math.max(28, orden[i].h * 3.2)) {
-        cola = orden.slice(i);
+      const pie = orden[i].y < orden[0].y - orden[i].h && cruza(orden[i], cortes);
+      if (salto > Math.max(28, orden[i].h * 3.2) || pie) {
+        const tope = pie ? orden[i].y + orden[i].h * 0.4 : -Infinity;
+        cola = orden.filter((it, k) => k >= i || it.y <= tope);
         break;
       }
     }
@@ -417,9 +400,10 @@ function filaDeGrupo(grupo, { cortes, tipos, formato = FORMATOS[0], pagina, ulti
     (celdas[id] ||= []).push(it);
     if (cruza(it, cortes)) avisos.push(`"${it.str.slice(0, 40)}" cruza dos columnas; quedó en ${COLUMNAS.find((c) => c.id === id)?.nombre || "una columna sin título"}.`);
   }
-  const texto = (id) => lineas(celdas[id] || [], 3, formato.pegar).map((l) => l.texto);
+  const texto = (id) => lineas(celdas[id] || [], 3, true).map((l) => l.texto);
   const desc = texto("actuacion");
   const tieneAnotacion = tipos.includes("anotacion");
+  const [actuacion, anotacion] = tipos.includes("descripcion") ? partirDescripcion(texto("descripcion").join(" ")) : [tieneAnotacion ? desc.join(" ") : desc[0] || "", tieneAnotacion ? texto("anotacion").join(" ") : desc.slice(1).join(" ")];
   const fila = {
     pagina,
     origen,
@@ -428,10 +412,10 @@ function filaDeGrupo(grupo, { cortes, tipos, formato = FORMATOS[0], pagina, ulti
     clase: texto("clase").join(" "),
     demandante: texto("demandante").join(" "),
     demandado: texto("demandado").join(" "),
-    actuacion: tieneAnotacion ? desc.join(" ") : desc[0] || "",
-    anotacion: tieneAnotacion ? texto("anotacion").join(" ") : desc.slice(1).join(" "),
+    actuacion,
+    anotacion,
     fecha: "",
-    cuaderno: texto("cuaderno").join(" "),
+    cuaderno: texto("cuaderno").join(" ").replace(/[\s.]+$/, ""),
     folios: texto("folios").join(" "),
     extra: "",
     confianza: "alta",
@@ -444,24 +428,31 @@ function filaDeGrupo(grupo, { cortes, tipos, formato = FORMATOS[0], pagina, ulti
     const suelto = dentro.find((it) => iniciaRadicado(it.str));
     if (suelto) fila.radicadoTexto = lineas(dentro.filter((it) => Math.abs(it.x - suelto.x) < 60), 3).filter((l) => /^\d/.test(l.texto)).map((l) => l.texto.match(/^[\d\s.-]+/)?.[0] || "").join(" ").trim();
   }
+  // "Ejecutivo No 2023-00073": la clase va a su campo y queda el número.
+  const conClase = !iniciaRadicado(fila.radicadoTexto) && RE_CLASE_NO.exec(fila.radicadoTexto);
+  if (conClase) {
+    if (!fila.clase) fila.clase = conClase[1].trim();
+    fila.radicadoTexto = conClase[2].replace(/\s*-\s*/g, "-").trim();
+  }
   const rad = normalizarRadicadoEstado(fila.radicadoTexto);
+  const corto = !rad.numero && (Boolean(conClase) || Boolean(parsearNumeroCorto(fila.radicadoTexto)));
   fila.radicado = rad.numero;
   fila.radicadoNota = rad.nota;
-  if (rad.aviso) avisos.push(rad.aviso);
+  if (rad.aviso && !corto) avisos.push(rad.aviso);
   const fechaTexto = texto("fecha").join(" ");
-  fila.fecha = formato.fecha(fechaTexto);
+  fila.fecha = fechaCorta(fechaTexto) || fechaLarga(fechaTexto);
   if (!fila.fecha && tipos.includes("fecha")) avisos.push(fechaTexto ? `La fecha "${fechaTexto}" no se pudo leer.` : "Sin fecha del auto.");
   if (!fila.actuacion) avisos.push("Sin actuación.");
   if (origen === "ocr") avisos.push("Leído con OCR: revise nombres y números.");
-  formato.completar(fila);
-  fila.confianza = confianza(fila, rad, formato);
+  if (corto) avisos.push(AVISO_CORTO);
+  fila.confianza = confianza(fila, rad, corto);
   return { fila, cola };
 }
 
-// Un formato sin radicado de 23 dígitos llega a "media" si lo demás está bien.
-function confianza(fila, rad, formato = FORMATOS[0]) {
+// Con solo el número corto llega a "media" si lo demás está bien.
+function confianza(fila, rad, corto = false) {
   if (fila.origen === "texto") return "baja";
-  if (!fila.radicado) return formato.id !== "listado" && fila.radicadoTexto && fila.fecha && fila.actuacion && fila.avisos.length <= 1 && fila.origen !== "ocr" ? "media" : "baja";
+  if (!fila.radicado) return corto && fila.fecha && fila.actuacion && fila.avisos.length <= 1 && fila.origen !== "ocr" ? "media" : "baja";
   if (fila.origen === "ocr" || rad.aviso || fila.avisos.length) return "media";
   return "alta";
 }
@@ -485,7 +476,7 @@ function columnasUsadas(filas) {
 // número corto (compartido/radicado.js). Queda marcado en radicadoArmado
 // (armado o supuesto) para no confundirlo con uno leído del PDF.
 export function completarRadicados(resultado, contexto = {}) {
-  if (!resultado?.meta?.formato || !resultado.meta.juzgado) return resultado;
+  if (!resultado?.meta?.juzgado) return resultado;
   for (const f of resultado.filas || []) {
     if (f.radicado || !f.radicadoTexto) continue;
     const a = armarRadicado(resultado.meta.juzgado, f.radicadoTexto, contexto);
@@ -586,8 +577,9 @@ export function leerTabla(tabla, { origen = "tabla", pagina = 1 } = {}) {
     }
     const rad = normalizarRadicadoEstado(radicadoTexto);
     const desc = de("actuacion").split("\n").filter(Boolean);
+    const [actuacion, anotacion] = tipos.includes("descripcion") ? partirDescripcion(de("descripcion").replace(/\n/g, " ")) : [tieneAnotacion ? desc.join(" ") : desc[0] || "", tieneAnotacion ? de("anotacion").replace(/\n/g, " ") : desc.slice(1).join(" ")];
     const extra = celdas.filter((c, k) => c && !tipos[k]).join(" | ");
-    const fecha = fechaCorta(de("fecha"));
+    const fecha = fechaCorta(de("fecha")) || fechaLarga(de("fecha"));
     const avisos = [rad.aviso, !fecha && tipos.includes("fecha") ? "Sin fecha del auto." : ""].filter(Boolean);
     const fila = {
       pagina,
@@ -598,8 +590,8 @@ export function leerTabla(tabla, { origen = "tabla", pagina = 1 } = {}) {
       clase: de("clase").replace(/\n/g, " "),
       demandante: de("demandante").replace(/\n/g, " "),
       demandado: de("demandado").replace(/\n/g, " "),
-      actuacion: tieneAnotacion ? desc.join(" ") : desc[0] || "",
-      anotacion: tieneAnotacion ? de("anotacion").replace(/\n/g, " ") : desc.slice(1).join(" "),
+      actuacion,
+      anotacion,
       fecha,
       cuaderno: de("cuaderno"),
       folios: de("folios"),

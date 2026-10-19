@@ -374,15 +374,14 @@
           </section>
           <section class="juris-card" id="pdf-panel-unir" aria-label="Unir PDF">
             <p class="etiqueta primera">PDF a unir</p>
-            <div class="zona-soltar" id="pdf-soltar">Arrastre aquí los PDF o elíjalos: quedan en el orden en que van a unirse.</div>
+            <p class="ayuda">Agréguelos aquí o suéltelos a la derecha. Allí se ordenan.</p>
             <div class="fila-fin">
               <button type="button" class="boton-linea" id="pdf-elegir-unir">Elegir PDF</button>
               <button type="button" class="boton-texto" id="pdf-unir-limpiar">Limpiar</button>
             </div>
-            <div class="lista juris-lista" id="pdf-unir-lista"></div>
             <div class="fila-fin">
               <span class="ayuda" id="pdf-unir-estado"></span>
-              <button type="button" class="boton-cobre" id="pdf-unir-boton">Unir y guardar</button>
+              <button type="button" class="boton-cobre" id="pdf-unir-boton" disabled>Unir y guardar</button>
             </div>
           </section>
           <section class="juris-card" id="pdf-panel-separar" aria-label="Separar PDF" hidden>
@@ -391,10 +390,9 @@
               <span class="ayuda" id="pdf-separar-nombre">Ningún PDF elegido.</span>
               <button type="button" class="boton-linea" id="pdf-elegir-separar">Elegir</button>
             </div>
-            <label><span class="etiqueta">Páginas</span><input id="pdf-separar-rangos" autocomplete="off" spellcheck="false" placeholder="Ej. 1-3, 5"></label>
             <div class="fila-fin">
               <span class="ayuda" id="pdf-separar-estado"></span>
-              <button type="button" class="boton-cobre" id="pdf-separar-boton">Separar y guardar</button>
+              <button type="button" class="boton-cobre" id="pdf-separar-boton" disabled>Separar y guardar</button>
             </div>
           </section>
           <section class="juris-card" id="pdf-panel-rotar" aria-label="Girar PDF" hidden>
@@ -403,13 +401,9 @@
               <span class="ayuda" id="pdf-rotar-nombre">Ningún PDF elegido.</span>
               <button type="button" class="boton-linea" id="pdf-elegir-rotar">Elegir</button>
             </div>
-            <div class="doc-dos">
-              <label><span class="etiqueta">Páginas (vacío: todas)</span><input id="pdf-rotar-rangos" autocomplete="off" spellcheck="false" placeholder="Ej. 2, 5-7"></label>
-              <label><span class="etiqueta">Giro</span><select id="pdf-rotar-angulo"></select></label>
-            </div>
             <div class="fila-fin">
               <span class="ayuda" id="pdf-rotar-estado"></span>
-              <button type="button" class="boton-cobre" id="pdf-rotar-boton">Girar y guardar</button>
+              <button type="button" class="boton-cobre" id="pdf-rotar-boton" disabled>Guardar girado</button>
             </div>
           </section>
           <section class="juris-card" id="pdf-panel-firmar" aria-label="Firmar PDF" hidden>
@@ -484,11 +478,9 @@
               <span class="ayuda" id="pdf-comprimir-nombre">Ningún PDF elegido.</span>
               <button type="button" class="boton-linea" id="pdf-elegir-comprimir">Elegir</button>
             </div>
-            <label><span class="etiqueta">Calidad</span><select id="pdf-comprimir-nivel"></select></label>
-            <p class="ayuda">Reduce las fotos sin tocar el texto. Si el PDF no tiene fotos, casi no cambia.</p>
             <div class="fila-fin">
               <span class="ayuda" id="pdf-comprimir-estado"></span>
-              <button type="button" class="boton-cobre" id="pdf-comprimir-boton">Comprimir y guardar</button>
+              <button type="button" class="boton-cobre" id="pdf-comprimir-boton" disabled>Comprimir y guardar</button>
             </div>
           </section>
           <section class="juris-card" id="pdf-panel-proteger" aria-label="Proteger PDF" hidden>
@@ -497,10 +489,9 @@
               <span class="ayuda" id="pdf-proteger-nombre">Ningún PDF elegido.</span>
               <button type="button" class="boton-linea" id="pdf-elegir-proteger">Elegir</button>
             </div>
-            <label><span class="etiqueta">Contraseña para abrirlo</span><input type="password" id="pdf-proteger-clave" maxlength="127" autocomplete="off" placeholder="La que pedirá al abrir"></label>
             <div class="fila-fin">
               <span class="ayuda" id="pdf-proteger-estado"></span>
-              <button type="button" class="boton-cobre" id="pdf-proteger-boton">Proteger y guardar</button>
+              <button type="button" class="boton-cobre" id="pdf-proteger-boton" disabled>Proteger y guardar</button>
             </div>
           </section>
           <section class="juris-card" id="pdf-panel-desbloquear" aria-label="Desbloquear PDF" hidden>
@@ -509,11 +500,9 @@
               <span class="ayuda" id="pdf-desbloquear-nombre">Ningún PDF elegido.</span>
               <button type="button" class="boton-linea" id="pdf-elegir-desbloquear">Elegir</button>
             </div>
-            <label><span class="etiqueta">Contraseña actual</span><input type="password" id="pdf-desbloquear-clave" autocomplete="off" placeholder="La que abre el PDF hoy"></label>
-            <p class="ayuda">Sin la contraseña no se puede: la app no rompe claves.</p>
             <div class="fila-fin">
               <span class="ayuda" id="pdf-desbloquear-estado"></span>
-              <button type="button" class="boton-cobre" id="pdf-desbloquear-boton">Quitar y guardar</button>
+              <button type="button" class="boton-cobre" id="pdf-desbloquear-boton" disabled>Quitar y guardar</button>
             </div>
           </section>
           <section class="juris-card" id="pdf-panel-rellenar" aria-label="Rellenar PDF" hidden>
@@ -522,11 +511,10 @@
               <span class="ayuda" id="pdf-rellenar-nombre">Ningún PDF elegido.</span>
               <button type="button" class="boton-linea" id="pdf-elegir-rellenar">Elegir</button>
             </div>
-            <div id="pdf-rellenar-campos"></div>
             <label class="casilla"><input type="checkbox" id="pdf-rellenar-aplanar" checked> <span>Aplanar al guardar (los campos quedan fijos)</span></label>
             <div class="fila-fin">
               <span class="ayuda" id="pdf-rellenar-estado"></span>
-              <button type="button" class="boton-cobre" id="pdf-rellenar-boton">Guardar diligenciado</button>
+              <button type="button" class="boton-cobre" id="pdf-rellenar-boton" disabled>Guardar diligenciado</button>
             </div>
           </section>
           <section class="juris-card" id="pdf-panel-comparar" aria-label="Comparar PDF" hidden>
@@ -541,7 +529,7 @@
             </div>
             <div class="fila-fin">
               <span class="ayuda" id="pdf-comparar-estado"></span>
-              <button type="button" class="boton-cobre" id="pdf-comparar-boton">Comparar</button>
+              <button type="button" class="boton-cobre" id="pdf-comparar-boton" disabled>Comparar</button>
             </div>
           </section>
           <section class="juris-card pdf-llevar" id="pdf-llevar" aria-label="Usar el PDF con la IA">
@@ -562,12 +550,7 @@
           </section>
         </aside>
         <main class="derecha juris-lector">
-          <div class="juris-vacio">
-            <p class="juris-vacio-icono" aria-hidden="true">📄</p>
-            <p class="juris-vacio-titulo">Unir, separar, girar y firmar</p>
-            <p class="ayuda">Todo pasa en este computador: ningún PDF sale a internet. Elija la herramienta y siga los pasos.</p>
-          </div>
-          <div id="pdf-detalle"></div>
+          <div class="pv-escenas" id="pdf-escenas"></div>
           <div class="firma-visor" id="firma-visor" hidden>
             <div class="firma-barra" role="toolbar" aria-label="Página y marcas">
               <button type="button" class="boton-linea" id="firma-anterior">Anterior</button>

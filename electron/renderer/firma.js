@@ -8,7 +8,8 @@
 // la única que la pasa al espacio del PDF.
 import { TEXTO_ALTO, fechaHoy, lineaDeTexto, parsearRangos, tamanoVista } from "../compartido/pdftools.js";
 import { avisar } from "./aviso.js";
-import { estado, nodo, nombreCorto, ocupado, ofrecerLlevar, pdf, pintarUno } from "./pdf.js";
+import { aBytes, abrirDoc, cerrarDoc, crearVisor, limitar } from "./paginas.js";
+import { alAbrir, estado, nodo, nombreCorto, ocupado, ofrecerLlevar, pdf, pintarUno } from "./pdf.js";
 
 const $ = (id) => document.getElementById(id);
 const FUENTE_FIRMA = "Firma Vigencia"; // Great Vibes (OFL), renderer/fuentes
@@ -20,170 +21,67 @@ const MAX_HISTORIA = 50;
 const MAX_MEMORIA = 12;
 
 const f = {
-  doc: null, paginas: [], zoom: 1, lienzos: [], memoria: new Map(), pendientes: new Set(), observador: null, turno: 0, actual: 1,
   firmas: [], imagenes: new Map(), // id de la firma -> { png, bmp, aspecto }
   marcas: [], sel: null, armada: null, arrastrada: null, historia: [], accion: null, sigId: 1,
-  trazos: [], firmado: "", verificarRuta: "",
+  trazos: [], firmado: "", verificarRuta: "", turno: 0,
 };
 
-let visorMod = null;
-async function visor() {
-  visorMod ||= await import("./vendor/visor.js");
-  return visorMod;
-}
-
-function aBytes(base64) {
-  const bin = atob(String(base64 || "").replace(/^data:image\/\w+;base64,/, ""));
-  const bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  return bytes;
-}
-
-const limitar = (v, min, max) => Math.min(Math.max(v, min), Math.max(min, max));
 const aviso = (mensaje, error = true) => estado("pdf-firmar-estado", mensaje, error);
 
-// ---------- Visor ----------
+// ---------- Visor (renderer/paginas.js, el mismo de las otras herramientas) ----------
+
+let vista = null;
 
 export function mostrarVisorFirma(si) {
   $("firma-visor").hidden = !si;
-  $("pdf-detalle").hidden = si;
   if (si) cargarFirmas();
 }
 
-async function cerrarDoc() {
-  f.observador?.disconnect();
-  try {
-    await visorMod?.cerrarPdf(f.doc);
-  } catch {
-    /* ya cerrado */
-  }
-  f.doc = null;
+function crearVista() {
+  vista ||= crearVisor({
+    caja: $("firma-paginas"),
+    clase: "firma-pagina",
+    alCrear: escucharPagina,
+    encima: dibujarMarcas,
+    maxMemoria: MAX_MEMORIA,
+    alCambiarPagina: pintarBarra,
+  });
+  return vista;
 }
 
-export async function abrirFirma(info) {
+async function abrirFirma(info) {
   const turno = ++f.turno;
-  await cerrarDoc();
-  Object.assign(f, { paginas: info?.detalle || [], marcas: [], sel: null, historia: [], actual: 1, lienzos: [] });
-  f.memoria.clear();
-  $("firma-paginas").replaceChildren();
+  const v = crearVista();
+  const viejo = v.doc;
+  v.vaciar();
+  cerrarDoc(viejo);
+  Object.assign(f, { marcas: [], sel: null, historia: [] });
   $("firma-pista").textContent = info ? "Abriendo el PDF." : "Elija a la izquierda el PDF que va a firmar.";
   pintarBarra();
   if (!info || !pdf.firmar) return;
+  let doc;
   try {
-    const r = await window.vigencia.pdfArchivo(pdf.firmar);
-    if (!r?.ok) throw new Error(r?.error || "No pude leer el PDF.");
-    const { doc } = await (await visor()).cargarPdf(aBytes(r.base64));
-    if (turno !== f.turno) return visorMod.cerrarPdf(doc);
-    f.doc = doc;
+    doc = await abrirDoc(pdf.firmar);
+    if (turno !== f.turno) return cerrarDoc(doc);
   } catch (error) {
     $("firma-pista").textContent = "";
     aviso(error?.message || "No pude abrir el PDF.");
     return;
   }
   $("firma-pista").textContent = "Arrastre una firma o un campo a la página, o tóquelo y luego toque la página. Mueva con el ratón, agrande desde las esquinas, Supr quita.";
-  f.zoom = zoomAncho(1.5);
-  armarPaginas();
-}
-
-function zoomAncho(maximo = ZOOM_MAX) {
-  const ancho = Math.max(1, ...f.paginas.map((p) => tamanoVista(p).ancho));
-  return limitar(($("firma-paginas").clientWidth - 40) / ancho, ZOOM_MIN, maximo);
-}
-
-function armarPaginas() {
-  f.observador?.disconnect();
-  f.memoria.clear();
-  f.observador = new IntersectionObserver((entradas) => {
-    for (const e of entradas) if (e.isIntersecting) componer(Number(e.target.dataset.pagina));
-  }, { root: $("firma-paginas"), rootMargin: "300px 0px" });
-  f.lienzos = f.paginas.map((_p, i) => {
-    const c = document.createElement("canvas");
-    c.className = "firma-pagina";
-    c.dataset.pagina = String(i + 1);
-    c.setAttribute("aria-label", `Página ${i + 1}`);
-    escucharPagina(c);
-    return c;
-  });
-  medirLienzos();
-  $("firma-paginas").replaceChildren(...f.lienzos);
-  for (const c of f.lienzos) f.observador.observe(c);
+  v.paginas = info.detalle || [];
+  v.zoom = v.zoomAncho(ZOOM_MIN, 1.5);
+  v.armar(doc, info.detalle || []);
   pintarBarra();
-}
-
-function medirLienzos() {
-  f.lienzos.forEach((c, i) => {
-    const t = tamanoVista(f.paginas[i]);
-    c.width = Math.max(1, Math.round(t.ancho * f.zoom));
-    c.height = Math.max(1, Math.round(t.alto * f.zoom));
-  });
 }
 
 function cambiarZoom(z) {
-  if (!f.lienzos.length) return;
-  const pagina = f.actual;
-  f.zoom = limitar(z, ZOOM_MIN, ZOOM_MAX);
-  f.memoria.clear();
-  medirLienzos();
-  irAPagina(pagina);
-  componerVisibles();
+  vista?.cambiarZoom(z, ZOOM_MIN, ZOOM_MAX);
   pintarBarra();
 }
 
-function componerVisibles() {
-  const caja = $("firma-paginas").getBoundingClientRect();
-  f.lienzos.forEach((c, i) => {
-    const r = c.getBoundingClientRect();
-    if (r.bottom >= caja.top - 300 && r.top <= caja.bottom + 300) componer(i + 1);
-  });
-}
-
-function irAPagina(n) {
-  const c = f.lienzos[limitar(n, 1, f.lienzos.length) - 1];
-  if (c) $("firma-paginas").scrollTop = c.offsetTop - 12;
-}
-
-function paginaActual() {
-  const caja = $("firma-paginas");
-  const linea = caja.scrollTop + caja.clientHeight / 3;
-  let n = 1;
-  f.lienzos.forEach((c, i) => {
-    if (c.offsetTop <= linea) n = i + 1;
-  });
-  if (n !== f.actual) {
-    f.actual = n;
-    pintarBarra();
-  }
-}
-
-async function dibujarFondo(n) {
-  const clave = `${n}@${f.zoom}`;
-  if (!f.doc || f.pendientes.has(clave)) return;
-  f.pendientes.add(clave);
-  try {
-    const copia = document.createElement("canvas");
-    await (await visor()).pintarPagina(f.doc, n, copia, f.zoom);
-    f.memoria.set(clave, copia);
-    while (f.memoria.size > MAX_MEMORIA) f.memoria.delete(f.memoria.keys().next().value);
-  } catch {
-    return;
-  } finally {
-    f.pendientes.delete(clave);
-  }
-  if (clave === `${n}@${f.zoom}`) componer(n);
-}
-
-// La página: el dibujo de pdfjs y encima las marcas, con borde y manijas
-// en la elegida.
-function componer(n) {
-  const c = f.lienzos[n - 1];
-  if (!c) return;
-  const ctx = c.getContext("2d");
-  const fondo = f.memoria.get(`${n}@${f.zoom}`);
-  ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, c.width, c.height);
-  if (fondo) ctx.drawImage(fondo, 0, 0, c.width, c.height);
-  else dibujarFondo(n);
-  const z = f.zoom;
+// Encima del dibujo de pdfjs: las marcas, con borde y manijas en la elegida.
+function dibujarMarcas(n, ctx, z) {
   for (const m of f.marcas) {
     if (m.pagina !== n) continue;
     if (m.tipo === "texto") {
@@ -210,16 +108,15 @@ function componer(n) {
   }
 }
 
-function componerTodas() {
-  for (let n = 1; n <= f.lienzos.length; n++) if (f.memoria.has(`${n}@${f.zoom}`)) componer(n);
-}
+const componer = (n) => vista?.componer(n);
+const componerTodas = () => vista?.componerTodas();
 
 // ---------- Marcas: poner, mover, agrandar, duplicar, quitar, deshacer ----------
 
 const esquinas = (m) => [[m.x, m.y], [m.x + m.w, m.y], [m.x, m.y + m.h], [m.x + m.w, m.y + m.h]];
 
 function esquinaEn(m, p) {
-  const r = (MANIJA * 1.6) / f.zoom;
+  const r = (MANIJA * 1.6) / vista.zoom;
   return esquinas(m).findIndex(([x, y]) => Math.abs(p.x - x) <= r && Math.abs(p.y - y) <= r);
 }
 
@@ -233,7 +130,7 @@ function marcaEn(n, p) {
 
 function puntoEn(c, e) {
   const r = c.getBoundingClientRect();
-  return { x: ((e.clientX - r.left) * (c.width / r.width)) / f.zoom, y: ((e.clientY - r.top) * (c.height / r.height)) / f.zoom };
+  return { x: ((e.clientX - r.left) * (c.width / r.width)) / vista.zoom, y: ((e.clientY - r.top) * (c.height / r.height)) / vista.zoom };
 }
 
 function guardarHistoria(antes = f.marcas.map((m) => ({ ...m }))) {
@@ -269,7 +166,7 @@ function textoDeCampo(campo) {
 }
 
 function poner(que, n, p) {
-  const t = tamanoVista(f.paginas[n - 1]);
+  const t = tamanoVista(vista.paginas[n - 1]);
   let m;
   if (que.tipo === "firma") {
     const img = f.imagenes.get(que.firmaId);
@@ -307,14 +204,14 @@ function duplicar() {
   const pedido = String($("firma-duplicar-en").value || "").trim();
   let destinos = [m.pagina];
   if (pedido) {
-    const r = parsearRangos(pedido, f.paginas.length);
+    const r = parsearRangos(pedido, vista.paginas.length);
     if (r.error) return aviso(r.error);
     destinos = r.indices.map((i) => i + 1);
   }
   guardarHistoria();
   let ultima = null;
   for (const n of destinos) {
-    const t = tamanoVista(f.paginas[n - 1]);
+    const t = tamanoVista(vista.paginas[n - 1]);
     const corre = pedido ? 0 : 14;
     ultima = { ...m, id: f.sigId++, pagina: n, x: limitar(m.x + corre, 0, t.ancho - m.w), y: limitar(m.y + corre, 0, t.alto - m.h) };
     f.marcas.push(ultima);
@@ -361,7 +258,7 @@ function escucharPagina(c) {
       c.classList.toggle("mover", !f.armada && !c.classList.contains("esquina") && Boolean(marcaEn(n, p)));
       return;
     }
-    const t = tamanoVista(f.paginas[n - 1]);
+    const t = tamanoVista(vista.paginas[n - 1]);
     const m = a.m;
     if (a.esquina < 0) {
       m.x = limitar(p.x - a.dx, 0, t.ancho - m.w);
@@ -400,12 +297,13 @@ function escucharPagina(c) {
 }
 
 function pintarBarra() {
-  const total = f.lienzos.length;
-  $("firma-pagina-num").textContent = total ? `Página ${f.actual} de ${total}` : "Sin PDF";
-  $("firma-zoom").textContent = `${Math.round(f.zoom * 100)} %`;
+  const v = vista || { lienzos: [], actual: 1, zoom: 1 };
+  const total = v.lienzos.length;
+  $("firma-pagina-num").textContent = total ? `Página ${v.actual} de ${total}` : "Sin PDF";
+  $("firma-zoom").textContent = `${Math.round(v.zoom * 100)} %`;
   for (const id of ["firma-alejar", "firma-acercar", "firma-ajustar"]) $(id).disabled = !total;
-  $("firma-anterior").disabled = !total || f.actual <= 1;
-  $("firma-siguiente").disabled = !total || f.actual >= total;
+  $("firma-anterior").disabled = !total || v.actual <= 1;
+  $("firma-siguiente").disabled = !total || v.actual >= total;
   $("firma-duplicar").disabled = !f.sel;
   $("firma-quitar").disabled = !f.sel;
   $("firma-deshacer").disabled = !f.historia.length;
@@ -728,7 +626,7 @@ function iniciarLienzo() {
 // ---------- Firmar y guardar ----------
 
 async function firmar() {
-  if (!pdf.firmar || !f.doc) return aviso("Elija primero el PDF.");
+  if (!pdf.firmar || !vista?.doc) return aviso("Elija primero el PDF.");
   if (!f.marcas.length) return aviso("Ponga primero una firma o un texto sobre la página.");
   const constancia = $("pdf-firma-constancia").checked;
   const firmante = String($("pdf-firmante-nombre").value || "").trim();
@@ -812,6 +710,7 @@ async function verificarFirmado() {
 // ---------- Arranque ----------
 
 export function iniciarFirma() {
+  alAbrir.firmar = abrirFirma;
   iniciarLienzo();
   $("pdf-firma-deshacer-trazo").addEventListener("click", deshacerTrazo);
   $("pdf-firma-limpiar").addEventListener("click", limpiarLienzo);
@@ -842,15 +741,15 @@ export function iniciarFirma() {
     componer(m.pagina);
     pintarBarra();
   });
-  $("firma-anterior").addEventListener("click", () => irAPagina(f.actual - 1));
-  $("firma-siguiente").addEventListener("click", () => irAPagina(f.actual + 1));
-  $("firma-alejar").addEventListener("click", () => cambiarZoom(f.zoom / 1.25));
-  $("firma-acercar").addEventListener("click", () => cambiarZoom(f.zoom * 1.25));
-  $("firma-ajustar").addEventListener("click", () => cambiarZoom(zoomAncho()));
+  $("firma-anterior").addEventListener("click", () => vista?.irA(vista.actual - 1));
+  $("firma-siguiente").addEventListener("click", () => vista?.irA(vista.actual + 1));
+  $("firma-alejar").addEventListener("click", () => cambiarZoom((vista?.zoom ?? 1) / 1.25));
+  $("firma-acercar").addEventListener("click", () => cambiarZoom((vista?.zoom ?? 1) * 1.25));
+  $("firma-ajustar").addEventListener("click", () => cambiarZoom(crearVista().zoomAncho(ZOOM_MIN, ZOOM_MAX)));
   $("firma-duplicar").addEventListener("click", duplicar);
   $("firma-quitar").addEventListener("click", quitar);
   $("firma-deshacer").addEventListener("click", deshacer);
-  $("firma-paginas").addEventListener("scroll", paginaActual, { passive: true });
+  $("firma-paginas").addEventListener("scroll", () => vista?.paginaActual(), { passive: true });
   $("pdf-firmar-boton").addEventListener("click", firmar);
   $("firma-abrir-firmado").addEventListener("click", abrirFirmado);
   $("pdf-verificar-elegir").addEventListener("click", async () => {

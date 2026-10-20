@@ -1,6 +1,9 @@
 # Registro de cambios
 
-## Sin publicar (rama feature/estados-formatos)
+## 3.9.0 (20 de octubre de 2026)
+
+### Publicaciones procesales
+- Ajustes en la lectura de publicaciones procesales.
 
 ### Estados del juzgado a tabla
 - Estados en otro formato: ahora también se leen los estados hechos en Word con el título "NOTIFICACIÓN POR ESTADO DEL ..." (un registro por línea, la clase junto al número del proceso, por ejemplo "Ejecutivo No 2023-00073", la fecha del auto en letras y el cuaderno como "1 y 2."). Salen en la misma tabla: clase, número como viene, demandante, demandado, actuación, fecha del auto (dd/mm/aaaa) y cuaderno. La fecha del estado se toma del título.

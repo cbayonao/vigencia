@@ -1430,6 +1430,9 @@ table.pv-est { width: 100%; border-collapse: separate; border-spacing: 0; font-s
 .pv-est-radicado .pv-est-editable { white-space: nowrap; }
 .pv-est-rad23 { display: block; margin-top: 2px; font-family: ui-monospace, "DejaVu Sans Mono", monospace; font-size: 11px; color: var(--suave); }
 .pv-est-rad23.falta { color: var(--error); }
+.pv-est-rad23.armado { font-style: italic; text-decoration: underline dotted; }
+.pv-est-rad23.supuesto { color: var(--error); }
+.pv-est-armado { display: block; font-size: 11px; color: var(--suave); }
 .pv-est-actuacion { min-width: 140px; font-weight: 600; }
 .pv-est-anotacion { min-width: 160px; color: var(--suave); }
 .pv-est-fecha { white-space: nowrap; }

@@ -864,7 +864,7 @@ if (bloqueo) {
       convertirDatos,
       db: () => db,
     });
-    registrarEstados({ ipcMain, dialog, ventana: () => ventana, mensajeHumano, datosDir: () => datosDir });
+    registrarEstados({ ipcMain, dialog, ventana: () => ventana, mensajeHumano, datosDir: () => datosDir, db: () => db, planCerrado });
     registrarMisProcesos({ ipcMain, dialog, shell, db: () => db, ventana: () => ventana, mensajeHumano, convertirDatos });
     iniciarRecordatorios();
     ipcMain.handle("listar", () => responder(() => ({

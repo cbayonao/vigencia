@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { PDFDocument, StandardFonts } from "pdf-lib";
 import { itemsDePdf, tablasDeDatos } from "../src/convertir/convertidores.js";
 import {
-  columnaDeTitulo, csvDeFilas, estadoAMarkdown, filasParaExportar, filtrarFilas, iniciaRadicado, leerEstado, leerPorLineas, leerTabla,
+  columnaDeTitulo, csvDeFilas, estadoAMarkdown, fechaLarga, filasParaExportar, filtrarFilas, iniciaRadicado, leerEstado, leerPorLineas, leerTabla,
   marcarSeguidos, metaDeTexto, normalizarRadicadoEstado, ordenarFilas, tablasDeHtml,
 } from "../compartido/estados.js";
 
@@ -309,4 +309,274 @@ test("leer un archivo de estado: PDF con texto, PDF escaneado sin OCR y tipo que
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+// Segundo formato: tabla de Word "NOTIFICACIÓN POR ESTADO DEL ...", un
+// registro por línea, la clase junto al número corto y la fecha en letras.
+// Word parte palabras en varios textos pegados: se arman igual aquí.
+async function armarEstadoWord(registros) {
+  const pdf = await PDFDocument.create();
+  const f = await pdf.embedFont(StandardFonts.Helvetica);
+  const p = pdf.addPage([936, 612]);
+  const t = (texto, x, y, size = 9) => p.drawText(texto, { x, y, size, font: f });
+  // Pedazos seguidos sin hueco, como los deja Word.
+  const pegados = (partes, x, y) => partes.forEach((s) => {
+    t(s, x, y);
+    x += f.widthOfTextAtSize(s, 9);
+  });
+  t("JUZGADO PROMISCUO MUNICIPAL DE PRUEBA", 325, 516, 11);
+  pegados(["NOTIFICACIÓN POR ESTADO DEL 3 DE O", "CTU", "BRE DE 2024"], 289, 486);
+  [["PROCESO", 90], ["DEMANDANTE", 255], ["DEMANDADO", 454], ["ACTUACIÓN", 638], ["FECHA AUTO", 777], ["CDNO", 876]].forEach(([s, x]) => t(s, x, 472));
+  let y = 454;
+  for (const r of registros) {
+    pegados(r.proceso, 40, y);
+    pegados(r.demandante, 199, y);
+    t(r.demandado, 393, y);
+    pegados(r.actuacion, 592, y);
+    t(r.fecha, 755, y);
+    t(r.cdno, 888, y);
+    y -= 15;
+  }
+  t("De conformidad con lo previsto en el artículo 295 del Código General del Proceso, se NOTIFICA a las partes los autos proferidos", 40, y - 11);
+  t("presente ESTADO, el cual se fija en la secretaría por el término legal de un (1) día.", 40, y - 23);
+  return Buffer.from(await pdf.save());
+}
+
+test("estado de Word: clase junto al número corto, fecha en letras, palabras partidas y pie", async () => {
+  const pdf = await armarEstadoWord([
+    { proceso: ["Pertenencia No 20", "21", "-", "00060"], demandante: ["ANA PRUEBA JIMÉNE", "Z L."], demandado: "PERSONAS INDETERMINADAS", actuacion: ["Ordena desarchivar"], fecha: "2 de octubre de 2024", cdno: "1." },
+    { proceso: ["S", "i", "mulación No 2023", "-", "00119"], demandante: ["BETO INVENTADO"], demandado: "CARLA FALSA DE PRUEBA", actuacion: ["S", "eñala nueva fecha"], fecha: "2 de octubre de 2024", cdno: "1 y 2." },
+    { proceso: ["D. Comisorio No 0923DG", "-", "134"], demandante: ["BANCO DE PRUEBA S.A."], demandado: "DIANA EJEMPLO", actuacion: ["Señala fecha para remate"], fecha: "1 de septiembre de 2024", cdno: "1." },
+  ]);
+  const r = await leer(pdf);
+  assert.equal(r.filas.length, 3);
+  assert.deepEqual(r.meta, { paginas: 1, juzgado: "JUZGADO PROMISCUO MUNICIPAL DE PRUEBA", fecha: "03/10/2024", tipo: "estado" });
+  const [a, b, c] = r.filas;
+  assert.equal(a.clase, "Pertenencia");
+  assert.equal(a.radicadoTexto, "2021-00060");
+  assert.equal(a.radicado, "", "sin despacho no hay radicado de 23 dígitos");
+  assert.equal(a.demandante, "ANA PRUEBA JIMÉNEZ L.");
+  assert.equal(a.demandado, "PERSONAS INDETERMINADAS");
+  assert.equal(a.actuacion, "Ordena desarchivar");
+  assert.equal(a.anotacion, "");
+  assert.equal(a.fecha, "02/10/2024");
+  assert.equal(a.cuaderno, "1");
+  assert.equal(a.confianza, "media");
+  assert.equal(a.avisos.length, 1);
+  assert.match(a.avisos[0], /número corto/);
+  assert.equal(b.clase, "Simulación");
+  assert.equal(b.actuacion, "Señala nueva fecha");
+  assert.equal(b.cuaderno, "1 y 2");
+  assert.equal(c.clase, "D. Comisorio");
+  assert.equal(c.radicadoTexto, "0923DG-134");
+  assert.equal(c.fecha, "01/09/2024");
+  // El pie no se pega a la última fila.
+  assert.equal(c.demandado, "DIANA EJEMPLO");
+  assert.match(r.notas.map((n) => n.texto).join(" "), /artículo 295/);
+  assert.deepEqual(marcarSeguidos(r.filas, ["11001311002220220083900"]).map((f) => f.seguido), [false, false, false]);
+});
+
+test("fecha en letras, cuaderno CDNO y fecha del estado en el título", () => {
+  assert.equal(fechaLarga("2 de octubre de 2024"), "02/10/2024");
+  assert.equal(fechaLarga("15 de Setiembre del 2023"), "15/09/2023");
+  assert.equal(fechaLarga("2 de octubrx de 2024"), "");
+  assert.equal(columnaDeTitulo("CDNO"), "cuaderno");
+  assert.equal(metaDeTexto("NOTIFICACIÓN POR ESTADO DEL 3 DE OCTUBRE DE 2024").fecha, "03/10/2024");
+});
+
+// Tercera forma: reporte de Justicia XXI ("FIJACIÓN DE ESTADOS"). Radicado
+// entero en una línea, celdas de varias líneas, una sola columna
+// "Auto / Anotación" y al pie el número de registros y la secretaría.
+async function armarEstadoXXI(registros, { total = registros.length } = {}) {
+  const pdf = await PDFDocument.create();
+  const f = await pdf.embedFont(StandardFonts.Helvetica);
+  const p = pdf.addPage([792, 612]);
+  const t = (texto, x, y, size = 8) => p.drawText(texto, { x, y, size, font: f });
+  t("REPUBLICA DE COLOMBIA - RAMA JUDICIAL DEL PODER PUBLICO", 228, 544, 10);
+  t("Juzgado De Circuito - Civil Laboral 007 Pruebaville", 282, 516);
+  t("Estado No.", 248, 495);
+  t("88", 309, 495);
+  t("De", 343, 495);
+  t("Lunes, 3 De Junio De 2024", 363, 495);
+  t("FIJACIÓN DE ESTADOS", 285, 475, 10);
+  [["Radicación", 67], ["Clase", 194], ["Demandante", 276], ["Demandado", 391], ["Fecha Auto", 479], ["Auto / Anotación", 559]].forEach(([s, x]) => t(s, x, 458, 10));
+  let y = 442;
+  for (const r of registros) {
+    t(r.rad, 35, y, 9);
+    r.clase.forEach((l, k) => t(l, 167, y - 11 * k, 9));
+    r.demandante.forEach((l, k) => t(l, 252, y - 11 * k, 9));
+    r.demandado.forEach((l, k) => t(l, 365, y - 11 * k, 9));
+    t(r.fecha, 481, y, 9);
+    r.auto.forEach((l, k) => t(l, 537, y - 11 * k, 9));
+    y -= 12 + 11 * Math.max(r.clase.length, r.demandante.length, r.demandado.length, r.auto.length);
+  }
+  t("Número de Registros:", 25, y - 20, 7);
+  t(String(total), 109, y - 20, 7);
+  t("En la fecha lunes, 3 de junio de 2024, se fija el presente estado por el término legal, al iniciar la jornada establecida para el despacho judicial", 25, y - 40, 8);
+  t("PEDRO PRUEBA FALSO", 318, y - 80);
+  t("Secretaría", 374, y - 96);
+  return Buffer.from(await pdf.save());
+}
+
+test("estado de Justicia XXI: radicado entero, columna Auto / Anotación y total de registros", async () => {
+  const regs = [
+    { rad: "99001310500720230004300", clase: ["Ejecutivo"], demandante: ["Empresa Inventada", "S.A.S"], demandado: ["Beto De Prueba"], fecha: "31/05/2024", auto: ["Auto Pone En", "Conocimiento - Pone En", "Conocimiento Oficio"] },
+    { rad: "99001310500720240001200", clase: ["Procesos", "Verbales"], demandante: ["Ana Falsa Uno Y Otros"], demandado: ["Cooperativa De", "Mentira Ltda."], fecha: "31/05/2024", auto: ["Auto Decide - Accede A", "Solicitud - Suspende", "Proceso"] },
+    { rad: "99001310500720240001300", clase: ["Procesos", "Ejecutivos"], demandante: ["Carla Inventada"], demandado: ["Diana Ejemplo"], fecha: "31/05/2024", auto: ["Auto Admite Demanda"] },
+  ];
+  const r = await leer(await armarEstadoXXI(regs));
+  assert.equal(r.filas.length, 3);
+  assert.deepEqual(r.meta, { paginas: 1, juzgado: "Juzgado De Circuito - Civil Laboral 007 Pruebaville", estado: "88", fecha: "03/06/2024", tipo: "estado", secretario: "PEDRO PRUEBA FALSO", registros: 3 });
+  const [a, b, c] = r.filas;
+  assert.equal(a.radicado, "99001310500720230004300");
+  assert.equal(a.demandante, "Empresa Inventada S.A.S");
+  assert.equal(a.actuacion, "Auto Pone En Conocimiento");
+  assert.equal(a.anotacion, "Pone En Conocimiento Oficio");
+  assert.equal(a.fecha, "31/05/2024");
+  assert.equal(a.confianza, "alta");
+  assert.equal(b.clase, "Procesos Verbales");
+  assert.equal(b.demandado, "Cooperativa De Mentira Ltda.");
+  assert.equal(b.actuacion, "Auto Decide");
+  assert.equal(b.anotacion, "Accede A Solicitud - Suspende Proceso");
+  assert.deepEqual([c.actuacion, c.anotacion], ["Auto Admite Demanda", ""]);
+  assert.deepEqual(r.avisos, []);
+  assert.match(r.notas.map((n) => n.texto).join(" "), /Número de Registros/);
+  // El pie dice más registros de los que se leyeron: se avisa.
+  const corto = await leer(await armarEstadoXXI(regs.slice(0, 2), { total: 3 }));
+  assert.match(corto.avisos.join(" "), /dice 3 registros y se leyeron 2/);
+});
+
+test("columna de solo números cortos y tabla con Auto / Anotación", async () => {
+  assert.equal(columnaDeTitulo("Auto / Anotación"), "descripcion");
+  const t = leerTabla([["Radicado", "Demandante", "Auto / Anotación", "Fecha"], ["2024-00012", "ANA FALSA", "Auto Decide - Fija fecha", "4 de marzo de 2024"]]);
+  const f = t.filas[0];
+  assert.deepEqual([f.actuacion, f.anotacion, f.fecha], ["Auto Decide", "Fija fecha", "04/03/2024"]);
+});
+
+// Cuarta forma: estado de los juzgados administrativos impreso desde la web
+// (SAMAI). Celdas centradas en la fila: hay celdas que arrancan más arriba
+// que el radicado, partido en tres líneas ("99001-33-35-", "010-2026-",
+// "00400-00"). Columnas Reg, Ponente, Docum. a notif. y Descargar.
+async function armarEstadoAdministrativo(registros) {
+  const pdf = await PDFDocument.create();
+  const f = await pdf.embedFont(StandardFonts.Helvetica);
+  const p = pdf.addPage([612, 1008]);
+  const t = (texto, x, y, size = 7) => p.drawText(texto, { x, y, size, font: f });
+  t("Juzgado Administrativo de Pruebaville-JUZGADO ADMINISTRATIVO 010 ADMINISTRATIVO", 30, 970, 10);
+  t("ESTADO DE FECHA: 01/10/2026", 30, 955, 10);
+  [["Reg", 40], ["Radicacion", 63], ["Ponente", 115], ["Demandante", 183], ["Demandado", 242], ["Clase", 314], ["Actuación", 414]].forEach(([s, x]) => t(s, x, 924, 9));
+  t("Fecha", 359, 930, 9);
+  t("Providencia", 359, 918, 9);
+  t("Docum. a", 462, 930, 9);
+  t("notif.", 462, 918, 9);
+  t("Descargar", 527, 923, 12);
+  let centro = 860;
+  registros.forEach((r, i) => {
+    // Cada columna centrada en la fila: más líneas, más arriba empieza.
+    const col = (lineas, x) => lineas.forEach((l, k) => t(l, x, centro + 4 * (lineas.length - 1) - 8 * k));
+    t(String(i + 1), 40, centro);
+    col(r.rad, 63);
+    col(["JUZGADO 10", "ADMINISTRATIVO", "SEC SEGUNDA"], 115);
+    col(r.demandante, 183);
+    col(r.demandado, 242);
+    col(r.clase, 314);
+    t(r.fecha, 359, centro);
+    col(r.actuacion, 414);
+    col(r.doc, 462);
+    const alto = 8 * Math.max(r.doc.length, r.demandado.length, r.demandante.length, 4);
+    centro -= alto + 30;
+  });
+  t("1/1", 560, 30);
+  return Buffer.from(await pdf.save());
+}
+
+test("estado administrativo: celdas centradas, radicado en tres líneas y columnas que no son datos", async () => {
+  const r = await leer(await armarEstadoAdministrativo([
+    { rad: ["99001-33-35-", "010-2026-", "00400-00"], demandante: ["ANA", "PRUEBA", "FALSA"], demandado: ["ENTIDAD", "INVENTADA DE", "PENSIONES -", "MENTIRAPENSIONES,", "OTRA ENTIDAD"], clase: ["ACCIONES", "DE", "TUTELA"], fecha: "30/09/2026", actuacion: ["Auto", "concede", "impugnacion"], doc: ["CCB. ..", "Documento", "firmado", "electrónicamente", "por:JUEZ DE", "PRUEBA", "fecha firma:Sep", "30 2026"] },
+    { rad: ["99001-33-35-", "010-2026-", "00431-00"], demandante: ["BETO", "INVENTADO"], demandado: ["DIRECCION DE", "MENTIRAS"], clase: ["NULIDAD Y", "RESTABLECIMIENTO"], fecha: "29/09/2026", actuacion: ["Auto que", "admite la", "demanda"], doc: ["Admite", "demanda"] },
+  ]));
+  assert.equal(r.filas.length, 2);
+  assert.deepEqual(r.meta, { paginas: 1, juzgado: "Juzgado Administrativo de Pruebaville-JUZGADO ADMINISTRATIVO 010 ADMINISTRATIVO", fecha: "01/10/2026", tipo: "estado" });
+  const [a, b] = r.filas;
+  assert.equal(a.radicado, "99001333501020260040000");
+  assert.equal(a.radicadoTexto, "99001-33-35- 010-2026- 00400-00");
+  assert.equal(a.clase, "ACCIONES DE TUTELA");
+  assert.equal(a.demandante, "ANA PRUEBA FALSA");
+  assert.equal(a.demandado, "ENTIDAD INVENTADA DE PENSIONES - MENTIRAPENSIONES, OTRA ENTIDAD", "la celda que arranca arriba del radicado es de su fila");
+  assert.equal(a.actuacion, "Auto concede impugnacion");
+  assert.match(a.anotacion, /^CCB\. \.\. Documento firmado electrónicamente/);
+  assert.equal(a.fecha, "30/09/2026");
+  assert.equal(a.extra, "JUZGADO 10 ADMINISTRATIVO SEC SEGUNDA", "Ponente va a Otras columnas; Reg y Descargar no");
+  assert.equal(a.confianza, "alta");
+  assert.equal(b.radicado, "99001333501020260043100");
+  assert.equal(b.clase, "NULIDAD Y RESTABLECIMIENTO");
+  assert.deepEqual([b.actuacion, b.anotacion], ["Auto que admite la demanda", "Admite demanda"]);
+  assert.equal(iniciaRadicado("00400-00"), false, "la cola del radicado no abre registro");
+  assert.equal(columnaDeTitulo("Medio de control"), "clase");
+  assert.equal(columnaDeTitulo("Docum. a notif."), "anotacion");
+  assert.equal(columnaDeTitulo("Reg"), "nada");
+});
+
+// Quinta forma: "Reporte de Estado" de la página web de un juzgado. Número
+// corto pegado (año y consecutivo, 9 dígitos), "Grupo y Tipo", fechas
+// aaaa-mm-dd, celdas centradas sin blanco entre filas y sin columna de
+// actuación. El PDF pierde las letras con tilde ("Pruebanó" llega "Pruebn").
+async function armarReporteWeb(registros, { total = registros.length } = {}) {
+  const pdf = await PDFDocument.create();
+  const f = await pdf.embedFont(StandardFonts.Helvetica);
+  const p = pdf.addPage([842, 595]);
+  const t = (texto, x, y, size = 9) => p.drawText(texto, { x, y, size, font: f });
+  t("Juzgado Promiscuo Municipal de Villapruebn", 300, 494, 14);
+  t("Villapruebn - Cundinamarca - Colombia", 357, 479);
+  t("www.juzgadoinventado.com", 375, 465);
+  t("Reporte de Estado", 369, 431, 12);
+  t("Fecha: 2026-09-23", 377, 415, 11);
+  t("Total de Procesos", 372, 380, 8);
+  t(`: ${total}`, 442, 380, 14);
+  [["Número", 57], ["Grupo y Tipo", 181], ["Demandante", 355], ["Demandado", 530], ["Fecha Auto", 666], ["Cuaderno", 747]].forEach(([s, x]) => t(s, x, 348));
+  let y = 326;
+  for (const r of registros) {
+    const col = (lineas, x) => lineas.forEach((l, k) => t(l, x, y + 5.5 * (lineas.length - 1) - 11 * k));
+    t(r.numero, 52, y);
+    col(r.clase, 115);
+    col(r.demandante, 308);
+    col(r.demandado, 462);
+    t(r.fecha, 668, y);
+    t("1", 765, y);
+    y -= 27;
+  }
+  t("_______________________________________", 300, y - 30);
+  t("PEDRO PRUEBA FALSO", 330, y - 42);
+  t("Secretario", 360, y - 54);
+  return Buffer.from(await pdf.save());
+}
+
+test("reporte de estado web: número corto pegado, celdas centradas sin blanco, fechas aaaa-mm-dd", async () => {
+  const regs = [
+    { numero: "201800762", clase: ["CIVIL- EJECUTIVO SINGULAR"], demandante: ["CONJUNTO INVENTADO", "DE PRUEBA P.H"], demandado: ["ANA FALSA Y BETO", "DE MENTIRA"], fecha: "2026-09-22" },
+    { numero: "202100170", clase: ["CIVIL- EJECUTIVOS ALIMENTOS"], demandante: ["CARLA INVENTADA"], demandado: ["DIANA EJEMPLO"], fecha: "2026-09-21" },
+    { numero: "202500386", clase: ["CIVIL- RESPONSABILIDAD CIVIL", "CONTRACTUAL"], demandante: ["EVA PRUEBA", "FALSA"], demandado: ["FIDEL DE MENTIRA Y", "OTROS"], fecha: "2026-09-22" },
+  ];
+  const r = await leer(await armarReporteWeb(regs));
+  assert.equal(r.filas.length, 3);
+  assert.deepEqual(r.meta, { paginas: 1, juzgado: "Juzgado Promiscuo Municipal de Villapruebn", fecha: "23/09/2026", registros: 3, tipo: "estado", secretario: "PEDRO PRUEBA FALSO" });
+  const [a, b, c] = r.filas;
+  assert.equal(a.radicadoTexto, "201800762");
+  assert.equal(a.clase, "CIVIL- EJECUTIVO SINGULAR");
+  assert.equal(a.demandante, "CONJUNTO INVENTADO DE PRUEBA P.H", "la línea encima del número es de su fila");
+  assert.equal(a.demandado, "ANA FALSA Y BETO DE MENTIRA");
+  assert.equal(a.fecha, "22/09/2026");
+  assert.equal(a.cuaderno, "1");
+  assert.equal(a.actuacion, "");
+  assert.equal(a.confianza, "media");
+  assert.deepEqual(a.avisos, ["Este estado trae solo el número corto del proceso; el radicado de 23 dígitos no se puede armar."]);
+  assert.deepEqual([b.demandante, b.fecha], ["CARLA INVENTADA", "21/09/2026"]);
+  assert.equal(c.clase, "CIVIL- RESPONSABILIDAD CIVIL CONTRACTUAL");
+  assert.equal(c.demandado, "FIDEL DE MENTIRA Y OTROS");
+  assert.match(r.avisos.join(" "), /no trae la actuación/);
+  assert.equal(columnaDeTitulo("Número"), "radicado");
+  assert.equal(columnaDeTitulo("Grupo y Tipo"), "clase");
+  // El total del encabezado no coincide: se avisa.
+  const corto = await leer(await armarReporteWeb(regs.slice(0, 2), { total: 3 }));
+  assert.match(corto.avisos.join(" "), /dice 3 registros y se leyeron 2/);
 });

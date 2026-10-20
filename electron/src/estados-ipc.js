@@ -4,12 +4,16 @@
 import fs from "node:fs";
 import path from "node:path";
 import {
-  COLUMNAS_EXPORTAR, columnasConDatos, csvDeFilas, estadoAMarkdown, filasParaExportar, leerEstado, leerPorLineas, leerTabla,
+  COLUMNAS_EXPORTAR, columnasConDatos, completarRadicados, csvDeFilas, estadoAMarkdown, filasParaExportar, leerEstado, leerPorLineas, leerTabla,
 } from "../compartido/estados.js";
 import { extensionDe, quitarEncabezado } from "../compartido/convertir.js";
 import { convertirDatos, itemsDePdf, tablasDeDatos } from "./convertir/convertidores.js";
 import { libroDeHojas } from "./excel.js";
 import { guardarTemporal } from "./pdftools-ipc.js";
+import { claveJuzgado, esRadicadoCompleto, prefijoMayoritario } from "../compartido/radicado.js";
+import { ahora } from "../compartido/logica.js";
+import { filas as filasDb, run } from "./db.js";
+import { CONSULTA_URL, obtenerJson, pedirRed } from "./rama.js";
 
 export const EXTENSIONES_ESTADO = ["pdf", "xlsx", "xls", "ods", "csv", "docx", "html", "htm"];
 const MAX_BYTES = 60 * 1024 * 1024;
@@ -57,6 +61,52 @@ export async function leerArchivoEstado(ruta, { datosDir = "" } = {}) {
   return { ...base, tipo: "texto", meta: {}, filas: numerar(r.filas), columnas: columnasConDatos(r.filas), notas: r.notas, avisos: ["No encontré los títulos de las columnas: se leyó línea por línea."] };
 }
 
+// ---------- Radicado armado ----------
+
+let catalogo = null;
+function catalogoRama() {
+  if (!catalogo) {
+    try {
+      catalogo = JSON.parse(fs.readFileSync(new URL("../compartido/pp_catalogo.json", import.meta.url), "utf8"));
+    } catch {
+      catalogo = { despachos: [], munis: [] };
+    }
+  }
+  return catalogo;
+}
+
+// Lo que la app sabe de los juzgados: lo aprendido de estados, los procesos
+// de la consulta nacional y SAMAI (radicado y despacho reales) y el catálogo.
+export function contextoRadicado(db) {
+  const aprendidos = db ? [
+    ...filasDb(db, "SELECT juzgado, prefijo FROM rad_juzgado"),
+    ...filasDb(db, `SELECT despacho AS juzgado, substr(radicado, 1, 12) AS prefijo FROM proceso WHERE length(radicado) = 23 AND despacho <> ''
+      UNION SELECT despacho AS juzgado, substr(radicado, 1, 12) AS prefijo FROM samai_caso WHERE length(radicado) = 23 AND despacho <> ''`),
+  ] : [];
+  const { despachos = [], munis = [] } = catalogoRama();
+  return { aprendidos, despachos, munis };
+}
+
+// Un estado con radicados completos enseña el prefijo de su juzgado.
+export function aprenderJuzgado(db, resultado) {
+  const juzgado = resultado?.meta?.juzgado;
+  if (!db || !juzgado || !resultado.ok) return;
+  const prefijo = prefijoMayoritario((resultado.filas || []).filter((f) => !f.radicadoArmado).map((f) => f.radicado));
+  if (!prefijo) return;
+  run(db, `INSERT INTO rad_juzgado (clave, juzgado, prefijo, veces, actualizado_en) VALUES (?, ?, ?, 1, ?)
+    ON CONFLICT(clave) DO UPDATE SET prefijo = excluded.prefijo, juzgado = excluded.juzgado, veces = veces + 1, actualizado_en = excluded.actualizado_en`,
+  [claveJuzgado(juzgado), juzgado, prefijo, ahora()]);
+}
+
+// Una sola consulta a la Rama por el número, sin guardar nada.
+export async function verificarRadicado(numero, { pedir = pedirRed } = {}) {
+  if (!esRadicadoCompleto(numero)) return { ok: false, error: "El radicado debe tener 23 dígitos." };
+  const ctx = { pedir, dormir: (ms) => new Promise((r) => setTimeout(r, ms)), log: () => {} };
+  const data = await obtenerJson(CONSULTA_URL, { numero, SoloActivos: "false", pagina: "1" }, ctx, true);
+  const procesos = Array.isArray(data?.procesos) ? data.procesos : [];
+  return { ok: true, existe: procesos.length > 0, despacho: String(procesos[0]?.despacho || "").trim() };
+}
+
 function numerar(filas) {
   return filas.map((f, i) => ({ ...f, id: i + 1 }));
 }
@@ -67,7 +117,7 @@ function nombreSugerido(lotes, ext) {
   return `${lotes.length > 1 ? "estados" : partes.join("-")}.${ext}`;
 }
 
-export function registrarEstados({ ipcMain, dialog, ventana, mensajeHumano, datosDir }) {
+export function registrarEstados({ ipcMain, dialog, ventana, mensajeHumano, datosDir, db = () => null, planCerrado = () => null }) {
   ipcMain.handle("estados-elegir", async () => {
     try {
       const r = await dialog.showOpenDialog(ventana(), {
@@ -83,9 +133,27 @@ export function registrarEstados({ ipcMain, dialog, ventana, mensajeHumano, dato
 
   ipcMain.handle("estados-leer", async (_e, dato) => {
     try {
-      return await leerArchivoEstado(String(dato?.ruta || ""), { datosDir: datosDir() });
+      const r = await leerArchivoEstado(String(dato?.ruta || ""), { datosDir: datosDir() });
+      if (!r.ok) return r;
+      try {
+        aprenderJuzgado(db(), r);
+        completarRadicados(r, contextoRadicado(db()));
+      } catch {
+        // Sin base o sin catálogo: el estado se muestra igual, sin armar.
+      }
+      return r;
     } catch (error) {
       return { ok: false, error: error?.codigo === "clave" ? "Ese PDF tiene contraseña. Ábralo primero en Desbloquear." : mensajeHumano(error) };
+    }
+  });
+
+  ipcMain.handle("estados-verificar", async (_e, dato) => {
+    try {
+      const cerrado = planCerrado();
+      if (cerrado) return cerrado;
+      return await verificarRadicado(String(dato?.radicado || ""));
+    } catch (error) {
+      return { ok: false, error: mensajeHumano(error) };
     }
   });
 

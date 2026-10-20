@@ -10,10 +10,12 @@ export const PP_PORTLET_ID = 178845807;
 export const PP_POR_PAGINA = 10;
 export const PP_ULTIMAS_PAGINAS = 5;
 
-// Solo las últimas páginas: lo nuevo sale primero y no se puede pedir más.
+// Solo las primeras páginas: el portlet ordena lo nuevo primero, así que
+// las 5 primeras son lo último publicado. Pedir la cola traía lo más viejo
+// (2024) en despachos con más de 50 publicaciones.
 export function rangoPaginas(total, porPagina = PP_POR_PAGINA, ultimas = PP_ULTIMAS_PAGINAS) {
   const paginas = Math.max(1, Math.ceil(Number(total || 0) / porPagina));
-  return { inicio: Math.max(1, paginas - ultimas + 1), fin: paginas, total: paginas };
+  return { inicio: 1, fin: Math.min(paginas, ultimas), total: paginas };
 }
 
 // Nombre seguro para guardar el PDF en el PC del usuario.
@@ -80,7 +82,7 @@ export function deptoDe(codigo) {
 }
 
 function limpiar(html) {
-  return String(html || "").replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/\s+/g, " ").trim();
+  return String(html || "").replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/\s+/g, " ").trim();
 }
 
 function esDocumento(href) {

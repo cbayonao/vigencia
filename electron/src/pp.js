@@ -199,8 +199,8 @@ function guardarDocs(db, pubId, docs) {
 }
 
 // Carga un despacho en segundo plano: avisa progreso, acepta cancelación,
-// guarda por página para no perder lo andado. Solo las últimas 5 páginas
-// (lo nuevo sale primero) y los PDF no se descargan.
+// guarda por página para no perder lo andado. Solo las primeras 5 páginas
+// (el portlet ordena lo nuevo primero) y los PDF no se descargan.
 export function crearCargaPp(db, { depto, despacho }) {
   const estado = {
     corriendo: false,
@@ -242,7 +242,25 @@ export function crearCargaPp(db, { depto, despacho }) {
             if (estado.cancelada) return nuevas;
             if (!fila.article_id || !fila.detalle_url) continue;
             const existe = uno(db, "SELECT id FROM pp_publicacion WHERE article_id = ?", [fila.article_id]);
-            if (existe) continue;
+            if (existe) {
+              // Quedó guardada sin documentos por un fallo del detalle: se
+              // reintenta en vez de ignorarla para siempre.
+              const conDocs = uno(db, "SELECT 1 FROM pp_documento WHERE publicacion = ? LIMIT 1", [existe.id]);
+              if (conDocs) continue;
+              try {
+                await pausa();
+                if (estado.cancelada) return nuevas;
+                const docs = await traerDocumentos(sesion, fila.detalle_url);
+                guardarDocs(db, existe.id, docs);
+                estado.docs += docs.length;
+                if (docs.length) nuevas += 1;
+              } catch (error) {
+                estado.errores += 1;
+                estado.error = String(error?.message || error).slice(0, 200);
+              }
+              avisar();
+              continue;
+            }
             try {
               const pubId = guardarFila(db, despacho, fila);
               await pausa();

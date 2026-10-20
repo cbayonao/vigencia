@@ -16,10 +16,15 @@ import {
   totalDe,
 } from "../compartido/pp.js";
 
-test("el rango trae solo las últimas 5 páginas", () => {
-  assert.deepEqual(rangoPaginas(1147), { inicio: 111, fin: 115, total: 115 });
+test("el rango trae solo las primeras 5 páginas (lo nuevo primero)", () => {
+  assert.deepEqual(rangoPaginas(1147), { inicio: 1, fin: 5, total: 115 });
   assert.deepEqual(rangoPaginas(30), { inicio: 1, fin: 3, total: 3 });
   assert.deepEqual(rangoPaginas(0), { inicio: 1, fin: 1, total: 1 });
+});
+
+test("el nombre del documento no trae entidades html", () => {
+  const docs = extraerDocumentos(`<table id="tabla-docs-x"><tr><td><a href="/documents/1/a.pdf">ESTADO No. 47&nbsp;(20-10-2026)</a></td></tr></table>`);
+  assert.equal(docs[0].nombre, "ESTADO No. 47 (20-10-2026)");
 });
 
 test("el nombre para guardar es seguro y termina en pdf", () => {

@@ -1,5 +1,24 @@
 # Registro de cambios
 
+## Sin publicar (rama feature/estados-formatos)
+
+### Estados del juzgado a tabla
+- Estados en otro formato: ahora también se leen los estados hechos en Word con el título "NOTIFICACIÓN POR ESTADO DEL ..." (un registro por línea, la clase junto al número del proceso, por ejemplo "Ejecutivo No 2023-00073", la fecha del auto en letras y el cuaderno como "1 y 2."). Salen en la misma tabla: clase, número como viene, demandante, demandado, actuación, fecha del auto (dd/mm/aaaa) y cuaderno. La fecha del estado se toma del título.
+- Estos estados no traen el radicado de 23 dígitos, solo el número corto: la columna Radicado queda vacía, el número va en Radicado como viene, la fila avisa y no se cruza con los procesos que usted sigue.
+- El lector detecta el formato de cada página y usa el lector de ese formato; el listado de la Rama se lee igual que antes. Las palabras que Word parte en pedazos se vuelven a juntar.
+- Un solo lector para cualquier estado con fila de títulos: ya no hay un lector por formato. Los títulos dicen qué es cada columna (Proceso, Radicación, Demandante, Accionante, Actuación, Auto / Anotación, Fecha, Cdno...) y la columna del número decide cómo empieza cada registro: con el radicado completo o con el número corto (con o sin la clase delante). El listado de la Rama sale igual que antes.
+- Estados de Justicia XXI ("FIJACIÓN DE ESTADOS"): radicado completo en una línea, celdas de varias líneas y una sola columna Auto / Anotación, que se parte en el primer guion (Auto Decide - Accede a la solicitud). La fecha del estado se toma del título (Estado No. 104 De Martes, 23 De Julio De 2024) y la secretaría del pie.
+- Si el pie dice el número de registros y no coincide con las filas leídas, se avisa.
+- El pie de la última página se separa también cuando no hay un salto grande: empieza en la primera línea que cruza columnas.
+- Estados de los juzgados administrativos impresos desde la web (SAMAI): columnas Reg, Radicación, Ponente, Demandante, Demandado, Clase, Fecha Providencia, Actuación y Docum. a notif. Las celdas van centradas en la fila y el radicado viene partido en tres líneas; cada registro se toma completo con su bloque. Docum. a notif. queda como anotación, Ponente va a Otras columnas y Reg y Descargar no se copian. Medio de control se reconoce como clase.
+- La cola del radicado ("00400-00") ya no se confunde con el inicio de otro registro: el código del municipio nunca empieza en 00.
+- Radicado armado para juzgados administrativos: 33 33, o la sección cuando el despacho va por secciones (en Bogotá, primera 34, segunda 35, tercera 36, cuarta 37); si el nombre no dice la sección se busca en el catálogo la que tiene ese número. También se reconocen los juzgados civiles del circuito con asuntos laborales (31 12), el número después de la especialidad ("Civil Laboral 001") y el municipio al final del nombre ("... 001 Andes").
+- Radicado armado: en los estados que solo traen el número corto (2023-00073, 2023-73, 26-489, No 2024-00210, 202400210, con recurso 2023-00073-01) el radicado de 23 dígitos se arma con el juzgado del título del estado. El juzgado sale, en este orden, de lo aprendido de estados con radicados completos y de los procesos de la consulta nacional y SAMAI que usted ya tiene, o del catálogo de despachos de la Rama que trae la app (municipio, corporación, especialidad y número del juzgado).
+- El radicado armado se ve distinto en la tabla (Armado, no viene en el PDF) y sirve para cruzar con los procesos que usted sigue. Si se tuvo que suponer algo (el juzgado 001 cuando hay varios en el municipio, o un juzgado que no está en el catálogo) queda como Supuesto, con confianza Dudosa, y no se puede agregar a Mis procesos hasta verificarlo o corregirlo.
+- Verificar en la consulta: una sola consulta a la Rama por ese número, sin guardar nada, que confirma si el radicado existe.
+- Los despachos comisorios y los números sin año no se arman.
+- Base de datos: migración 20 agrega la tabla rad_juzgado (juzgados aprendidos). No cambia nada de lo que ya existe.
+
 ## 3.8.0 (19 de octubre de 2026)
 
 ### Mis procesos

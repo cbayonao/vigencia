@@ -17,6 +17,29 @@ const plural = (n, uno, varios) => `${n} ${n === 1 ? uno : varios}`;
 const EXT = /\.(pdf|xlsx|xls|ods|csv|docx|html?)$/i;
 const EDITABLES = new Set(["clase", "demandante", "demandado", "actuacion", "anotacion", "fecha", "cuaderno", "folios"]);
 const CONFIANZA = { media: "Revisar", baja: "Dudosa" };
+const ETIQUETA_ARMADO = { armado: "Armado, no viene en el PDF", supuesto: "Supuesto, revíselo", verificado: "Armado y verificado en la consulta" };
+
+// El radicado supuesto no se agrega hasta verificarlo o corregirlo.
+const sePuedeSeguir = (f) => Boolean(f?.radicado) && f.radicadoArmado !== "supuesto";
+
+async function verificar(f) {
+  const fila = original(f);
+  if (!fila?.radicado) return;
+  const r = await window.vigencia.estadosVerificar(fila.radicado);
+  if (!r?.ok) {
+    avisar(r?.error || "No pude consultar la Rama.", "error");
+    return;
+  }
+  if (!r.existe) {
+    avisar("La consulta de la Rama no tiene ese radicado. Revise el juzgado o corrija el número.", "error");
+    return;
+  }
+  fila.radicadoArmado = "verificado";
+  fila.radicadoNota = r.despacho ? `Verificado en la consulta: ${r.despacho}.` : "Verificado en la consulta.";
+  if (fila.confianza === "baja") fila.confianza = "media";
+  avisar("El radicado existe en la consulta de la Rama.");
+  pintarTabla();
+}
 
 const e = {
   lotes: [],
@@ -117,7 +140,7 @@ async function seguirFilas(filas) {
   const porLote = new Map();
   for (const f of filas) {
     const fila = original(f);
-    if (!fila?.radicado) continue;
+    if (!sePuedeSeguir(fila)) continue;
     if (!porLote.has(f.lote)) porLote.set(f.lote, []);
     porLote.get(f.lote).push(fila);
   }
@@ -144,7 +167,7 @@ async function seguirFilas(filas) {
 }
 
 function seguir(fila) {
-  if (fila.radicado) seguirFilas([fila]);
+  if (sePuedeSeguir(fila)) seguirFilas([fila]);
 }
 
 function pintarElegidas() {
@@ -374,7 +397,7 @@ function filaTabla(f, cols, varios) {
   for (const c of cols) tr.append(celda(f, c));
   const seg = nodo("td", "pv-est-seguir");
   if (f.seguido) seg.append(nodo("span", "pv-est-sigue", "Usted sigue este proceso"));
-  else if (f.radicado) {
+  else if (sePuedeSeguir(f)) {
     const l = nodo("label", "pv-est-elegir");
     const c = document.createElement("input");
     c.type = "checkbox";
@@ -409,9 +432,15 @@ function celda(f, c) {
     const texto = nodo("span", "pv-est-editable", f.radicadoTexto || f.radicado);
     editable(texto, f, "radicadoTexto", `Radicado de la fila ${f.id}`);
     td.append(texto);
-    const num = nodo("span", `pv-est-rad23${f.radicado ? "" : " falta"}`, f.radicado || "Sin los 23 dígitos");
+    const num = nodo("span", `pv-est-rad23${f.radicado ? "" : " falta"}${f.radicadoArmado ? ` armado ${f.radicadoArmado}` : ""}`, f.radicado || "Sin los 23 dígitos");
     if (f.radicadoNota) num.title = f.radicadoNota;
     td.append(num);
+    // Armado con el juzgado del estado: se marca para no confundirlo con uno
+    // leído del PDF, y se puede verificar con una consulta a la Rama.
+    if (f.radicadoArmado) {
+      td.append(nodo("span", "pv-est-armado", ETIQUETA_ARMADO[f.radicadoArmado] || ""));
+      if (f.radicadoArmado !== "verificado") td.append(boton("Verificar en la consulta", "boton-linea pv-est-boton", () => verificar(f)));
+    }
     return td;
   }
   const span = nodo("span", "pv-est-editable", f[c.id] || "");
@@ -443,6 +472,7 @@ function editable(el, f, campo, etiqueta) {
       const r = normalizarRadicadoEstado(valor);
       fila.radicado = r.numero;
       fila.radicadoNota = r.nota;
+      fila.radicadoArmado = "";
       fila.seguido = Boolean(r.numero) && e.seguidos.has(r.numero);
     }
     pintarTabla();

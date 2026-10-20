@@ -1,6 +1,6 @@
 ---
 import "../styles/global.css";
-import { VERSION, PRECIO, DIAS_PRUEBA, WHATSAPP, MENSAJE_WHATSAPP, BASE_DESCARGAS, ARCHIVOS } from "../data.ts";
+import { VERSION, PRECIO, PLANES, NOTA_PRECIOS, NOTA_DESPACHO, DIAS_PRUEBA, WHATSAPP, MENSAJE_WHATSAPP, BASE_DESCARGAS, ARCHIVOS } from "../data.ts";
 import { existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -274,27 +274,28 @@ const macLista = (await macEnRelease()) ?? existsSync(join(raizRepo, ARCHIVOS.ma
 
 <!-- PRECIO -->
 <section id="precio" class="px-5 pb-20 md:pb-28">
-  <div class="revelar max-w-5xl mx-auto bg-noche text-hielo rounded-[2rem] p-8 md:p-12 grid md:grid-cols-2 gap-10 items-center">
-    <div>
-      <p class="text-cielo font-bold text-sm tracking-widest uppercase">Plan anual. {DIAS_PRUEBA} días gratis</p>
-      <h2 class="font-serif text-3xl md:text-5xl mt-2">{PRECIO} COP <span class="text-cielo text-2xl">al año</span></h2>
-      <p class="mt-4 text-cielo">Instalas y usas todo {DIAS_PRUEBA} días sin pagar y sin tarjeta. Si se acaban y no pagas, la app se cierra pero no se borra nada. El año cuenta desde que se confirma el pago. Si renuevas antes, se suma a tu fecha.</p>
-      <ul class="mt-6 space-y-2 text-sm">
-        <li>{DIAS_PRUEBA} días gratis con todo incluido</li>
-        <li>Procesos ilimitados</li>
-        <li>Revisiones, memoriales, informes y Excel sin límite</li>
-        <li>Las actualizaciones del año vienen incluidas</li>
-      </ul>
+  <div class="revelar max-w-6xl mx-auto">
+    <p class="text-center text-marino font-bold text-sm tracking-widest uppercase">Planes. {DIAS_PRUEBA} días de Premium gratis</p>
+    <h2 class="font-serif text-3xl md:text-5xl text-center mt-2 tracking-tight">Elige tu plan</h2>
+    <div class="mt-10 grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
+      {PLANES.map((plan) => (
+        <div class={`rounded-3xl p-7 border ${plan.nombre === "Premium" ? "bg-noche text-hielo border-noche" : "bg-white border-linea"}`}>
+          <p class="text-sm font-bold uppercase tracking-widest">{plan.nombre}</p>
+          <p class="font-serif text-3xl mt-3">{plan.precio}</p>
+          {plan.periodo && <p class="text-sm mt-1 opacity-80">{plan.periodo}</p>}
+          {plan.nota && <p class="text-xs font-semibold mt-3 text-marino bg-hielo rounded-lg px-3 py-2">{plan.nota}</p>}
+          <p class="mt-4 font-semibold">{plan.procesos}</p>
+          <ul class="mt-3 space-y-2 text-sm opacity-90">
+            {plan.incluye.map((item) => <li>{item}</li>)}
+          </ul>
+        </div>
+      ))}
     </div>
-    <div class="bg-white text-tinta rounded-3xl p-7">
-      <p class="text-sm font-bold text-suave uppercase tracking-widest">Cómo comprar</p>
-      <ol class="mt-4 space-y-3 text-sm text-suave">
-        <li><strong class="text-tinta">1.</strong> Descarga VigencIA y pruébala {DIAS_PRUEBA} días gratis.</li>
-        <li><strong class="text-tinta">2.</strong> Escríbenos por WhatsApp al <strong class="text-tinta">{numeroVisible}</strong>.</li>
-        <li><strong class="text-tinta">3.</strong> Activas con tu <strong class="text-tinta">código personal</strong>, que sirve solo en tu equipo.</li>
-      </ol>
-      <a href={enlaceWhatsapp} target="_blank" rel="noopener" class="mt-6 block text-center bg-marino hover:bg-azul text-white font-bold px-6 py-3.5 rounded-xl transition">Comprar por WhatsApp</a>
-      <p class="text-xs text-suave text-center mt-3">Descargar no cuesta nada. Los primeros {DIAS_PRUEBA} días tampoco.</p>
+    <p class="mt-6 text-center text-sm text-suave">{NOTA_DESPACHO}</p>
+    <p class="mt-2 text-center text-sm text-suave">{NOTA_PRECIOS}</p>
+    <div class="mt-8 text-center">
+      <a href={enlaceWhatsapp} target="_blank" rel="noopener" class="inline-block bg-marino hover:bg-azul text-white font-bold px-6 py-3.5 rounded-xl transition">Comprar por WhatsApp al {numeroVisible}</a>
+      <p class="text-xs text-suave mt-3">Descargar no cuesta nada. Los primeros {DIAS_PRUEBA} días tampoco. Activas con tu código personal, que sirve solo en tu equipo.</p>
     </div>
   </div>
 </section>

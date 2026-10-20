@@ -180,6 +180,71 @@ test("el uso del proveedor se reporta sin romper el texto", async () => {
   assert.deepEqual(uso, { entrada: 100, salida: 50 });
 });
 
+test("Anthropic va sin temperature, con system y el resto del pedido", async () => {
+  let cuerpo = null;
+  let headers = null;
+  let url = "";
+  const fetchFn = async (direccion, pedido) => {
+    url = direccion;
+    headers = pedido.headers;
+    cuerpo = JSON.parse(pedido.body);
+    return respuestaSSE([
+      'event: content_block_delta\ndata: {"delta":{"text":"ok"}}\n\n',
+    ]);
+  };
+  const texto = await chatNube({
+    proveedor: "anthropic",
+    key: "sk-ant-prueba",
+    modelo: "claude-sonnet-5-5",
+    texto: "Redacta el memorial.",
+    instrucciones: "Eres un abogado.",
+    maxTokens: 800,
+    fetchFn,
+  });
+  assert.equal(texto, "ok");
+  assert.equal(url, "https://api.anthropic.com/v1/messages");
+  assert.equal("temperature" in cuerpo, false);
+  assert.equal("top_p" in cuerpo, false);
+  assert.equal("top_k" in cuerpo, false);
+  assert.equal(cuerpo.system, "Eres un abogado.");
+  assert.equal(cuerpo.model, "claude-sonnet-5-5");
+  assert.equal(cuerpo.max_tokens, 800);
+  assert.equal(cuerpo.stream, true);
+  assert.deepEqual(cuerpo.messages, [{ role: "user", content: "Redacta el memorial." }]);
+  assert.equal(headers["anthropic-version"], "2023-06-01");
+  assert.equal(headers["x-api-key"], "sk-ant-prueba");
+  assert.equal(headers["Content-Type"], "application/json");
+  assert.equal("anthropic-dangerous-direct-browser-access" in headers, false);
+});
+
+test("Anthropic sin instrucciones no manda system vacío", async () => {
+  let cuerpo = null;
+  const fetchFn = async (_url, pedido) => {
+    cuerpo = JSON.parse(pedido.body);
+    return respuestaSSE(['event: content_block_delta\ndata: {"delta":{"text":"ok"}}\n\n']);
+  };
+  await chatNube({ proveedor: "anthropic", key: "k", modelo: "claude-sonnet-5-5", texto: "hola", fetchFn });
+  assert.equal("system" in cuerpo, false);
+  assert.equal("temperature" in cuerpo, false);
+});
+
+test("un 400 de Anthropic llega con el motivo que da la API", async () => {
+  const fetchFn = async () => ({
+    ok: false,
+    status: 400,
+    text: async () => JSON.stringify({
+      type: "error",
+      error: { type: "invalid_request_error", message: "temperature is deprecated for this model." },
+    }),
+  });
+  const error = await chatNube({
+    proveedor: "anthropic", key: "k", modelo: "claude-sonnet-5-5", texto: "h", fetchFn,
+  }).catch((fallo) => fallo);
+  assert.match(error.message, /código 400/);
+  assert.match(error.message, /temperature is deprecated for this model/);
+  assert.match(mensajePrueba(error), /temperature is deprecated for this model/);
+});
+
 test("Anthropic junta entrada del inicio y salida del delta", async () => {
   let uso = null;
   const fetchFn = async () => respuestaSSE([

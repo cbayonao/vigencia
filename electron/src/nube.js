@@ -183,10 +183,19 @@ function errorDeConexion(error) {
   throw new Error("No pude conectar con el proveedor. Revise la conexión.");
 }
 
-async function chatAnthropic({ key, modelo, texto, maxTokens = 1024, onToken, fetchFn = fetch, onUso = null }) {
+async function chatAnthropic({ key, modelo, texto, maxTokens = 1024, onToken, fetchFn = fetch, instrucciones = "", onUso = null }) {
   const controlador = new AbortController();
   const reloj = setTimeout(() => controlador.abort(), 5 * 60 * 1000);
   try {
+    // Claude 5.5 rechaza temperature, top_p y top_k con un 400. No se envían.
+    const cuerpo = {
+      model: modelo,
+      max_tokens: maxTokens,
+      stream: true,
+      messages: [{ role: "user", content: texto }],
+    };
+    const sistema = String(instrucciones || "").trim();
+    if (sistema) cuerpo.system = sistema;
     const respuesta = await fetchFn("https://api.anthropic.com/v1/messages", {
       method: "POST",
       signal: controlador.signal,
@@ -194,15 +203,8 @@ async function chatAnthropic({ key, modelo, texto, maxTokens = 1024, onToken, fe
         "Content-Type": "application/json",
         "x-api-key": key,
         "anthropic-version": "2023-06-01",
-        "anthropic-dangerous-direct-browser-access": "true",
       },
-      body: JSON.stringify({
-        model: modelo,
-        max_tokens: maxTokens,
-        temperature: 0.2,
-        stream: true,
-        messages: [{ role: "user", content: texto }],
-      }),
+      body: JSON.stringify(cuerpo),
     });
     if (!respuesta.ok) {
       throw errorNube(respuesta.status, await respuesta.text().catch(() => ""));
@@ -328,7 +330,7 @@ export async function chatNube({ proveedor, key, modelo, base, texto, maxTokens 
     throw new Error("Escriba la dirección base del proveedor.");
   }
   if (definicion.formato === "anthropic") {
-    return chatAnthropic({ key, modelo, texto, maxTokens, onToken, fetchFn, onUso });
+    return chatAnthropic({ key, modelo, texto, maxTokens, onToken, fetchFn, onUso, instrucciones });
   }
   // Meta rinde con sus valores de fábrica: sin temperature y con esfuerzo medio.
   const esMeta = proveedor === "meta";

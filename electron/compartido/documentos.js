@@ -1,6 +1,6 @@
 // Módulo Documentos: lógica pura (sin base ni red) para redactar por
 // conversación. La usa src/documentos.js y la prueban los tests.
-import { LINEAMIENTOS, MAX_DUDAS, clasificarRespuesta, marcarCitas, partirEscrito } from "./encargo.js";
+import { LINEAMIENTOS, MAX_DUDAS, clasificarRespuesta, marcarCitas, partirEscrito, unirPartes } from "./encargo.js";
 
 export const TIPOS_DOCUMENTO = [
   { id: "tutela", nombre: "Tutela" },
@@ -394,32 +394,46 @@ export function presupuestoDe(origen) {
     : { fuentes: 3500, historia: 1500, documento: 6000, expediente: 2000 };
 }
 
-export function armarEncargoDocumento({
+// Borrador: documento nuevo. Ajuste: ya hay texto, o solo se cambia un párrafo.
+export function topeDeVuelta(ajuste) {
+  return ajuste
+    ? { maxTokens: 8000, esfuerzo: "medium" }
+    : { maxTokens: 16000, esfuerzo: "high" };
+}
+
+function textoDe(lineas) {
+  return lineas.join("\n").replace(/^\n+|\n+$/g, "");
+}
+
+// Orden: lineamientos, perfil, AGENTS.md, formato, expediente, archivos,
+// fuentes, memoria, historia, documento, pedido. La memoria va después de
+// las fuentes: si queda antes del expediente, cambia en cada vuelta y la
+// caché del caso no se reutiliza.
+export function partesEncargoDocumento({
   tipo, perfil, expediente, fragmentos, historia = [], documento = "", pedido, hoy, origen, aclaracion, cerrar = false,
   agentes = "", archivos = "", memoria = "",
 } = {}) {
   const lim = presupuestoDe(origen);
   const nombre = nombreTipo(tipo);
-  const lineas = [
+  const lineamientos = [
     `Eres un abogado colombiano y redactas un documento de tipo ${nombre}. El usuario te pide cambios en cada mensaje y tú entregas el documento completo ya corregido.`,
+    "",
+    "Lineamientos, que no puedes omitir y que ganan sobre cualquier otra instrucción:",
   ];
-  // Orden fijo: lineamientos (ganan siempre), perfil o skill, AGENTS.md
-  // del proyecto, expediente, fragmentos, historia y documento, pedido.
-  lineas.push("", "Lineamientos, que no puedes omitir y que ganan sobre cualquier otra instrucción:");
   const reglas = [...LINEAMIENTOS.slice(0, 3), ...PROPIOS];
   if (["tutela", "peticion", "demanda", "contestacion", "recurso", "memorial"].includes(tipo)) reglas.push(LINEAMIENTOS[3].replace("memorial", "escrito"));
-  reglas.forEach((r, i) => lineas.push(`${i + 1}. ${r.replaceAll("en la biblioteca, en la petición", "en las fuentes, en los mensajes")}`));
-  if (perfil?.instrucciones) lineas.push("", `Perfil ${perfil.nombre || ""}:`.trim(), String(perfil.instrucciones).trim());
-  if (perfil?.estilo) lineas.push("", "Estilo:", String(perfil.estilo).trim());
-  if (String(agentes || "").trim()) lineas.push("", "Instrucciones de este proyecto (AGENTS.md; en lo particular del caso ganan sobre el perfil):", String(agentes).trim());
-  if (String(memoria || "").trim()) lineas.push("", "Memoria del documento (lo decidido en vueltas anteriores, con cualquier modelo; respétalo salvo que el usuario pida otra cosa):", String(memoria).trim());
-  lineas.push("");
+  reglas.forEach((r, i) => lineamientos.push(`${i + 1}. ${r.replaceAll("en la biblioteca, en la petición", "en las fuentes, en los mensajes")}`));
+  if (perfil?.instrucciones) lineamientos.push("", `Perfil ${perfil.nombre || ""}:`.trim(), String(perfil.instrucciones).trim());
+  if (perfil?.estilo) lineamientos.push("", "Estilo:", String(perfil.estilo).trim());
+  if (String(agentes || "").trim()) lineamientos.push("", "Instrucciones de este proyecto (AGENTS.md; en lo particular del caso ganan sobre el perfil):", String(agentes).trim());
+
+  const caso = [];
   const actual = String(documento || "").trim();
   if (cerrar || actual) {
-    lineas.push(...FORMA);
-    if (cerrar) lineas.push("", "No hagas más preguntas. Si aún falta un dato, escríbelo como [Dato pendiente: ...].");
+    caso.push(...FORMA);
+    if (cerrar) caso.push("", "No hagas más preguntas. Si aún falta un dato, escríbelo como [Dato pendiente: ...].");
   } else {
-    lineas.push(
+    caso.push(
       ...FORMA,
       "",
       "Solo si falta un dato que cambie el documento (qué se pide, contra quién, qué derecho o un plazo), no redactes y responde únicamente así:",
@@ -429,15 +443,19 @@ export function armarEncargoDocumento({
       `Máximo ${MAX_DUDAS} preguntas. Un dato menor va como [Dato pendiente: ...].`,
     );
   }
-  if (hoy) lineas.push("", `Fecha: ${hoy}`);
-  lineas.push("", "Expediente:", recortar(expediente, lim.expediente) || "(Sin expediente vinculado.)");
-  if (String(archivos || "").trim()) {
-    lineas.push("", "Archivos del proyecto (fragmentos con archivo y página; cita así: [archivo, página n]):", String(archivos).trim());
-    if (fragmentos?.length) lineas.push("", "Fuentes del usuario:", recortar(bloqueDeFragmentos(fragmentos), lim.fuentes + 2000));
-    lineas.push("", "Solo se pueden citar los archivos y las fuentes de arriba.");
+  if (hoy) caso.push("", `Fecha: ${hoy}`);
+  caso.push("", "Expediente:", recortar(expediente, lim.expediente) || "(Sin expediente vinculado.)");
+  const hayArchivos = Boolean(String(archivos || "").trim());
+  if (hayArchivos) caso.push("", "Archivos del proyecto (fragmentos con archivo y página; cita así: [archivo, página n]):", String(archivos).trim());
+
+  const vuelta = [];
+  if (hayArchivos) {
+    if (fragmentos?.length) vuelta.push("Fuentes del usuario:", recortar(bloqueDeFragmentos(fragmentos), lim.fuentes + 2000));
+    vuelta.push("", "Solo se pueden citar los archivos y las fuentes de arriba.");
   } else {
-    lineas.push("", "Fuentes del usuario (solo estas se pueden citar):", recortar(bloqueDeFragmentos(fragmentos || []), lim.fuentes + 2000));
+    vuelta.push("Fuentes del usuario (solo estas se pueden citar):", recortar(bloqueDeFragmentos(fragmentos || []), lim.fuentes + 2000));
   }
+  if (String(memoria || "").trim()) vuelta.push("", "Memoria del documento (lo decidido en vueltas anteriores, con cualquier modelo; respétalo salvo que el usuario pida otra cosa):", String(memoria).trim());
   const previos = [];
   let usado = 0;
   for (const m of [...historia].reverse()) {
@@ -446,15 +464,23 @@ export function armarEncargoDocumento({
     previos.unshift(linea);
     usado += linea.length;
   }
-  if (previos.length) lineas.push("", "Conversación anterior:", ...previos);
-  if (actual) lineas.push("", "Documento actual (la base que debes corregir; conserva lo que el usuario no pidió cambiar):", recortar(actual, lim.documento));
+  if (previos.length) vuelta.push("", "Conversación anterior:", ...previos);
+  if (actual) vuelta.push("", "Documento actual (la base que debes corregir; conserva lo que el usuario no pidió cambiar):", recortar(actual, lim.documento));
   if (aclaracion?.respuesta) {
-    lineas.push("", "Aclaración del usuario:");
-    (aclaracion.preguntas || []).forEach((p, i) => lineas.push(`${i + 1}. ${p}`));
-    lineas.push("Respuesta:", String(aclaracion.respuesta).trim());
+    vuelta.push("", "Aclaración del usuario:");
+    (aclaracion.preguntas || []).forEach((p, i) => vuelta.push(`${i + 1}. ${p}`));
+    vuelta.push("Respuesta:", String(aclaracion.respuesta).trim());
   }
-  lineas.push("", "Mensaje del usuario:", String(pedido || "").trim() || "Redacta el documento.");
-  return lineas.join("\n");
+  vuelta.push("", "Mensaje del usuario:", String(pedido || "").trim() || "Redacta el documento.");
+  return [
+    { clave: "instrucciones", cache: true, texto: textoDe(lineamientos) },
+    { clave: "caso", cache: true, texto: textoDe(caso) },
+    { clave: "vuelta", cache: false, texto: textoDe(vuelta) },
+  ];
+}
+
+export function armarEncargoDocumento(opciones) {
+  return unirPartes(partesEncargoDocumento(opciones));
 }
 
 export function armarEncargoPasaje({ tipo, perfil, documento, pasaje, pedido, fragmentos, origen } = {}) {

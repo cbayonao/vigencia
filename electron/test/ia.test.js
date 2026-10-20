@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { generarBorrador, listarModelos, pulirConSencillo, contextoExpediente, extraerPuntos, semejantes, filtrarPorModo, guardarModo, leerNubes, guardarNube, quitarNube, borrarModelo, guardarActivo, RECOMENDADOS, urlDeModelo, esGgufValido, tamanoDeContexto, cabeElModelo } from "../src/ia.js";
+import { generarBorrador, listarModelos, pulirConSencillo, contextoExpediente, extraerPuntos, semejantes, filtrarPorModo, guardarModo, leerNubes, guardarNube, quitarNube, borrarModelo, guardarActivo, textoParaDocumento, RECOMENDADOS, urlDeModelo, esGgufValido, tamanoDeContexto, cabeElModelo } from "../src/ia.js";
 import { htmlMemorial, vistaMemorial } from "../src/memorial.js";
 import { redactarEscrito } from "../compartido/redactor.js";
 
@@ -86,6 +86,54 @@ test("el modo libre deja el texto del modelo y el fiel lo filtra", () => {
   assert.deepEqual(filtrarPorModo(base, puntos, "libre"), puntos);
   assert.deepEqual(filtrarPorModo(base, puntos, "fiel"), base);
   assert.deepEqual(filtrarPorModo(base, [], "libre"), base);
+});
+
+function sseAnthropic(texto) {
+  const trozo = `event: content_block_delta\ndata: {"delta":{"text":${JSON.stringify(texto)}}}\n\n`;
+  const codificado = [new TextEncoder().encode(trozo)];
+  return {
+    ok: true,
+    body: {
+      getReader() {
+        let i = 0;
+        return {
+          async read() {
+            if (i >= codificado.length) return { done: true, value: undefined };
+            return { done: false, value: codificado[i++] };
+          },
+        };
+      },
+    },
+  };
+}
+
+test("un borrador de Anthropic pide 16000 y esfuerzo alto; un ajuste, 8000 y medio", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "vigencia-ia-"));
+  guardarNube(dir, { proveedor: "anthropic", key: "sk-ant-prueba", modelo: "claude-sonnet-5-5" });
+  guardarNube(dir, { proveedor: "openai", key: "sk-prueba", modelo: "gpt-6.1-sol" });
+  const partes = [
+    { clave: "instrucciones", cache: true, texto: "Lineamientos." },
+    { clave: "caso", cache: true, texto: "Expediente." },
+    { clave: "vuelta", cache: false, texto: "Pedido." },
+  ];
+  const { unirPartes } = await import("../compartido/encargo.js");
+  const encargo = unirPartes(partes);
+  let cuerpo = null;
+  const fetchFn = async (_url, pedido) => {
+    cuerpo = JSON.parse(pedido.body);
+    return sseAnthropic("Asunto: Tutela");
+  };
+  await textoParaDocumento({ datosDir: dir, modeloId: "nube:anthropic", encargo, partes, ajuste: false, fetchFn });
+  assert.equal(cuerpo.max_tokens, 16000);
+  assert.deepEqual(cuerpo.output_config, { effort: "high" });
+  assert.equal(cuerpo.messages[0].content.filter((b) => b.cache_control).length, 2);
+  await textoParaDocumento({ datosDir: dir, modeloId: "nube:anthropic", encargo, partes, ajuste: true, fetchFn });
+  assert.equal(cuerpo.max_tokens, 8000);
+  assert.deepEqual(cuerpo.output_config, { effort: "medium" });
+  await textoParaDocumento({ datosDir: dir, modeloId: "nube:openai", encargo, partes, ajuste: true, fetchFn });
+  assert.equal(cuerpo.temperature, 0.2);
+  assert.equal("output_config" in cuerpo, false);
+  assert.deepEqual(cuerpo.messages, [{ role: "user", content: encargo }]);
 });
 
 test("el modo se guarda y la lista nunca muestra claves", () => {

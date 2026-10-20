@@ -131,6 +131,86 @@ test("Meta va sin temperature, con esfuerzo medio y mensaje developer", async ()
   ]);
 });
 
+test("Anthropic manda dos cortes de caché y el esfuerzo, sin temperature", async () => {
+  let cuerpo = null;
+  const fetchFn = async (_url, pedido) => {
+    cuerpo = JSON.parse(pedido.body);
+    return respuestaSSE(['event: content_block_delta\ndata: {"delta":{"text":"ok"}}\n\n']);
+  };
+  const partes = [
+    { clave: "instrucciones", cache: true, texto: "Lineamientos y perfil." },
+    { clave: "caso", cache: true, texto: "Expediente y archivos." },
+    { clave: "vuelta", cache: false, texto: "Fuentes y pedido." },
+  ];
+  const { unirPartes } = await import("../compartido/encargo.js");
+  await chatNube({
+    proveedor: "anthropic",
+    key: "k",
+    modelo: "claude-sonnet-5-5",
+    texto: unirPartes(partes),
+    partes,
+    esfuerzo: "high",
+    maxTokens: 16000,
+    fetchFn,
+  });
+  assert.equal("temperature" in cuerpo, false);
+  assert.equal(cuerpo.max_tokens, 16000);
+  assert.deepEqual(cuerpo.output_config, { effort: "high" });
+  assert.equal(cuerpo.messages[0].content.length, 3);
+  assert.deepEqual(cuerpo.messages[0].content[0].cache_control, { type: "ephemeral" });
+  assert.deepEqual(cuerpo.messages[0].content[1].cache_control, { type: "ephemeral" });
+  assert.equal(cuerpo.messages[0].content[2].cache_control, undefined);
+  assert.equal(cuerpo.messages[0].content.map((b) => b.text).join(""), unirPartes(partes));
+});
+
+test("OpenAI, Grok y custom ignoran caché y esfuerzo de Anthropic", async () => {
+  for (const proveedor of ["openai", "xai", "custom"]) {
+    let cuerpo = null;
+    const fetchFn = async (_url, pedido) => {
+      cuerpo = JSON.parse(pedido.body);
+      return respuestaSSE(['data: {"choices":[{"delta":{"content":"ok"}}]}\n\n']);
+    };
+    await chatNube({
+      proveedor,
+      key: "k",
+      modelo: "m",
+      base: proveedor === "custom" ? "https://ejemplo.test/v1" : "",
+      texto: "hola",
+      partes: [{ clave: "instrucciones", cache: true, texto: "hola" }],
+      esfuerzo: "high",
+      fetchFn,
+    });
+    assert.equal(cuerpo.temperature, 0.2, proveedor);
+    assert.equal("output_config" in cuerpo, false, proveedor);
+    assert.equal("reasoning_effort" in cuerpo, false, proveedor);
+    assert.deepEqual(cuerpo.messages, [{ role: "user", content: "hola" }], proveedor);
+  }
+});
+
+test("Meta no cambia aunque lleguen partes y esfuerzo de Anthropic", async () => {
+  let cuerpo = null;
+  const fetchFn = async (_url, pedido) => {
+    cuerpo = JSON.parse(pedido.body);
+    return respuestaSSE(['data: {"choices":[{"delta":{"content":"ok"}}]}\n\n']);
+  };
+  await chatNube({
+    proveedor: "meta",
+    key: "LLM|1|abc",
+    modelo: "muse-spark-1.3",
+    texto: "hola",
+    instrucciones: "Instrucción fija.",
+    partes: [{ clave: "instrucciones", cache: true, texto: "hola" }],
+    fetchFn,
+  });
+  assert.equal("temperature" in cuerpo, false);
+  assert.equal("output_config" in cuerpo, false);
+  assert.equal(cuerpo.reasoning_effort, "medium");
+  assert.deepEqual(cuerpo.messages, [
+    { role: "developer", content: "Instrucción fija." },
+    { role: "user", content: "hola" },
+  ]);
+});
+
 test("OpenAI conserva temperature y no manda esfuerzo", async () => {
   let cuerpo = null;
   const fetchFn = async (_url, pedido) => {

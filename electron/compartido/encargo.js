@@ -27,6 +27,37 @@ export function piezasDelEncargo(piezas, excluir = []) {
 
 export const MAX_DUDAS = 4;
 
+// Anthropic admite como máximo 4 cache_control en un pedido.
+export const MAX_CORTES_CACHE = 4;
+
+function textoDe(lineas) {
+  return lineas.join("\n").replace(/^\n+|\n+$/g, "");
+}
+
+// Une las partes con la misma línea en blanco que separaba las secciones.
+export function unirPartes(partes) {
+  return (partes || [])
+    .map((parte) => String(parte?.texto || "").replace(/^\n+|\n+$/g, ""))
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+// Bloques de texto para Anthropic. El cache_control va al final de la parte
+// marcada y el texto unido es idéntico a unirPartes.
+export function bloquesConCache(partes) {
+  const vivos = (partes || []).filter((parte) => String(parte?.texto || "").trim());
+  let puestos = 0;
+  return vivos.map((parte, i) => {
+    const limpio = String(parte.texto).replace(/^\n+|\n+$/g, "");
+    const bloque = { type: "text", text: i < vivos.length - 1 ? `${limpio}\n\n` : limpio };
+    if (parte.cache && puestos < MAX_CORTES_CACHE) {
+      bloque.cache_control = { type: "ephemeral" };
+      puestos += 1;
+    }
+    return bloque;
+  });
+}
+
 const FORMA_MEMORIAL = [
   "Responde solo el memorial, con este formato:",
   "Asunto: título breve",
@@ -48,28 +79,30 @@ function preguntasAclaracion(aclaracion) {
     .slice(0, MAX_DUDAS);
 }
 
-export function armarEncargo({ contexto, peticion, piezas, excluir, hoy, aclaracion, ejemplo, referencia } = {}) {
+// Tres partes: lineamientos (estables), expediente y biblioteca (el caso),
+// petición de esta vuelta. Las dos primeras se pueden cachear.
+export function partesEncargo({ contexto, peticion, piezas, excluir, hoy, aclaracion, ejemplo, referencia } = {}) {
   const activas = piezasDelEncargo(piezas, excluir);
   const biblioteca = activas.length
     ? activas.map((pieza) => `### ${pieza.nombre} (${pieza.tipo})\n${String(pieza.texto).trim()}`).join("\n\n")
     : "(No hay piezas activas. Redacta solo con el expediente y la petición.)";
   const cerrar = Boolean(respuestaAclaracion(aclaracion));
-  const lineas = [
+  const lineamientos = [
     "Eres un abogado y redactas el escrito que el usuario va a presentar. El usuario aporta el contexto. Tú decides la estructura.",
     "",
     "Lineamientos, que no puedes omitir:",
     ...LINEAMIENTOS.map((linea, i) => `${i + 1}. ${linea}`),
-    "",
   ];
+  const caso = [];
   if (cerrar) {
-    lineas.push(
+    caso.push(
       "Esta es la última vuelta. Entrega el memorial. No hagas más preguntas.",
       "Si aún falta un dato, escríbelo como [Dato pendiente: …].",
       "",
       ...FORMA_MEMORIAL,
     );
   } else {
-    lineas.push(
+    caso.push(
       ...FORMA_MEMORIAL,
       "",
       "Solo si falta un dato que cambie el escrito (qué se pide, contra quién, qué derecho o un plazo), no redactes el memorial y responde únicamente así:",
@@ -80,23 +113,24 @@ export function armarEncargo({ contexto, peticion, piezas, excluir, hoy, aclarac
       "Máximo cuatro preguntas. Un dato menor no se pregunta: va como [Dato pendiente: …] dentro del memorial.",
     );
   }
-  if (hoy) lineas.push("", `Fecha: ${hoy}`);
-  lineas.push(
+  if (hoy) caso.push("", `Fecha: ${hoy}`);
+  caso.push(
     "",
     "Expediente:",
     String(contexto || "").trim() || "(Sin expediente.)",
     "",
     "Biblioteca del usuario:",
     biblioteca,
-    "",
+  );
+  const vuelta = [
     "Petición del usuario:",
     String(peticion || "").trim() || "(Sin petición.)",
-  );
+  ];
   const corta = String(referencia || "").trim();
-  if (corta) lineas.push("", `Referencia del escrito, úsala tal cual: ${corta}`);
+  if (corta) vuelta.push("", `Referencia del escrito, úsala tal cual: ${corta}`);
   const adjunto = String(ejemplo || "").trim();
   if (adjunto) {
-    lineas.push(
+    vuelta.push(
       "",
       "Memorial que el usuario adjuntó. Úsalo para entender la forma y los pormenores. No copies un dato que contradiga el expediente:",
       adjunto,
@@ -104,14 +138,22 @@ export function armarEncargo({ contexto, peticion, piezas, excluir, hoy, aclarac
   }
   if (cerrar) {
     const preguntas = preguntasAclaracion(aclaracion);
-    lineas.push("", "Aclaración del usuario:");
+    vuelta.push("", "Aclaración del usuario:");
     if (preguntas.length) {
-      lineas.push("Preguntas:");
-      preguntas.forEach((pregunta, i) => lineas.push(`${i + 1}. ${pregunta}`));
+      vuelta.push("Preguntas:");
+      preguntas.forEach((pregunta, i) => vuelta.push(`${i + 1}. ${pregunta}`));
     }
-    lineas.push("Respuesta:", respuestaAclaracion(aclaracion));
+    vuelta.push("Respuesta:", respuestaAclaracion(aclaracion));
   }
-  return lineas.join("\n");
+  return [
+    { clave: "lineamientos", cache: true, texto: textoDe(lineamientos) },
+    { clave: "caso", cache: true, texto: textoDe(caso) },
+    { clave: "vuelta", cache: false, texto: textoDe(vuelta) },
+  ];
+}
+
+export function armarEncargo(opciones) {
+  return unirPartes(partesEncargo(opciones));
 }
 
 export function fuentesDelEncargo({ contexto, peticion, piezas, excluir, aclaracion, ejemplo } = {}) {

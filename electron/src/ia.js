@@ -5,7 +5,8 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { aplicarPresentante, fichaDeDetalle, redactarEscrito, referenciaCorta } from "../compartido/redactor.js";
 import { redactarInicial, TIPOS_INICIALES } from "../compartido/iniciales.js";
-import { armarEncargo, clasificarRespuesta, fuentesDelEncargo, marcarCitas } from "../compartido/encargo.js";
+import { clasificarRespuesta, fuentesDelEncargo, marcarCitas, partesEncargo, unirPartes } from "../compartido/encargo.js";
+import { topeDeVuelta } from "../compartido/documentos.js";
 import { texto } from "../compartido/logica.js";
 import { fechaInforme } from "./informe.js";
 import { vistaMemorial } from "./memorial.js";
@@ -597,7 +598,7 @@ function respuestaInservible(valor) {
   return limpio.length < 400 && /lo siento|no puedo (cumplir|ayudar|redactar)|como modelo de lenguaje/i.test(limpio);
 }
 
-async function textoDelModelo({ datosDir, elegido, encargo, onProgreso, maxTokens, onUso = null }) {
+async function textoDelModelo({ datosDir, elegido, encargo, onProgreso, maxTokens, onUso = null, esfuerzo = "", partes = null, fetchFn }) {
   if (elegido.id.startsWith("nube:")) {
     const proveedor = elegido.id.slice("nube:".length);
     const tiendaDato = leerTienda(datosDir);
@@ -608,6 +609,7 @@ async function textoDelModelo({ datosDir, elegido, encargo, onProgreso, maxToken
     const modelo = nube.modelo || definicion.modeloSugerido;
     if (!modelo) throw new Aviso(`Escriba el nombre del modelo de ${definicion.nombre}.`);
     let acumulado = "";
+    const esAnthropic = proveedor === "anthropic";
     const respuesta = await chatNube({
       proveedor,
       key: nube.key,
@@ -616,6 +618,9 @@ async function textoDelModelo({ datosDir, elegido, encargo, onProgreso, maxToken
       texto: encargo,
       maxTokens: maxTokens?.nube || 2048,
       instrucciones: proveedor === "meta" ? INSTRUCCION_DOCUMENTO_META : "",
+      esfuerzo: esAnthropic ? esfuerzo : "",
+      partes: esAnthropic ? partes : null,
+      fetchFn,
       onUso: (uso) => {
         try {
           onUso?.({ ...uso, proveedor, modelo });
@@ -731,9 +736,9 @@ function usaModelo(elegido) {
   return Boolean(elegido?.id?.startsWith("nube:") || elegido?.id?.startsWith("gguf:"));
 }
 
-async function conEncargo({ datosDir, elegido, encargo, fuentes, onProgreso, plantilla, aclaracion, onUso = null }) {
+async function conEncargo({ datosDir, elegido, encargo, fuentes, onProgreso, plantilla, aclaracion, onUso = null, partes = null, esfuerzo = "" }) {
   try {
-    const pedido = await textoDelModelo({ datosDir, elegido, encargo, onProgreso, onUso });
+    const pedido = await textoDelModelo({ datosDir, elegido, encargo, onProgreso, onUso, partes, esfuerzo });
     const escrito = documentoDeModelo(pedido, fuentes, Boolean(aclaracion));
     if (escrito.dudas) {
       return {
@@ -814,7 +819,7 @@ export async function generarBorrador({ datosDir, proceso, prompt, hoy, modeloId
   const vuelta = aclaracionUtil(aclaracion);
   if (usaModelo(elegido)) {
     const contexto = contextoExpediente(ficha, proceso);
-    const encargo = armarEncargo({
+    const partes = partesEncargo({
       contexto,
       peticion: pedido,
       piezas,
@@ -827,7 +832,9 @@ export async function generarBorrador({ datosDir, proceso, prompt, hoy, modeloId
     resultado = await conEncargo({
       datosDir,
       elegido,
-      encargo,
+      encargo: unirPartes(partes),
+      partes,
+      esfuerzo: "high",
       fuentes: fuentesDelEncargo({ contexto, peticion: pedido, piezas, excluir, aclaracion: vuelta, ejemplo }),
       onProgreso,
       plantilla,
@@ -896,17 +903,20 @@ export async function generarInicial({ datosDir, tipo, datos = {}, hoy, modeloId
   if (usaModelo(elegido)) {
     const material = materialInicial(tipo, datos);
     const peticion = texto(datos.instruccion) || `Redacte la ${definicion.titulo.toLowerCase()} con los datos del contexto.`;
+    const partes = partesEncargo({
+      contexto: material,
+      peticion,
+      piezas,
+      excluir,
+      hoy: hoyLargo,
+      aclaracion: vuelta,
+    });
     resultado = await conEncargo({
       datosDir,
       elegido,
-      encargo: armarEncargo({
-        contexto: material,
-        peticion,
-        piezas,
-        excluir,
-        hoy: hoyLargo,
-        aclaracion: vuelta,
-      }),
+      encargo: unirPartes(partes),
+      partes,
+      esfuerzo: "high",
       fuentes: fuentesDelEncargo({ contexto: material, peticion, piezas, excluir, aclaracion: vuelta }),
       onProgreso,
       plantilla: base,
@@ -924,11 +934,22 @@ export function modeloParaDocumento(datosDir, modeloId) {
   return { id: elegido.id, nombre: elegido.nombre, usa: usaModelo(elegido), origen: elegido.id.startsWith("nube:") ? "nube" : "local" };
 }
 
-export async function textoParaDocumento({ datosDir, modeloId, encargo, onProgreso, onUso = null }) {
+export async function textoParaDocumento({ datosDir, modeloId, encargo, onProgreso, onUso = null, partes = null, ajuste = false, fetchFn } = {}) {
   const elegido = elegirModelo(datosDir, modeloId);
   if (!usaModelo(elegido)) return null;
+  const tope = topeDeVuelta(ajuste);
   try {
-    return await textoDelModelo({ datosDir, elegido, encargo, onProgreso, maxTokens: { nube: 4096, local: 2048 }, onUso });
+    return await textoDelModelo({
+      datosDir,
+      elegido,
+      encargo,
+      onProgreso,
+      maxTokens: { nube: tope.maxTokens, local: 2048 },
+      esfuerzo: tope.esfuerzo,
+      partes,
+      fetchFn,
+      onUso,
+    });
   } catch (error) {
     if (elegido.id.startsWith("gguf:")) await soltarMotor();
     throw error;

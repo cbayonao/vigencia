@@ -4,9 +4,10 @@
 import crypto from "node:crypto";
 import { ahora, texto } from "../compartido/logica.js";
 import { bloqueDeArchivos, fragmentosDeTrozos, informeArchivos, recortarAgentes, repartirFuentes } from "../compartido/contexto.js";
+import { unirPartes } from "../compartido/encargo.js";
 import { fichaDeDetalle } from "../compartido/redactor.js";
 import {
-  TIPOS_DOCUMENTO, armarEncargoDocumento, armarEncargoPasaje, contarAvisos, escritoDeTexto,
+  TIPOS_DOCUMENTO, armarEncargoPasaje, contarAvisos, escritoDeTexto, partesEncargoDocumento,
   fragmentosRelevantes, fuentesDeCitas, interpretarRespuesta, marcarCitasDocumento,
   nombreTipo, plantillaBasica, presupuestoDe, reemplazarPasaje, textoDeEscrito,
 } from "../compartido/documentos.js";
@@ -421,16 +422,19 @@ export function prepararVuelta({ db, datosDir, proyectoId, mensaje, modeloId, pa
   const bloqueArchivos = bloqueDeArchivos(archivosFrag);
   const memoria = bloqueMemoria(leerMemoria(db, proyecto.id), elegido.origen);
   let encargo;
+  let partes;
   if (pasaje && actual) {
     encargo = armarEncargoPasaje({ tipo: proyecto.tipo, perfil, documento: actual.cuerpo, pasaje, pedido, fragmentos: [...fragmentos, ...archivosFrag.map((f) => ({ ...f, fuente: { nombre: f.nombre } }))], origen: elegido.origen });
+    partes = [{ clave: "vuelta", cache: false, texto: encargo }];
   } else {
-    encargo = armarEncargoDocumento({
+    partes = partesEncargoDocumento({
       tipo: proyecto.tipo, perfil, expediente: contexto, fragmentos, historia, documento: actual?.cuerpo || "", pedido,
       hoy: hoyLargo, origen: elegido.origen,
       aclaracion: preguntas ? { preguntas, respuesta: pedido } : null,
       cerrar: Boolean(preguntas),
       agentes: agentes.texto, archivos: bloqueArchivos, memoria,
     });
+    encargo = unirPartes(partes);
   }
   const informe = {
     origen: elegido.origen,
@@ -452,7 +456,7 @@ export function prepararVuelta({ db, datosDir, proyectoId, mensaje, modeloId, pa
     expediente: Boolean(contexto),
     hash: hashEncargo(encargo),
   };
-  return { datos, proyecto, perfil, historia, preguntas, actual, elegido, ficha, contexto, pedido, encargo, informe, fragmentos, archivosFrag };
+  return { datos, proyecto, perfil, historia, preguntas, actual, elegido, ficha, contexto, pedido, encargo, partes, informe, fragmentos, archivosFrag };
 }
 
 function terminosDe(consulta) {
@@ -489,7 +493,7 @@ export async function conversar({ db, datosDir, proyectoId, mensaje, modeloId, p
   if (documento != null && String(documento).trim() && String(documento).trim() !== (datos.actual?.cuerpo || "")) {
     guardarVersion(db, proyecto.id, { cuerpo: documento, autor: "usuario", nota: "Edición directa" });
   }
-  const { historia, preguntas, elegido, ficha, contexto, pedido, encargo, fragmentos, archivosFrag } = previa;
+  const { historia, preguntas, elegido, ficha, contexto, pedido, encargo, partes, fragmentos, archivosFrag } = previa;
   agregarMensaje(db, proyecto.id, { rol: "usuario", texto: pasaje ? `${pedido}\n\nPasaje elegido: ${pasaje}` : pedido });
   const actual = ultimaVersion(db, proyecto.id);
 
@@ -524,7 +528,8 @@ export async function conversar({ db, datosDir, proyectoId, mensaje, modeloId, p
   try {
     const onUsoDoc = (uso) => guardarUso(db, { ...uso, motivo: "documento", proyectoId: proyecto.id });
     if (elegido.origen === "nube") registrarEnvio(db, { proyectoId: proyecto.id, informe: previa.informe });
-    respuesta = await pedirTexto({ datosDir, modeloId: elegido.id, onProgreso: avance, onUso: onUsoDoc, encargo });
+    const ajuste = Boolean(pasaje) || Boolean(previa.actual?.cuerpo);
+    respuesta = await pedirTexto({ datosDir, modeloId: elegido.id, onProgreso: avance, onUso: onUsoDoc, encargo, partes, ajuste });
   } catch (error) {
     if (error instanceof Aviso) throw error;
     console.error(error);
@@ -600,7 +605,7 @@ export async function proponerBloque({ db, datosDir, proyectoId, bloqueId, mensa
     registrarEnvio(db, { proyectoId: proyecto.id, informe, motivo: "parrafo" });
   }
   const r = await pedirTexto({
-    datosDir, modeloId: elegido.id, encargo,
+    datosDir, modeloId: elegido.id, encargo, ajuste: true,
     onProgreso: (d) => onProgreso?.({ proyectoId: proyecto.id, texto: d?.texto || "", pasaje: true }),
     onUso: (uso) => guardarUso(db, { ...uso, motivo: "parrafo", proyectoId: proyecto.id }),
   });

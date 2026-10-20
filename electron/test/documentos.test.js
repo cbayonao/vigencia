@@ -7,8 +7,9 @@ import test from "node:test";
 import {
   PERFILES_SEMILLA, armarEncargoDocumento, armarEncargoPasaje, claseDePieza, contarAvisos, diferencias,
   escritoDeTexto, fragmentosRelevantes, interpretarRespuesta, leerEtiquetas, marcarCitasDocumento,
-  plantillaBasica, reemplazarPasaje, textoDeEscrito, trocear,
+  partesEncargoDocumento, plantillaBasica, reemplazarPasaje, textoDeEscrito, topeDeVuelta, trocear,
 } from "../compartido/documentos.js";
+import { bloquesConCache, unirPartes } from "../compartido/encargo.js";
 import { abrirBase, run, uno } from "../src/db.js";
 import { buscarFuentes, guardarPieza, listarPiezas, activarPieza } from "../src/biblioteca.js";
 import {
@@ -80,6 +81,23 @@ test("el encargo lleva perfil, lineamientos, documento actual y el pedido; el lo
   assert.ok(local.length < nube.length);
   const primera = armarEncargoDocumento({ ...base, documento: "", origen: "nube" });
   assert.match(primera, /DUDAS:/);
+  const partes = partesEncargoDocumento({ ...base, origen: "nube", agentes: "Lenguaje claro.", archivos: "### a.pdf, página 1\nHecho del archivo.", memoria: "Tercera persona." });
+  const armado = unirPartes(partes);
+  assert.equal(partes.filter((p) => p.cache).map((p) => p.clave).join(","), "instrucciones,caso");
+  assert.ok(partes[0].texto.includes("AGENTS.md"));
+  assert.ok(partes[1].texto.includes("Expediente:"));
+  assert.ok(partes[1].texto.includes("Archivos del proyecto"));
+  assert.equal(partes[1].texto.includes("Memoria del documento"), false);
+  assert.ok(partes[2].texto.includes("Memoria del documento"));
+  assert.ok(armado.indexOf("Fuentes del usuario") < armado.indexOf("Memoria del documento"));
+  assert.ok(armado.indexOf("Memoria del documento") < armado.indexOf("Conversación anterior"));
+  const bloques = bloquesConCache(partes);
+  assert.equal(bloques.filter((b) => b.cache_control).length, 2);
+  assert.equal(bloques.map((b) => b.text).join(""), armado);
+  assert.deepEqual(bloques[0].cache_control, { type: "ephemeral" });
+  assert.equal(bloques[2].cache_control, undefined);
+  assert.deepEqual(topeDeVuelta(false), { maxTokens: 16000, esfuerzo: "high" });
+  assert.deepEqual(topeDeVuelta(true), { maxTokens: 8000, esfuerzo: "medium" });
   const pasaje = armarEncargoPasaje({ tipo: "contrato", documento: "Asunto: C\n\n## Objeto\nEl objeto es X.", pasaje: "El objeto es X.", pedido: "más formal", origen: "local" });
   assert.match(pasaje, /Pasaje que debes reescribir:\nEl objeto es X\./);
 });

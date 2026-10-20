@@ -59,3 +59,9 @@
 - Formato propio y mínimo en Markdown: ++subrayado++ y {centro} al inicio del párrafo. #### es subtítulo porque ## y ### ya parten secciones en el lector de respuestas.
 - Las filas seguidas de una tabla son un solo párrafo (un bloque con id).
 - Una línea solo de guiones bajos se sigue leyendo como separador y se descarta; la firma necesita texto en la misma línea (Firma: ______).
+
+## Caché de Anthropic y la memoria del documento (octubre 2026)
+
+- El encargo se parte en tres: lineamientos, perfil y AGENTS.md; formato, expediente y archivos; y el resto de la vuelta. Anthropic marca caché solo en los dos primeros cortes (`cache_control` ephemeral, 5 minutos).
+- La memoria del documento cambió de lugar: iba antes del expediente y, como se actualiza en cada vuelta, invalidaba la caché del caso. Ahora va después de las fuentes y antes de la historia. El resto del orden no cambia.
+- La fecha del encargo sigue dentro del segundo corte, así que el caso se vuelve a escribir en caché cuando cambia el día.

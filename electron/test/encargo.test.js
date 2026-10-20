@@ -2,11 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   armarEncargo,
+  bloquesConCache,
   clasificarRespuesta,
   escritoDesdeRespuesta,
   marcarCitas,
   partirEscrito,
   piezasDelEncargo,
+  partesEncargo,
+  unirPartes,
 } from "../compartido/encargo.js";
 
 const piezas = [
@@ -27,6 +30,26 @@ test("el parser arma secciones con títulos libres y, si no hay títulos, un sol
   assert.equal(bloque.secciones[0].titulo, "Escrito");
   assert.deepEqual(bloque.secciones[0].parrafos, ["Solo pido que se expida copia."]);
   assert.deepEqual(partirEscrito("   ").secciones, []);
+});
+
+test("el memorial se parte en lineamientos, caso y petición, con dos cortes de caché", () => {
+  const partes = partesEncargo({
+    contexto: "Juzgado 2",
+    peticion: "solicito copias",
+    piezas,
+    hoy: "1 de octubre de 2026",
+  });
+  assert.deepEqual(partes.map((p) => p.clave), ["lineamientos", "caso", "vuelta"]);
+  assert.equal(partes.filter((p) => p.cache).length, 2);
+  assert.equal(unirPartes(partes), armarEncargo({ contexto: "Juzgado 2", peticion: "solicito copias", piezas, hoy: "1 de octubre de 2026" }));
+  assert.ok(partes[0].texto.includes("Lineamientos"));
+  assert.ok(partes[1].texto.includes("Expediente:"));
+  assert.equal(partes[1].texto.includes("Petición del usuario"), false);
+  const bloques = bloquesConCache(partes);
+  assert.equal(bloques.filter((b) => b.cache_control).length, 2);
+  assert.equal(bloques.map((b) => b.text).join(""), unirPartes(partes));
+  const deMas = bloquesConCache(Array.from({ length: 6 }, (_, i) => ({ cache: true, texto: `parte ${i}` })));
+  assert.equal(deMas.filter((b) => b.cache_control).length, 4);
 });
 
 test("una pieza apagada o quitada para esta generación no entra al encargo", () => {

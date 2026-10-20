@@ -1,3 +1,5 @@
+import { bloquesConCache } from "../compartido/encargo.js";
+
 export const PROVEEDORES = {
   openai: {
     nombre: "OpenAI",
@@ -183,7 +185,17 @@ function errorDeConexion(error) {
   throw new Error("No pude conectar con el proveedor. Revise la conexión.");
 }
 
-async function chatAnthropic({ key, modelo, texto, maxTokens = 1024, onToken, fetchFn = fetch, instrucciones = "", onUso = null }) {
+const ESFUERZOS = new Set(["low", "medium", "high", "xhigh", "max"]);
+
+// Si las partes no reconstruyen el texto revisado, se manda el texto tal cual.
+function contenidoAnthropic(texto, partes) {
+  const bloques = bloquesConCache(partes);
+  if (!bloques.some((bloque) => bloque.cache_control)) return texto;
+  if (bloques.map((bloque) => bloque.text).join("") !== String(texto ?? "")) return texto;
+  return bloques;
+}
+
+async function chatAnthropic({ key, modelo, texto, maxTokens = 1024, onToken, fetchFn = fetch, instrucciones = "", esfuerzo = "", partes = null, onUso = null }) {
   const controlador = new AbortController();
   const reloj = setTimeout(() => controlador.abort(), 5 * 60 * 1000);
   try {
@@ -192,10 +204,11 @@ async function chatAnthropic({ key, modelo, texto, maxTokens = 1024, onToken, fe
       model: modelo,
       max_tokens: maxTokens,
       stream: true,
-      messages: [{ role: "user", content: texto }],
+      messages: [{ role: "user", content: contenidoAnthropic(texto, partes) }],
     };
     const sistema = String(instrucciones || "").trim();
     if (sistema) cuerpo.system = sistema;
+    if (ESFUERZOS.has(esfuerzo)) cuerpo.output_config = { effort: esfuerzo };
     const respuesta = await fetchFn("https://api.anthropic.com/v1/messages", {
       method: "POST",
       signal: controlador.signal,
@@ -312,7 +325,7 @@ export function mensajePrueba(error) {
   return AVISO_PRUEBA.test(texto) ? texto : "";
 }
 
-export async function chatNube({ proveedor, key, modelo, base, texto, maxTokens = 2048, onToken, fetchFn, instrucciones = "", esfuerzo = "", onUso = null }) {
+export async function chatNube({ proveedor, key, modelo, base, texto, maxTokens = 2048, onToken, fetchFn, instrucciones = "", esfuerzo = "", partes = null, onUso = null }) {
   const definicion = PROVEEDORES[proveedor];
   if (!definicion) throw new Error("Ese proveedor no está soportado.");
   key = limpiar(key);
@@ -330,7 +343,7 @@ export async function chatNube({ proveedor, key, modelo, base, texto, maxTokens 
     throw new Error("Escriba la dirección base del proveedor.");
   }
   if (definicion.formato === "anthropic") {
-    return chatAnthropic({ key, modelo, texto, maxTokens, onToken, fetchFn, onUso, instrucciones });
+    return chatAnthropic({ key, modelo, texto, maxTokens, onToken, fetchFn, onUso, instrucciones, esfuerzo, partes });
   }
   // Meta rinde con sus valores de fábrica: sin temperature y con esfuerzo medio.
   const esMeta = proveedor === "meta";

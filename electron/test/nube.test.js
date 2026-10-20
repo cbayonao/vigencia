@@ -187,7 +187,7 @@ test("OpenAI, Grok y custom ignoran caché y esfuerzo de Anthropic", async () =>
   }
 });
 
-test("Meta no cambia aunque lleguen partes y esfuerzo de Anthropic", async () => {
+test("Meta no cambia aunque lleguen partes de Anthropic", async () => {
   let cuerpo = null;
   const fetchFn = async (_url, pedido) => {
     cuerpo = JSON.parse(pedido.body);
@@ -325,19 +325,36 @@ test("un 400 de Anthropic llega con el motivo que da la API", async () => {
   assert.match(mensajePrueba(error), /temperature is deprecated for this model/);
 });
 
-test("Anthropic junta entrada del inicio y salida del delta", async () => {
+test("Anthropic junta entrada, caché y salida de message_start y message_delta", async () => {
   let uso = null;
   const fetchFn = async () => respuestaSSE([
-    'event: message_start\ndata: {"message":{"usage":{"input_tokens":30}}}\n\n',
+    'event: message_start\ndata: {"message":{"usage":{"input_tokens":30,"cache_creation_input_tokens":12,"cache_read_input_tokens":8,"cache_creation":{"ephemeral_5m_input_tokens":10,"ephemeral_1h_input_tokens":2}}}}\n\n',
     'event: content_block_delta\ndata: {"delta":{"text":"hola"}}\n\n',
-    'event: message_delta\ndata: {"usage":{"output_tokens":7}}\n\n',
+    'event: message_delta\ndata: {"usage":{"output_tokens":7,"cache_read_input_tokens":9}}\n\n',
   ]);
   const texto = await chatNube({
     proveedor: "anthropic", key: "k", modelo: "claude-sonnet-5-5", texto: "h",
     onUso: (u) => { uso = u; }, fetchFn,
   });
   assert.equal(texto, "hola");
-  assert.deepEqual(uso, { entrada: 30, salida: 7 });
+  assert.deepEqual(uso, {
+    entrada: 30, salida: 7, cacheEscritura5m: 10, cacheEscritura1h: 2, cacheLectura: 9,
+  });
+});
+
+test("sin desglose, la escritura de caché se cobra como 5 minutos", async () => {
+  let uso = null;
+  const fetchFn = async () => respuestaSSE([
+    'event: message_start\ndata: {"message":{"usage":{"input_tokens":4,"cache_creation_input_tokens":40,"cache_read_input_tokens":5}}}\n\n',
+    'event: message_delta\ndata: {"usage":{"output_tokens":2}}\n\n',
+  ]);
+  await chatNube({
+    proveedor: "anthropic", key: "k", modelo: "claude-sonnet-5-5", texto: "h",
+    onUso: (u) => { uso = u; }, fetchFn,
+  });
+  assert.deepEqual(uso, {
+    entrada: 4, salida: 2, cacheEscritura5m: 40, cacheEscritura1h: 0, cacheLectura: 5,
+  });
 });
 
 test("el costo sale de la tabla oficial por modelo", async () => {
@@ -345,6 +362,16 @@ test("el costo sale de la tabla oficial por modelo", async () => {
   assert.equal(costoAprox("muse-spark-1.3", 1000000, 0), 1.25);
   assert.equal(costoAprox("muse-spark-1.3", 0, 1000000), 4.25);
   assert.equal(costoAprox("otro-modelo", 10, 10), null);
+  assert.equal(costoAprox("claude-sonnet-5-5", 1000000, 0), 2);
+  assert.equal(costoAprox("claude-sonnet-5-5", 0, 0, { cacheEscritura5m: 1000000 }), 2.5);
+  assert.equal(costoAprox("claude-sonnet-5-5", 0, 0, { cacheEscritura1h: 1000000 }), 4);
+  assert.equal(costoAprox("claude-sonnet-5-5", 0, 0, { cacheLectura: 1000000 }), 0.1);
+  assert.equal(costoAprox("claude-opus-5-5", 0, 0, { cacheLectura: 1000000 }), 0.2);
+  assert.equal(costoAprox("claude-haiku-5-5", 100000, 0), 0.01);
+  assert.equal(costoAprox("claude-haiku-5-5", 200000, 0), 0.1);
+  assert.equal(costoAprox("claude-haiku-5-5", 0, 1000000, { cacheLectura: 200000 }), 2.51);
+  assert.equal(costoAprox("claude-haiku-5-5", 0, 0, { cacheEscritura5m: 1000000 }), 0.625);
+  assert.equal(costoAprox("claude-haiku-5-5", 0, 0, { cacheEscritura1h: 1000000 }), 1);
 });
 
 test("la ventana de contexto sale de la tabla oficial", async () => {

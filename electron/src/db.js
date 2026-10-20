@@ -752,11 +752,14 @@ export function resumenGastos(db, { desde = "", limite = 30 } = {}) {
   return { totales, porProveedor, porProyecto, recientes };
 }
 
-export function guardarUso(db, { proveedor = "", modelo = "", motivo = "", proyectoId = null, entrada = 0, salida = 0 }) {
+export function guardarUso(db, { proveedor = "", modelo = "", motivo = "", proyectoId = null, entrada = 0, salida = 0, cacheEscritura5m = 0, cacheEscritura1h = 0, cacheLectura = 0 }) {
   const e = Math.max(0, Math.round(Number(entrada) || 0));
   const s = Math.max(0, Math.round(Number(salida) || 0));
-  if (e <= 0 && s <= 0) return;
-  const costo = costoAprox(modelo, e, s) ?? 0;
+  const c5 = Math.max(0, Math.round(Number(cacheEscritura5m) || 0));
+  const c1 = Math.max(0, Math.round(Number(cacheEscritura1h) || 0));
+  const cl = Math.max(0, Math.round(Number(cacheLectura) || 0));
+  if (e <= 0 && s <= 0 && c5 <= 0 && c1 <= 0 && cl <= 0) return;
+  const costo = costoAprox(modelo, e, s, { cacheEscritura5m: c5, cacheEscritura1h: c1, cacheLectura: cl }) ?? 0;
   guardarGasto(db, { proveedor, modelo, motivo, proyectoId, entrada: e, salida: s, costo });
 }
 

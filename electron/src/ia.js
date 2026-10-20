@@ -177,32 +177,94 @@ function tienda(datosDir) {
   return path.join(datosDir, "ia-modelos.json");
 }
 
+export const MARCA_CLAVE = "vigc1:";
+export const AVISO_SIN_CIFRADO = "En este computador las claves se guardan sin cifrar. El cifrado del sistema no está disponible.";
+export const AVISO_CLAVE_ILEGIBLE = "Hay una clave cifrada y este computador no puede leerla. Vuelva a guardarla.";
+
+let cifradorActivo = null;
+
+export function usarCifrador(cifrador) {
+  cifradorActivo = cifrador || null;
+}
+
+function cifraDe(cifrador) {
+  return cifrador === undefined ? cifradorActivo : cifrador;
+}
+
+function cifradoDisponible(cifrador) {
+  try {
+    return Boolean(cifrador && typeof cifrador.disponible === "function" && cifrador.disponible());
+  } catch {
+    return false;
+  }
+}
+
+function claveEnClaro(guardada, cifrador) {
+  const valor = String(guardada || "");
+  if (!valor.startsWith(MARCA_CLAVE)) return valor;
+  if (!cifradoDisponible(cifrador)) return "";
+  try {
+    return String(cifrador.descifrar(valor) || "");
+  } catch {
+    return "";
+  }
+}
+
+function claveParaDisco(clara, cifrador) {
+  const valor = String(clara || "");
+  if (!valor || valor.startsWith(MARCA_CLAVE) || !cifradoDisponible(cifrador)) return valor;
+  return cifrador.cifrar(valor);
+}
+
 function carpetaModelos(datosDir) {
   return path.join(datosDir, "modelos");
 }
 
-function leerTienda(datosDir) {
+function leerTienda(datosDir, cifrador = cifradorActivo) {
   try {
     const bruto = fs.readFileSync(tienda(datosDir), "utf8");
     const dato = JSON.parse(bruto);
-    return {
+    const crudas = dato?.nubes && typeof dato.nubes === "object" ? dato.nubes : {};
+    const nubes = {};
+    let migrar = false;
+    for (const [id, nube] of Object.entries(crudas)) {
+      const key = String(nube?.key || "");
+      if (key && !key.startsWith(MARCA_CLAVE) && cifradoDisponible(cifrador)) migrar = true;
+      nubes[id] = { ...nube, key: claveEnClaro(key, cifrador) };
+    }
+    const resultado = {
       activo: typeof dato?.activo === "string" && dato.activo ? dato.activo : MODELO_SENCILLO,
       modo: dato?.modo === "libre" ? "libre" : "fiel",
-      nubes: dato?.nubes && typeof dato.nubes === "object" ? dato.nubes : {},
+      nubes,
     };
+    if (migrar) escribirTienda(datosDir, resultado, cifrador);
+    return resultado;
   } catch {
     /* primera vez: sencillo y fiel */
   }
   return { activo: MODELO_SENCILLO, modo: "fiel", nubes: {} };
 }
 
-function escribirTienda(datosDir, dato) {
+function escribirTienda(datosDir, dato, cifrador = cifradorActivo) {
+  const nubes = {};
+  for (const [id, nube] of Object.entries(dato?.nubes || {})) {
+    nubes[id] = { ...nube, key: claveParaDisco(nube?.key, cifrador) };
+  }
   fs.mkdirSync(datosDir, { recursive: true });
-  fs.writeFileSync(tienda(datosDir), JSON.stringify(dato, null, 2), "utf8");
+  fs.writeFileSync(tienda(datosDir), JSON.stringify({ ...dato, nubes }, null, 2), "utf8");
   try {
     fs.chmodSync(tienda(datosDir), 0o600);
   } catch {
     /* las claves quedan igual de guardadas */
+  }
+}
+
+function archivoTieneClaveCifrada(datosDir) {
+  try {
+    const dato = JSON.parse(fs.readFileSync(tienda(datosDir), "utf8"));
+    return Object.values(dato?.nubes || {}).some((nube) => String(nube?.key || "").startsWith(MARCA_CLAVE));
+  } catch {
+    return false;
   }
 }
 
@@ -241,8 +303,8 @@ function ggufInstalados(datosDir) {
   return lista.sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
 }
 
-export function listarModelos(datosDir) {
-  const tiendaDato = leerTienda(datosDir);
+export function listarModelos(datosDir, cifrador) {
+  const tiendaDato = leerTienda(datosDir, cifraDe(cifrador));
   const modelos = [
     {
       id: MODELO_SENCILLO,
@@ -289,9 +351,10 @@ export function guardarModo(datosDir, modo) {
   return listarModelos(datosDir);
 }
 
-export function leerNubes(datosDir) {
-  const tiendaDato = leerTienda(datosDir);
-  return Object.entries(PROVEEDORES).map(([id, definicion]) => {
+export function leerNubes(datosDir, cifrador) {
+  const cifra = cifraDe(cifrador);
+  const tiendaDato = leerTienda(datosDir, cifra);
+  const lista = Object.entries(PROVEEDORES).map(([id, definicion]) => {
     const nube = tiendaDato.nubes[id] || {};
     return {
       id,
@@ -306,12 +369,17 @@ export function leerNubes(datosDir) {
       editableBase: id === "custom",
     };
   });
+  if (!cifradoDisponible(cifra)) {
+    lista.aviso = archivoTieneClaveCifrada(datosDir) ? AVISO_CLAVE_ILEGIBLE : AVISO_SIN_CIFRADO;
+  }
+  return lista;
 }
 
-export function guardarNube(datosDir, { proveedor, key, modelo, base }) {
+export function guardarNube(datosDir, { proveedor, key, modelo, base }, cifrador) {
   const definicion = PROVEEDORES[proveedor];
   if (!definicion) throw new Aviso("Ese proveedor no está soportado.");
-  const tiendaDato = leerTienda(datosDir);
+  const cifra = cifraDe(cifrador);
+  const tiendaDato = leerTienda(datosDir, cifra);
   const anterior = tiendaDato.nubes[proveedor] || {};
   const limpia = (valor) => String(valor || "").trim().replace(/^["'](.+)["']$/, "$1").trim();
   tiendaDato.nubes[proveedor] = {
@@ -320,8 +388,8 @@ export function guardarNube(datosDir, { proveedor, key, modelo, base }) {
     base: proveedor === "custom" ? (limpia(base) || anterior.base || "") : "",
   };
   if (!tiendaDato.nubes[proveedor].key) throw new Aviso("Escriba su clave del proveedor.");
-  escribirTienda(datosDir, tiendaDato);
-  return { nubes: leerNubes(datosDir), ...listarModelos(datosDir) };
+  escribirTienda(datosDir, tiendaDato, cifra);
+  return { nubes: leerNubes(datosDir, cifra), ...listarModelos(datosDir, cifra) };
 }
 
 // Quitar la clave de un proveedor: se olvida en este computador. Si era el

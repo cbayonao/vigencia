@@ -1906,6 +1906,7 @@ async function pintarModelos() {
   for (const item of ggufs) cajaInstalados.append(tarjetaGguf(item, instalados?.activo));
   const nubes = await window.vigencia.modelosNube();
   if (nubes?.ok) {
+    if (nubes.avisoCifrado) $("nubes-lista").append(nodo("p", "ayuda", nubes.avisoCifrado));
     for (const nube of nubes.nubes || []) $("nubes-lista").append(tarjetaNube(nube));
   }
 }

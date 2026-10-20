@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { generarBorrador, listarModelos, pulirConSencillo, contextoExpediente, extraerPuntos, semejantes, filtrarPorModo, guardarModo, leerNubes, guardarNube, quitarNube, borrarModelo, guardarActivo, textoParaDocumento, RECOMENDADOS, urlDeModelo, esGgufValido, tamanoDeContexto, cabeElModelo } from "../src/ia.js";
+import { generarBorrador, listarModelos, pulirConSencillo, contextoExpediente, extraerPuntos, semejantes, filtrarPorModo, guardarModo, leerNubes, guardarNube, quitarNube, borrarModelo, guardarActivo, textoParaDocumento, usarCifrador, AVISO_SIN_CIFRADO, RECOMENDADOS, urlDeModelo, esGgufValido, tamanoDeContexto, cabeElModelo } from "../src/ia.js";
 import { htmlMemorial, vistaMemorial } from "../src/memorial.js";
 import { redactarEscrito } from "../compartido/redactor.js";
 
@@ -253,4 +253,85 @@ test("el contexto del modelo local queda por debajo del bloque que tumba la vent
   assert.equal(tamanoDeContexto({}), 2048);
   assert.equal(cabeElModelo(771 * 1024 * 1024), true);
   assert.equal(cabeElModelo(1.9 * 1024 * 1024 * 1024), false);
+});
+
+function cifraFalsa(activo = true) {
+  return {
+    disponible: () => activo,
+    cifrar: (valor) => `vigc1:${Buffer.from(String(valor), "utf8").toString("base64")}`,
+    descifrar: (valor) => Buffer.from(String(valor).slice("vigc1:".length), "base64").toString("utf8"),
+  };
+}
+
+test("una clave en claro se vuelve a guardar cifrada y el chat usa el texto", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "vigencia-ia-"));
+  const cifra = cifraFalsa(true);
+  const plana = "clave-de-prueba-123";
+  fs.writeFileSync(path.join(dir, "ia-modelos.json"), JSON.stringify({
+    activo: "sencillo",
+    modo: "fiel",
+    nubes: { openai: { key: plana, modelo: "gpt-6.1-sol" } },
+  }));
+  usarCifrador(cifra);
+  try {
+    const nubes = leerNubes(dir, cifra);
+    const openai = nubes.find((n) => n.id === "openai");
+    assert.equal(openai.tieneClave, true);
+    assert.match(openai.huellaClave, /^clave-de/);
+    assert.equal(nubes.aviso, undefined);
+    const disco = fs.readFileSync(path.join(dir, "ia-modelos.json"), "utf8");
+    assert.equal(disco.includes(plana), false);
+    assert.match(disco, /vigc1:/);
+    guardarNube(dir, { proveedor: "anthropic", key: "sk-ant-prueba", modelo: "claude-sonnet-5-5" }, cifra);
+    const disco2 = fs.readFileSync(path.join(dir, "ia-modelos.json"), "utf8");
+    assert.equal(disco2.includes("sk-ant-prueba"), false);
+    assert.equal(disco2.includes(plana), false);
+    let auth = "";
+    const fetchFn = async (_url, pedido) => {
+      auth = pedido.headers.Authorization;
+      return sseAnthropic("ok");
+    };
+    await textoParaDocumento({ datosDir: dir, modeloId: "nube:openai", encargo: "hola", fetchFn });
+    assert.equal(auth, `Bearer ${plana}`);
+  } finally {
+    usarCifrador(null);
+  }
+});
+
+test("sin cifrado la clave sigue en claro y hay aviso", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "vigencia-ia-"));
+  const cifra = cifraFalsa(false);
+  const plana = "clave-de-prueba-123";
+  usarCifrador(cifra);
+  try {
+    guardarNube(dir, { proveedor: "openai", key: plana, modelo: "gpt-6.1-sol" }, cifra);
+    const disco = fs.readFileSync(path.join(dir, "ia-modelos.json"), "utf8");
+    assert.match(disco, new RegExp(plana));
+    const nubes = leerNubes(dir, cifra);
+    assert.equal(nubes.aviso, AVISO_SIN_CIFRADO);
+    assert.equal(nubes.find((n) => n.id === "openai").tieneClave, true);
+  } finally {
+    usarCifrador(null);
+  }
+});
+
+test("guardarUso cobra la escritura y la lectura de caché", async () => {
+  const { abrirBase, guardarUso, ultimoGasto } = await import("../src/db.js");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "vigencia-ia-"));
+  const db = abrirBase(path.join(dir, "grokvig.sqlite"));
+  guardarUso(db, {
+    proveedor: "anthropic",
+    modelo: "claude-sonnet-5-5",
+    motivo: "documento",
+    proyectoId: 3,
+    entrada: 1000,
+    salida: 500,
+    cacheEscritura5m: 4000,
+    cacheLectura: 10000,
+  });
+  const gasto = ultimoGasto(db, 3);
+  assert.equal(gasto.entrada, 1000);
+  assert.equal(gasto.salida, 500);
+  assert.equal(gasto.costo, 0.018);
+  db.close();
 });

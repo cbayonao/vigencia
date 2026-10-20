@@ -17,6 +17,7 @@ import {
   Notification,
   powerMonitor,
   protocol,
+  safeStorage,
   shell,
   Tray,
   utilityProcess,
@@ -98,7 +99,7 @@ import { pdfDesdeHtml } from "./pdf.js";
 import { alCambiar, estadoCorrida, lanzar } from "./jobs.js";
 import { fichaDeDetalle, redactarEscrito } from "../compartido/redactor.js";
 import { activarPieza, borrarPieza, guardarPieza, listarPiezas } from "./biblioteca.js";
-import { generarBorrador, generarInicial, guardarActivo, guardarModo, importarModelo, listarModelos, descargarModelo, modelosRecomendados, leerNubes, guardarNube, borrarModelo, quitarNube } from "./ia.js";
+import { generarBorrador, generarInicial, guardarActivo, guardarModo, importarModelo, listarModelos, descargarModelo, modelosRecomendados, leerNubes, guardarNube, borrarModelo, quitarNube, usarCifrador } from "./ia.js";
 import { htmlMemorial } from "./memorial.js";
 import { registrarDocumentos } from "./documentos-ipc.js";
 import { registrarJuris } from "./juris-ipc.js";
@@ -250,6 +251,25 @@ function responder(fn) {
   } catch (error) {
     return { ok: false, error: mensajeHumano(error) };
   }
+}
+
+function cifradorDelSistema() {
+  return {
+    disponible() {
+      try {
+        return safeStorage.isEncryptionAvailable();
+      } catch {
+        return false;
+      }
+    },
+    cifrar(texto) {
+      return `vigc1:${safeStorage.encryptString(String(texto)).toString("base64")}`;
+    },
+    descifrar(valor) {
+      const cuerpo = String(valor || "").slice("vigc1:".length);
+      return safeStorage.decryptString(Buffer.from(cuerpo, "base64"));
+    },
+  };
 }
 
 function prepararDatos() {
@@ -788,6 +808,7 @@ if (bloqueo) {
       });
     });
     Menu.setApplicationMenu(null);
+    usarCifrador(cifradorDelSistema());
     try {
       prepararDatos();
     } catch (error) {
@@ -1043,8 +1064,11 @@ if (bloqueo) {
       return {};
     }));
     ipcMain.handle("modelos-modo", (_evento, dato) => responder(() => guardarModo(datosDir, dato?.modo)));
-    ipcMain.handle("modelos-nube", () => responder(() => ({ nubes: leerNubes(datosDir) })));
-    ipcMain.handle("modelos-guardar-nube", (_evento, dato) => responder(() => guardarNube(datosDir, dato || {})));
+    ipcMain.handle("modelos-nube", () => responder(() => {
+      const nubes = leerNubes(datosDir, cifradorDelSistema());
+      return { nubes, avisoCifrado: nubes.aviso || "" };
+    }));
+    ipcMain.handle("modelos-guardar-nube", (_evento, dato) => responder(() => guardarNube(datosDir, dato || {}, cifradorDelSistema())));
     ipcMain.handle("modelos-quitar-nube", (_evento, dato) => responder(() => quitarNube(datosDir, dato?.proveedor)));
     ipcMain.handle("modelos-probar", async (_evento, dato) => {
       let mensajePrueba = () => "";

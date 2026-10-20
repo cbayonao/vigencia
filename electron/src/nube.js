@@ -223,13 +223,11 @@ async function chatAnthropic({ key, modelo, texto, maxTokens = 1024, onToken, fe
       throw errorNube(respuesta.status, await respuesta.text().catch(() => ""));
     }
     let salida = "";
-    const uso = { entrada: 0, salida: 0 };
+    const uso = { entrada: 0, salida: 0, cacheCreacion: null, cache5m: null, cache1h: null, cacheLectura: null };
     await leerSSE(respuesta, (evento, dato) => {
-      if (evento === "message_start" && dato?.message?.usage) {
-        uso.entrada = Number(dato.message.usage.input_tokens) || 0;
-      }
-      if (evento === "message_delta" && dato?.usage) {
-        uso.salida = Number(dato.usage.output_tokens) || 0;
+      if (evento === "message_start" || evento === "message_delta") {
+        anotarUsoAnthropic(dato?.message?.usage, uso);
+        anotarUsoAnthropic(dato?.usage, uso);
       }
       if (evento !== "content_block_delta") return;
       const trozo = dato?.delta?.text || "";
@@ -242,9 +240,10 @@ async function chatAnthropic({ key, modelo, texto, maxTokens = 1024, onToken, fe
         }
       }
     });
-    if (uso.entrada > 0 || uso.salida > 0) {
+    const medido = usoMedido(uso);
+    if (medido.entrada > 0 || medido.salida > 0 || medido.cacheEscritura5m > 0 || medido.cacheEscritura1h > 0 || medido.cacheLectura > 0) {
       try {
-        onUso?.({ ...uso });
+        onUso?.(medido);
       } catch {
         /* medir no tumba la redacción */
       }
@@ -257,12 +256,42 @@ async function chatAnthropic({ key, modelo, texto, maxTokens = 1024, onToken, fe
   }
 }
 
+function numeroUso(valor) {
+  const n = Number(valor);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+function anotarUsoAnthropic(uso, destino) {
+  if (!uso || typeof uso !== "object") return;
+  if (uso.input_tokens != null) destino.entrada = numeroUso(uso.input_tokens);
+  if (uso.output_tokens != null) destino.salida = numeroUso(uso.output_tokens);
+  if (uso.cache_creation_input_tokens != null) destino.cacheCreacion = numeroUso(uso.cache_creation_input_tokens);
+  if (uso.cache_read_input_tokens != null) destino.cacheLectura = numeroUso(uso.cache_read_input_tokens);
+  const creacion = uso.cache_creation;
+  if (creacion && typeof creacion === "object") {
+    if (creacion.ephemeral_5m_input_tokens != null) destino.cache5m = numeroUso(creacion.ephemeral_5m_input_tokens);
+    if (creacion.ephemeral_1h_input_tokens != null) destino.cache1h = numeroUso(creacion.ephemeral_1h_input_tokens);
+  }
+}
+
+function usoMedido(uso) {
+  const hayDesglose = uso.cache5m != null || uso.cache1h != null;
+  return {
+    entrada: uso.entrada || 0,
+    salida: uso.salida || 0,
+    cacheEscritura5m: hayDesglose ? (uso.cache5m || 0) : (uso.cacheCreacion || 0),
+    cacheEscritura1h: hayDesglose ? (uso.cache1h || 0) : 0,
+    cacheLectura: uso.cacheLectura || 0,
+  };
+}
+
 function limpiar(valor) {
   return String(valor || "").trim().replace(/^["'](.+)["']$/, "$1").trim();
 }
 
-// USD por millón de tokens (entrada, salida). Precios de referencia de cada
-// doc oficial; si cambian, se actualizan aquí y lo ya guardado no se toca.
+// USD por millón de tokens: [entrada, salida] y, si va, la fracción de la
+// entrada que cobra una lectura de caché. Sonnet 5.5 y Opus 5.5 leen al
+// 0,05; el resto, al 0,1. La escritura es 1,25 (5 min) o 2 (1 h) por la entrada.
 export const PRECIOS = {
   "muse-spark-1.3": [1.25, 4.25],
   "muse-spark-1.2": [1.25, 4.25],
@@ -275,9 +304,15 @@ export const PRECIOS = {
   "grok-4.7": [2, 6],
   "grok-4.6": [2, 6],
   "grok-4.5": [2, 6],
-  "claude-sonnet-5-5": [2, 10],
-  "claude-opus-5-5": [4, 20],
-  "claude-haiku-5-5": [0.1, 0.5],
+  "claude-sonnet-5-5": [2, 10, 0.05],
+  "claude-opus-5-5": [4, 20, 0.05],
+  "claude-haiku-5-5": [0.1, 0.5, 0.1],
+};
+
+// Haiku 5.5 cobra más cuando el pedido pasa de 100.000 tokens de entrada,
+// contando lecturas y escrituras de caché. El tramo alto reemplaza entrada y salida.
+const TRAMO_LARGO = {
+  "claude-haiku-5-5": { desde: 100000, entrada: 0.5, salida: 2.5 },
 };
 
 // Ventana de contexto en tokens, por modelo. De la doc oficial de cada uno;
@@ -304,11 +339,32 @@ export function contextoDe(modelo) {
   return Number.isInteger(n) && n > 0 ? n : null;
 }
 
-export function costoAprox(modelo, entrada, salida) {
-  const precios = PRECIOS[String(modelo || "").trim()];
+export function costoAprox(modelo, entrada, salida, extra = {}) {
+  const id = String(modelo || "").trim();
+  const precios = PRECIOS[id];
   if (!precios) return null;
-  const [e, s] = precios;
-  return Math.round(((Number(entrada) || 0) * e + (Number(salida) || 0) * s) / 1e6 * 1e6) / 1e6;
+  const baseEntrada = Number(entrada) || 0;
+  const baseSalida = Number(salida) || 0;
+  const escritura5m = Number(extra.cacheEscritura5m) || 0;
+  const escritura1h = Number(extra.cacheEscritura1h) || 0;
+  const lectura = Number(extra.cacheLectura) || 0;
+  const totalEntrada = baseEntrada + escritura5m + escritura1h + lectura;
+  let precioEntrada = precios[0];
+  let precioSalida = precios[1];
+  const tramo = TRAMO_LARGO[id];
+  if (tramo && totalEntrada > tramo.desde) {
+    precioEntrada = tramo.entrada;
+    precioSalida = tramo.salida;
+  }
+  const fraccionLectura = precios[2] == null ? 0.1 : precios[2];
+  const usd = (
+    baseEntrada * precioEntrada
+    + escritura5m * precioEntrada * 1.25
+    + escritura1h * precioEntrada * 2
+    + lectura * precioEntrada * fraccionLectura
+    + baseSalida * precioSalida
+  ) / 1e6;
+  return Math.round(usd * 1e6) / 1e6;
 }
 // Esto solo orienta cuando lo pegado no parece ninguna de las dos.
 export function avisoClaveMeta(key) {

@@ -44,8 +44,8 @@ export const COLUMNAS = [
 // Títulos que usan los juzgados, ya sin tildes ni puntos y en minúscula.
 // El orden importa: gana la primera columna cuyo sinónimo calza.
 const SINONIMOS = [
-  ["radicado", ["no proceso", "numero de proceso", "num proceso", "no de proceso", "proceso", "radicacion", "radicado", "no radicacion", "numero de radicacion", "no radicado", "expediente", "no expediente"]],
-  ["clase", ["clase de proceso", "clase proceso", "clase", "tipo de proceso", "tipo proceso", "tipo", "medio de control", "medio control", "tipo de accion"]],
+  ["radicado", ["numero", "no proceso", "numero de proceso", "num proceso", "no de proceso", "proceso", "radicacion", "radicado", "no radicacion", "numero de radicacion", "no radicado", "expediente", "no expediente"]],
+  ["clase", ["clase de proceso", "clase proceso", "clase", "tipo de proceso", "tipo proceso", "tipo", "grupo y tipo", "medio de control", "medio control", "tipo de accion"]],
   ["demandante", ["demandante", "demandantes", "accionante", "accionantes", "demandante accionante", "demandante/accionante", "solicitante"]],
   ["demandado", ["demandado", "demandados", "accionado", "accionados", "demandado accionado", "demandado/accionado", "causante"]],
   ["descripcion", ["auto / anotacion", "actuacion / anotacion", "auto anotacion", "actuacion anotacion"]],
@@ -128,26 +128,32 @@ export function normalizarRadicadoEstado(crudo) {
 
 // ---------- Encabezado del estado ----------
 
+// texto: líneas separadas por salto; el juzgado no pasa de su línea.
 export function metaDeTexto(texto) {
   const t = String(texto || "").replace(/\s+/g, " ");
   const meta = {};
-  const juz = /\b(JUZGADO|TRIBUNAL|SALA|CORTE|COMISI[OÓ]N)\b.*?(?=\s+(?:LISTADO|ESTADO|FECHA|NOTIFICACI[OÓ]N|P[AÁ]GINA|TRASLADO)\b|$)/i.exec(t);
+  const lineaJuzgado = String(texto || "").split("\n").find((l) => /\b(JUZGADO|TRIBUNAL|SALA|CORTE|COMISI[OÓ]N)\b/i.test(l)) || "";
+  const juz = /\b(JUZGADO|TRIBUNAL|SALA|CORTE|COMISI[OÓ]N)\b.*?(?=\s+(?:LISTADO|ESTADO|FECHA|NOTIFICACI[OÓ]N|P[AÁ]GINA|TRASLADO)\b|$)/i.exec(lineaJuzgado.replace(/\s+/g, " ").trim());
   if (juz) meta.juzgado = juz[0].replace(/[\s,;.:-]+$/, "").trim();
   const est = /\bESTADO\s*(?:No\.?|N[°º]|N[UÚ]MERO|#)?\s*(\d{1,4})\b/i.exec(t);
   if (est) meta.estado = est[1];
-  const fecha = /\bFECHA\s*(?:DEL ESTADO|DE FIJACI[OÓ]N)?\s*:?\s*(\d{1,2}\/\d{1,2}\/\d{4})/i.exec(t);
+  const fecha = /\bFECHA\s*(?:DEL ESTADO|DE FIJACI[OÓ]N)?\s*:?\s*(\d{1,2}\/\d{1,2}\/\d{4}|\d{4}-\d{2}-\d{2})/i.exec(t);
   if (fecha) meta.fecha = fechaCorta(fecha[1]);
   const larga = /\bESTADO\b.{0,40}?(\d{1,2}\s+DE\s+[A-ZÁÉÍÓÚ]+\s+DEL?\s+\d{4})/i.exec(t);
   if (!meta.fecha && larga) meta.fecha = fechaLarga(larga[1]);
   const pag = /\bP[AÁ]GINA\s*:?\s*(\d+)/i.exec(t);
   if (pag) meta.pagina = Number(pag[1]);
-  if (/LISTADO DE ESTADO|NOTIFICACI[OÓ]N POR ESTADO|FIJACI[OÓ]N DE ESTADOS|ESTADO DE FECHA|ESTADOS? ELECTR[OÓ]NICOS?/i.test(t)) meta.tipo = "estado";
+  const total = /(?:N[UÚ]MERO DE REGISTROS|TOTAL DE PROCESOS)\s*:?\s*(\d+)/i.exec(t);
+  if (total) meta.registros = Number(total[1]);
+  if (/LISTADO DE ESTADO|NOTIFICACI[OÓ]N POR ESTADO|FIJACI[OÓ]N DE ESTADOS|ESTADO DE FECHA|REPORTE DE ESTADO|ESTADOS? ELECTR[OÓ]NICOS?/i.test(t)) meta.tipo = "estado";
   else if (/TRASLADO/i.test(t)) meta.tipo = "traslado";
   return meta;
 }
 
+// dd/mm/aaaa, o aaaa-mm-dd.
 function fechaCorta(texto) {
-  const m = RE_FECHA.exec(String(texto || ""));
+  const iso = /\b(\d{4})-(\d{2})-(\d{2})\b/.exec(String(texto || ""));
+  const m = RE_FECHA.exec(String(texto || "")) || (iso && [iso[0], iso[3], iso[2], iso[1]]);
   if (!m) return "";
   return `${m[1].padStart(2, "0")}/${m[2].padStart(2, "0")}/${m[3]}`;
 }
@@ -294,8 +300,12 @@ function topesDeRegistros(inicios, datos) {
   }
   const de = (l) => bloques.findIndex((b) => l.y <= b.arriba + 0.5 && l.y >= b.abajo - 0.5);
   const cuales = inicios.map(de);
-  if (cuales.some((k) => k < 0) || new Set(cuales).size !== cuales.length) return porLinea;
-  return cuales.map((k, j) => Math.max(porLinea[j], bloques[k].arriba + 0.5));
+  if (cuales.every((k) => k >= 0) && new Set(cuales).size === cuales.length) return cuales.map((k, j) => Math.max(porLinea[j], bloques[k].arriba + 0.5));
+  // Celdas centradas sin blanco entre filas: hay texto apenas encima del
+  // primer número. Entonces el corte va a mitad de camino entre dos números.
+  const h0 = Math.max(...inicios[0].items.map((i) => i.h));
+  if (!datos.some((it) => it.y > porLinea[0] && it.y <= inicios[0].y + h0 * 1.6)) return porLinea;
+  return inicios.map((l, j) => (j ? (l.y + inicios[j - 1].y) / 2 : l.y + h0 * 1.6));
 }
 
 // "Auto Decide - Accede A Solicitud": actuación y anotación.
@@ -333,12 +343,13 @@ export function leerEstado(paginas, { origen = "pdf" } = {}) {
     const arriba = halladoAqui ? items.filter((it) => it.y > titulos.arriba) : [];
     const banda = halladoAqui ? items.filter((it) => it.y >= titulos.abajo && it.y <= titulos.arriba) : [];
     const datos = halladoAqui ? items.filter((it) => it.y < titulos.abajo) : items;
-    const cortes = cortesDeColumnas(titulos.titulos, datos.filter((it) => it.w < 300));
+    // Las rayas de firma no cuentan para los cortes.
+    const cortes = cortesDeColumnas(titulos.titulos, datos.filter((it) => it.w < 300 && !/^[_.\s-]+$/.test(it.str)));
     const tipos = titulos.titulos.map((t) => t.columna);
     const kRad = tipos.indexOf("radicado");
     const enRad = kRad >= 0 ? datos.filter((it) => columnaDe(it, cortes) === kRad && !cruza(it, cortes)) : [];
     const inicia = inicioDeRegistro(lineas(enRad, 3, true).map((l) => l.texto));
-    Object.assign(meta, Object.fromEntries(Object.entries(metaDeTexto(lineas(arriba, null, true).map((l) => l.texto).join(" "))).filter(([k, v]) => v && k !== "pagina" && !meta[k])));
+    Object.assign(meta, Object.fromEntries(Object.entries(metaDeTexto(lineas(arriba, null, true).map((l) => l.texto).join("\n"))).filter(([k, v]) => v && k !== "pagina" && !meta[k])));
     const sueltos = banda.filter((it) => !titulos.titulos.some((t) => it.x >= t.x0 - 1 && it.x + it.w <= t.x1 + 1));
     if (sueltos.length) {
       const texto = lineas(sueltos, null, true).map((l) => l.texto).join(" ");
@@ -383,13 +394,15 @@ export function leerEstado(paginas, { origen = "pdf" } = {}) {
       if (cola.length) notas.push({ pagina: n, texto: lineas(cola, null, true).map((l) => l.texto).join("\n"), aviso: "" });
     });
     if (!titulos.titulos.some((t) => t.columna === "radicado")) avisos.push(`Página ${n}: no hay columna de radicado.`);
+    const sinActuacion = "Este estado no trae la actuación de cada proceso: consúltela en el juzgado.";
+    if (!tipos.some((t) => ["actuacion", "descripcion", "anotacion"].includes(t)) && !avisos.includes(sinActuacion)) avisos.push(sinActuacion);
   }
   // Pie del estado: secretario, constancia de fijación y total de registros.
   for (const nota of notas) {
-    const m = /([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ ]{5,})\n\s*(?:SECRETARI[OA]|Secretar[ií]a)\b/.exec(nota.texto);
+    const m = /([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ ]{5,})\n\s*(?:SECRETARI[OA]|Secretar[ií][oa])\b/.exec(nota.texto);
     if (m && !meta.secretario) meta.secretario = m[1].trim();
-    const total = /N[uú]mero de Registros:?\s*(\d+)/i.exec(nota.texto);
-    if (total && !meta.registros) meta.registros = Number(total[1]);
+    const { registros } = metaDeTexto(nota.texto);
+    if (registros && !meta.registros) meta.registros = registros;
   }
   if (meta.registros && meta.registros !== filas.length) avisos.push(`El estado dice ${meta.registros} registros y se leyeron ${filas.length}: revise si falta alguno.`);
   filas.forEach((f, i) => {
@@ -466,7 +479,7 @@ function filaDeGrupo(grupo, { cortes, tipos, pagina, ultima, origen }) {
   const fechaTexto = texto("fecha").join(" ");
   fila.fecha = fechaCorta(fechaTexto) || fechaLarga(fechaTexto);
   if (!fila.fecha && tipos.includes("fecha")) avisos.push(fechaTexto ? `La fecha "${fechaTexto}" no se pudo leer.` : "Sin fecha del auto.");
-  if (!fila.actuacion) avisos.push("Sin actuación.");
+  if (!fila.actuacion && (tipos.includes("actuacion") || tipos.includes("descripcion"))) avisos.push("Sin actuación.");
   if (origen === "ocr") avisos.push("Leído con OCR: revise nombres y números.");
   if (corto) avisos.push(AVISO_CORTO);
   fila.confianza = confianza(fila, rad, corto);
@@ -476,7 +489,7 @@ function filaDeGrupo(grupo, { cortes, tipos, pagina, ultima, origen }) {
 // Con solo el número corto llega a "media" si lo demás está bien.
 function confianza(fila, rad, corto = false) {
   if (fila.origen === "texto") return "baja";
-  if (!fila.radicado) return corto && fila.fecha && fila.actuacion && fila.avisos.length <= 1 && fila.origen !== "ocr" ? "media" : "baja";
+  if (!fila.radicado) return corto && fila.fecha && fila.avisos.length <= 1 && fila.origen !== "ocr" ? "media" : "baja";
   if (fila.origen === "ocr" || rad.aviso || fila.avisos.length) return "media";
   return "alta";
 }

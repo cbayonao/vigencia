@@ -103,9 +103,12 @@ export function analizarJuzgado(nombre, { munis = [], despachos = [] } = {}) {
     // Nombres largos oficiales: "SANTIAGO DE CALI" también es "CALI".
     const mn = nombreMuni(m);
     const corto = mn.replace(/^(?:santiago|san jose) de /, "").replace(/ de indias$/, "");
+    // PDF que pierde las letras con tilde: "SOPÓ" llega como "Sop".
+    const sinTildes = normal(String(m.nombre).replace(/[^\x00-\x7F]/g, "")).replace(/\(.*\)|,.*$/g, "").trim();
     // Después de "de" o al final del nombre ("... 001 Andes").
     const esta = (x) => x && new RegExp(`(?:\\b(?:de|del|en)\\s+${x.replace(/[^a-z0-9 ]/g, ".")}\\b|\\s${x.replace(/[^a-z0-9 ]/g, ".")}$)`).test(n);
-    if (esta(mn) || esta(corto)) cands.push({ ...m, largo: (esta(mn) ? mn : corto).length });
+    const forma = [mn, corto, sinTildes].find(esta);
+    if (forma) cands.push({ ...m, largo: forma.length });
   }
   const largo = Math.max(0, ...cands.map((c) => c.largo));
   cands = cands.filter((c) => c.largo === largo);

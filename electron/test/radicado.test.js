@@ -21,6 +21,7 @@ const MUNIS = [
   { codigo: "99003", nombre: "LA INVENTADA" },
   { codigo: "98003", nombre: "LA INVENTADA" },
   { codigo: "98004", nombre: "BOGOTÁ, D.C." },
+  { codigo: "98005", nombre: "PRUEBANÓ" },
 ];
 const DESPACHOS = [
   { codigo: "990014089001", nombre: "JUZGADO 001 PROMISCUO MUNICIPAL DE VILLAPRUEBA" },
@@ -32,6 +33,7 @@ const DESPACHOS = [
   { codigo: "990013334003", nombre: "JUZGADO 003 ADMINISTRATIVO DE LA SECCIÓN PRIMERA DE VILLAPRUEBA" },
   { codigo: "990023333005", nombre: "JUZGADO 005 ADMINISTRATIVO DE SANTIAGO DE FICTICIA" },
   { codigo: "990023112001", nombre: "JUZGADO 001 CIVIL DEL CIRCUITO CON CONOCIMIENTO EN ASUNTOS LABORALES DE SANTIAGO DE FICTICIA" },
+  { codigo: "980054089001", nombre: "JUZGADO 001 PROMISCUO MUNICIPAL DE PRUEBANÓ" },
   { codigo: "990022205000", nombre: "SALA LABORAL DEL TRIBUNAL SUPERIOR DE SANTIAGO DE FICTICIA" },
 ];
 const CTX = { munis: MUNIS, despachos: DESPACHOS, hoy: HOY };
@@ -98,6 +100,9 @@ test("prefijo de juzgados administrativos (33 o por sección), civil laboral y m
   assert.equal(p("JUZGADO 5 ADMINISTRATIVO DE FICTICIA").prefijo, "990023333005");
   assert.equal(p("JUZGADO 9 ADMINISTRATIVO DE FICTICIA").confianza, "supuesto");
   assert.equal(p("Juzgado De Circuito - Civil Laboral 001 Ficticia").prefijo, "990023112001");
+  // El PDF perdió la letra con tilde: "PRUEBANÓ" llega como "Prueban".
+  assert.equal(p("Juzgado Promiscuo Municipal de Prueban").prefijo, "980054089001");
+  assert.equal(p("Juzgado Promiscuo Municipal de Pruebano").prefijo, "980054089001");
   assert.equal(armarRadicado("JUZGADO 10 ADMINISTRATIVO SEC SEGUNDA ORAL VILLAPRUEBA", "2026-431", CTX).radicado, "99001333501020260043100");
 });
 

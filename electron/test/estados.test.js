@@ -516,3 +516,67 @@ test("estado administrativo: celdas centradas, radicado en tres líneas y column
   assert.equal(columnaDeTitulo("Docum. a notif."), "anotacion");
   assert.equal(columnaDeTitulo("Reg"), "nada");
 });
+
+// Quinta forma: "Reporte de Estado" de la página web de un juzgado. Número
+// corto pegado (año y consecutivo, 9 dígitos), "Grupo y Tipo", fechas
+// aaaa-mm-dd, celdas centradas sin blanco entre filas y sin columna de
+// actuación. El PDF pierde las letras con tilde ("Pruebanó" llega "Pruebn").
+async function armarReporteWeb(registros, { total = registros.length } = {}) {
+  const pdf = await PDFDocument.create();
+  const f = await pdf.embedFont(StandardFonts.Helvetica);
+  const p = pdf.addPage([842, 595]);
+  const t = (texto, x, y, size = 9) => p.drawText(texto, { x, y, size, font: f });
+  t("Juzgado Promiscuo Municipal de Villapruebn", 300, 494, 14);
+  t("Villapruebn - Cundinamarca - Colombia", 357, 479);
+  t("www.juzgadoinventado.com", 375, 465);
+  t("Reporte de Estado", 369, 431, 12);
+  t("Fecha: 2026-09-23", 377, 415, 11);
+  t("Total de Procesos", 372, 380, 8);
+  t(`: ${total}`, 442, 380, 14);
+  [["Número", 57], ["Grupo y Tipo", 181], ["Demandante", 355], ["Demandado", 530], ["Fecha Auto", 666], ["Cuaderno", 747]].forEach(([s, x]) => t(s, x, 348));
+  let y = 326;
+  for (const r of registros) {
+    const col = (lineas, x) => lineas.forEach((l, k) => t(l, x, y + 5.5 * (lineas.length - 1) - 11 * k));
+    t(r.numero, 52, y);
+    col(r.clase, 115);
+    col(r.demandante, 308);
+    col(r.demandado, 462);
+    t(r.fecha, 668, y);
+    t("1", 765, y);
+    y -= 27;
+  }
+  t("_______________________________________", 300, y - 30);
+  t("PEDRO PRUEBA FALSO", 330, y - 42);
+  t("Secretario", 360, y - 54);
+  return Buffer.from(await pdf.save());
+}
+
+test("reporte de estado web: número corto pegado, celdas centradas sin blanco, fechas aaaa-mm-dd", async () => {
+  const regs = [
+    { numero: "201800762", clase: ["CIVIL- EJECUTIVO SINGULAR"], demandante: ["CONJUNTO INVENTADO", "DE PRUEBA P.H"], demandado: ["ANA FALSA Y BETO", "DE MENTIRA"], fecha: "2026-09-22" },
+    { numero: "202100170", clase: ["CIVIL- EJECUTIVOS ALIMENTOS"], demandante: ["CARLA INVENTADA"], demandado: ["DIANA EJEMPLO"], fecha: "2026-09-21" },
+    { numero: "202500386", clase: ["CIVIL- RESPONSABILIDAD CIVIL", "CONTRACTUAL"], demandante: ["EVA PRUEBA", "FALSA"], demandado: ["FIDEL DE MENTIRA Y", "OTROS"], fecha: "2026-09-22" },
+  ];
+  const r = await leer(await armarReporteWeb(regs));
+  assert.equal(r.filas.length, 3);
+  assert.deepEqual(r.meta, { paginas: 1, juzgado: "Juzgado Promiscuo Municipal de Villapruebn", fecha: "23/09/2026", registros: 3, tipo: "estado", secretario: "PEDRO PRUEBA FALSO" });
+  const [a, b, c] = r.filas;
+  assert.equal(a.radicadoTexto, "201800762");
+  assert.equal(a.clase, "CIVIL- EJECUTIVO SINGULAR");
+  assert.equal(a.demandante, "CONJUNTO INVENTADO DE PRUEBA P.H", "la línea encima del número es de su fila");
+  assert.equal(a.demandado, "ANA FALSA Y BETO DE MENTIRA");
+  assert.equal(a.fecha, "22/09/2026");
+  assert.equal(a.cuaderno, "1");
+  assert.equal(a.actuacion, "");
+  assert.equal(a.confianza, "media");
+  assert.deepEqual(a.avisos, ["Este estado trae solo el número corto del proceso; el radicado de 23 dígitos no se puede armar."]);
+  assert.deepEqual([b.demandante, b.fecha], ["CARLA INVENTADA", "21/09/2026"]);
+  assert.equal(c.clase, "CIVIL- RESPONSABILIDAD CIVIL CONTRACTUAL");
+  assert.equal(c.demandado, "FIDEL DE MENTIRA Y OTROS");
+  assert.match(r.avisos.join(" "), /no trae la actuación/);
+  assert.equal(columnaDeTitulo("Número"), "radicado");
+  assert.equal(columnaDeTitulo("Grupo y Tipo"), "clase");
+  // El total del encabezado no coincide: se avisa.
+  const corto = await leer(await armarReporteWeb(regs.slice(0, 2), { total: 3 }));
+  assert.match(corto.avisos.join(" "), /dice 3 registros y se leyeron 2/);
+});

@@ -27,7 +27,6 @@ jobs:
           cache: npm
           cache-dependency-path: electron/package-lock.json
       - uses: ./.github/actions/aws-auth
-        secrets: inherit
       - uses: ./.github/actions/llave-firma
       - run: npm ci
         working-directory: electron

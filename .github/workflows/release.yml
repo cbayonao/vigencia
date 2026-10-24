@@ -68,7 +68,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/aws-auth
-        secrets: inherit
       - run: ./electron/script/publicar-descargas.sh "$TAG"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

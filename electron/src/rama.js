@@ -22,13 +22,13 @@ const CABECERAS = {
   origin: "https://consultaprocesos.ramajudicial.gov.co",
   priority: "u=1, i",
   referer: "https://consultaprocesos.ramajudicial.gov.co/",
-  "sec-ch-ua": '"Chromium";v="154", "Google Chrome";v="154", "Not A(Brand";v="99"',
+  "sec-ch-ua": '"Chromium";v="155", "Google Chrome";v="155", "Not A(Brand";v="99"',
   "sec-ch-ua-mobile": "?0",
   "sec-ch-ua-platform": '"Linux"',
   "sec-fetch-dest": "empty",
   "sec-fetch-mode": "cors",
   "sec-fetch-site": "same-site",
-  "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36",
+  "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36",
 };
 
 const PAUSA_MS = 500;
@@ -44,6 +44,22 @@ export async function pedirRed(url, params) {
   return { status: respuesta.status, text: await respuesta.text() };
 }
 
+// El gateway de la Rama devuelve HTML en los errores (502 Bad Gateway de
+// Azure): se deja solo el texto para que el registro y los avisos se
+// puedan leer en vez de mostrar el HTML crudo.
+export function textoErrorRespuesta(valor) {
+  return String(valor || "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;|&#160;/g, " ")
+    .replace(/&(amp|quot|lt|gt|#39);/g, (entidad) => ({ "&amp;": "&", "&quot;": '"', "&lt;": "<", "&gt;": ">", "&#39;": "'" }[entidad] || entidad))
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// El gateway (502/503/504) suele recuperarse solo: se reintenta una vez
+// más que los demás errores, con esperas crecientes.
+const ESPERA_GATEWAY_MS = [2000, 5000, 15000];
+
 const dormirReal = (ms) => new Promise((resolver) => setTimeout(resolver, ms));
 
 async function pausaEntrePeticiones(ctx) {
@@ -53,23 +69,31 @@ async function pausaEntrePeticiones(ctx) {
 
 export async function obtenerJson(url, params, ctx, vacioSiNoHay = false) {
   let ultimo = "sin respuesta";
-  for (let intento = 1; intento <= 3; intento += 1) {
+  for (let intento = 1; intento <= 4; intento += 1) {
     let respuesta;
     try {
       respuesta = await ctx.pedir(url, params);
     } catch (error) {
       ultimo = String(error?.message || error);
+      if (intento >= 3) throw new Error(ultimo);
       await ctx.dormir(intento * 2000);
       continue;
     }
-    if ([429, 500, 502, 503, 504].includes(respuesta.status)) {
-      ultimo = `HTTP ${respuesta.status}: ${String(respuesta.text || "").slice(0, 200)}`;
+    if (respuesta.status === 502 || respuesta.status === 503 || respuesta.status === 504) {
+      ultimo = `HTTP ${respuesta.status}: ${textoErrorRespuesta(respuesta.text).slice(0, 200) || "la Rama no responde"}`;
+      await ctx.dormir(ESPERA_GATEWAY_MS[Math.min(intento, ESPERA_GATEWAY_MS.length) - 1]);
+      continue;
+    }
+    if (respuesta.status === 429 || respuesta.status === 500) {
+      ultimo = `HTTP ${respuesta.status}: ${textoErrorRespuesta(respuesta.text).slice(0, 200)}`;
+      if (intento >= 3) throw new Error(ultimo);
       await ctx.dormir(intento * 2000);
       continue;
     }
     if (respuesta.status === 403) {
       const espera = 20 * intento;
       ultimo = "HTTP 403";
+      if (intento >= 3) throw new Error(ultimo);
       ctx.log(`  la Rama respondió 403, espero ${espera}s`);
       await ctx.dormir(espera * 1000);
       continue;
@@ -79,7 +103,7 @@ export async function obtenerJson(url, params, ctx, vacioSiNoHay = false) {
       return {};
     }
     if (respuesta.status !== 200) {
-      throw new Error(`HTTP ${respuesta.status}: ${String(respuesta.text || "").slice(0, 300)}`);
+      throw new Error(`HTTP ${respuesta.status}: ${textoErrorRespuesta(respuesta.text).slice(0, 300)}`);
     }
     let data;
     try {

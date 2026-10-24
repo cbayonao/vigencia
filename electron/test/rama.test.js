@@ -5,7 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { abrirBase, asignarCliente, guardarCliente, uno } from "../src/db.js";
 import { lanzar, estadoCorrida } from "../src/jobs.js";
-import { ACTUACIONES_URL, CONSULTA_URL, ejecutarTrabajo, obtenerJson } from "../src/rama.js";
+import { ACTUACIONES_URL, CONSULTA_URL, ejecutarTrabajo, obtenerJson, textoErrorRespuesta } from "../src/rama.js";
 
 const NUMERO = "11001418901820190162700";
 
@@ -202,6 +202,35 @@ test("actualizar todo espera entre 1 y 3 segundos entre peticiones", async () =>
   } finally {
     tmp.borrar();
   }
+});
+
+test("el error del gateway se lee sin HTML y se reintenta con paciencia", async () => {
+  const html502 = "<html><head><title>502 Bad Gateway</title></head><body><center><h1>502 Bad Gateway</h1></center><hr><center>Microsoft-Azure-Application-Gateway/v2</center></body></html>";
+  assert.equal(textoErrorRespuesta(html502), "502 Bad Gateway 502 Bad Gateway Microsoft-Azure-Application-Gateway/v2");
+  assert.equal(textoErrorRespuesta(""), "");
+  let llamadas = 0;
+  const esperas = [];
+  const ctx = {
+    ...ctxDe(async () => {
+      llamadas += 1;
+      return { status: 502, text: html502 };
+    }),
+    dormir: async (ms) => { esperas.push(ms); },
+  };
+  await assert.rejects(obtenerJson(CONSULTA_URL, { numero: NUMERO }, ctx), /HTTP 502: 502 Bad Gateway/);
+  assert.equal(llamadas, 4);
+  assert.deepEqual(esperas, [2000, 5000, 15000, 15000]);
+});
+
+test("si el gateway se recupera, el reintento trae los datos", async () => {
+  let llamadas = 0;
+  const data = await obtenerJson(CONSULTA_URL, { numero: NUMERO }, ctxDe(async () => {
+    llamadas += 1;
+    if (llamadas < 3) return { status: 502, text: "<html><h1>502 Bad Gateway</h1></html>" };
+    return { status: 200, text: JSON.stringify({ procesos: [] }) };
+  }));
+  assert.deepEqual(data.procesos, []);
+  assert.equal(llamadas, 3);
 });
 
 test("si la consulta del radicado falla, el trabajo termina con error y no abre la red sola", async () => {

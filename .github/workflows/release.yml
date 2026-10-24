@@ -61,7 +61,9 @@ jobs:
         working-directory: electron
       # Subida directa al release (borrador). Sin cuota de artefactos y
       # re-ejecutable: --clobber reemplaza los archivos si ya existen.
+      # shell bash también en Windows: PowerShell no expande $VAR.
       - run: gh release upload "$TAG" electron/dist/Vigencia* --clobber
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}

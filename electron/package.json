@@ -1,7 +1,7 @@
 {
   "name": "vigencia",
   "productName": "Vigencia",
-  "version": "3.9.0",
+  "version": "3.10.0",
   "private": true,
   "description": "Consulta local de procesos. La base sqlite no sale del computador.",
   "main": "src/main.js",

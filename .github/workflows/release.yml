@@ -5,7 +5,8 @@
 # releases no son descargables por el público)— y se publica.
 # Si un instalador falla (p. ej. el verificador del motor en rojo), el
 # release queda en borrador y nada se publica: ese es el semáforo.
-# Los tags se crean solo desde main verde (ver CI).
+# Los tags se crean solo desde main verde (ver CI) y con package.json
+# ya subido a la misma versión (se verifica antes de crear el borrador).
 name: Publicar release
 
 on:
@@ -26,6 +27,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: |
+          TAG="${{ github.ref_name }}"
+          PKG=$(node -p "require('./electron/package.json').version")
+          test "$PKG" = "${TAG#v}" || { echo "package.json dice $PKG pero el tag es $TAG: suba la versión primero"; exit 1; }
           gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --draft --title "$TAG" --generate-notes
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

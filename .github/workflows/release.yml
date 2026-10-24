@@ -68,6 +68,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/aws-auth
+        with:
+          aws-role-arn: ${{ secrets.AWS_ROLE_ARN }}
       - run: ./electron/script/publicar-descargas.sh "$TAG"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

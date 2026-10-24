@@ -1,0 +1,15 @@
+# La llave de firma no va a git ni a secretos: se recupera de la Lambda
+# desplegada y vive solo en el runner. Requiere AWS ya autenticado.
+name: Recuperar llave de firma
+description: Descarga la llave privada de firma desde la Lambda desplegada.
+runs:
+  using: composite
+  steps:
+    - run: |
+        mkdir -p licencia/claves
+        aws lambda get-function-configuration --function-name vigencia-licencia \
+          --query 'Environment.Variables.LICENCIA_PRIVADA_B64' --output text \
+          | base64 -d > licencia/claves/licencia-privada.pem
+        chmod 600 licencia/claves/licencia-privada.pem
+        test -s licencia/claves/licencia-privada.pem
+      shell: bash

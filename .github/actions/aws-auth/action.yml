@@ -1,0 +1,10 @@
+# Autentica con AWS por OIDC. Requiere permissions.id-token: write.
+name: Autenticar con AWS
+description: Configura las credenciales de AWS con el rol del repositorio.
+runs:
+  using: composite
+  steps:
+    - uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+        aws-region: us-east-1

@@ -1,0 +1,89 @@
+# Despliega landing y licencia cuando cambian en main. Cada servicio va
+# por su lado: si solo cambia uno, el otro ni arranca. Con dispatch
+# manual se despliegan los dos. Los despliegues se encolan, no se pisan.
+# Secretos: AWS_ROLE_ARN, WOMPI_PUBLIC_KEY, WOMPI_PRIVATE_KEY,
+# WOMPI_INTEGRITY_SECRET y opcional WOMPI_EVENTS_SECRET.
+name: Desplegar servicios
+
+on:
+  push:
+    branches: [main]
+    paths: ["landing/**", "licencia/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy-main
+  cancel-in-progress: false
+
+jobs:
+  cambios:
+    runs-on: ubuntu-latest
+    outputs:
+      landing: ${{ steps.filtro.outputs.landing }}
+      licencia: ${{ steps.filtro.outputs.licencia }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filtro
+        with:
+          filters: |
+            landing: ["landing/**"]
+            licencia: ["licencia/**"]
+
+  landing:
+    needs: cambios
+    if: needs.cambios.outputs.landing == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/aws-auth
+        secrets: inherit
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.15"
+          terraform_wrapper: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: landing/package-lock.json
+      - run: terraform init -input=false && terraform apply -auto-approve -input=false
+        working-directory: landing/terraform
+      - run: npm ci
+        working-directory: landing
+      - run: ./landing/script/desplegar.sh
+        env:
+          # El build consulta el último release para activar la tarjeta de Mac.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  licencia:
+    needs: cambios
+    if: needs.cambios.outputs.licencia == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/aws-auth
+        secrets: inherit
+      - uses: ./.github/actions/llave-firma
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.15"
+          terraform_wrapper: false
+      # Las claves de firma (.pem) nunca van a git. Las de Wompi y demás
+      # llegan por secretos y el apply las exige con precondición.
+      - run: |
+          cat > terraform.tfvars <<EOF
+          wompi_env              = "prod"
+          wompi_public_key       = "${{ secrets.WOMPI_PUBLIC_KEY }}"
+          wompi_private_key      = "${{ secrets.WOMPI_PRIVATE_KEY }}"
+          wompi_integrity_secret = "${{ secrets.WOMPI_INTEGRITY_SECRET }}"
+          wompi_events_secret    = "${{ secrets.WOMPI_EVENTS_SECRET }}"
+          comentarios_clave      = "${{ secrets.COMENTARIOS_CLAVE }}"
+          EOF
+        working-directory: licencia/terraform
+      - run: terraform init -input=false && terraform apply -auto-approve -input=false
+        working-directory: licencia/terraform

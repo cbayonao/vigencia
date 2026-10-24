@@ -7,31 +7,18 @@ import {
   lineaDeCarga,
   nombreCliente,
   normalizarRadicado,
-  PAUSA_ACTUALIZAR_MS,
   pausaAleatoriaMs,
-  textoPausa,
   tipoClave,
   tramosDeActuaciones,
   visibles,
 } from "../compartido/logica.js";
 
-test("actualizar todo espera de 1 a 3 segundos y el botón queda bloqueado una hora", () => {
+test("actualizar todo espera de 1 a 3 segundos y el botón no se bloquea", () => {
   assert.equal(pausaAleatoriaMs(() => 0), 1000);
   assert.equal(pausaAleatoriaMs(() => 0.5), 2000);
   assert.equal(pausaAleatoriaMs(() => 1), 3000);
-  const ahoraFecha = new Date(2026, 9, 10, 12, 0, 0);
-  const decision = decidirActualizar(null, false, ahoraFecha);
-  assert.equal(decision.ok, true);
-  assert.equal(decision.hasta, "2026-10-10 13:00:00");
-  assert.equal(PAUSA_ACTUALIZAR_MS, 60 * 60 * 1000);
-  const otra = decidirActualizar(decision.hasta, false, ahoraFecha);
-  assert.equal(otra.ok, false);
-  assert.equal(otra.error, "Puedes actualizar de nuevo a las 13:00.");
-  assert.equal(textoPausa(decision.hasta, new Date(2026, 9, 10, 13, 0, 0)), "");
-  const noche = decidirActualizar(null, false, new Date(2026, 9, 10, 23, 30, 0));
-  assert.equal(noche.hasta, "2026-10-11 00:30:00");
-  assert.equal(textoPausa(noche.hasta, new Date(2026, 9, 10, 23, 30, 0)), "Puedes actualizar de nuevo a las 00:30 del 11 oct 2026.");
-  assert.equal(decidirActualizar(null, true, ahoraFecha).error, "Ya hay una consulta en curso.");
+  assert.deepEqual(decidirActualizar(false), { ok: true });
+  assert.equal(decidirActualizar(true).error, "Ya hay una consulta en curso.");
 });
 
 test("el nombre del cliente sale de la ficha y también de la fila de la lista", () => {

@@ -48,9 +48,7 @@ import {
   informesDelDia,
   guardarCliente,
   guardarInformeRevision,
-  guardarPausaActualizar,
   leerInformeRevision,
-  leerPausaActualizar,
   listarClientes,
   listarProcesos,
   ppCatalogoVacio,
@@ -95,7 +93,7 @@ import { libroExcel } from "./excel.js";
 import { docxDeEscrito, textoDeDocx } from "./docx.js";
 import { htmlInforme, fechaInforme, nombreArchivoInforme } from "./informe.js";
 import { pdfDesdeHtml } from "./pdf.js";
-import { alCambiar, estadoCorrida, lanzar } from "./jobs.js";
+import { alCambiar, cancelarCorrida, estadoCorrida, lanzar } from "./jobs.js";
 import { fichaDeDetalle, redactarEscrito } from "../compartido/redactor.js";
 import { activarPieza, borrarPieza, guardarPieza, listarPiezas } from "./biblioteca.js";
 import { generarBorrador, generarInicial, guardarActivo, guardarModo, importarModelo, listarModelos, descargarModelo, modelosRecomendados, leerNubes, guardarNube, borrarModelo, quitarNube } from "./ia.js";
@@ -585,7 +583,6 @@ function infoAutomatica() {
     inicioSesion: leerInicioSesion(db),
     ultima: ultimaRevision(db),
     proxima: proximaRevision || claveTurno(proximoTurno(horas)),
-    actualizarHasta: leerPausaActualizar(db),
   };
 }
 
@@ -690,7 +687,7 @@ function revisarTodo(origen, turno = null) {
   const cerrado = planCerrado();
   if (cerrado) return cerrado;
   const foto = estadoCorrida();
-  const decision = decidirActualizar(leerPausaActualizar(db), foto.revisando || foto.cargando || foto.puntual);
+  const decision = decidirActualizar(foto.revisando || foto.cargando || foto.puntual);
   if (!decision.ok) return decision;
   const avisoBase = ultimoAvisoId(db);
   let revisionId = null;
@@ -704,12 +701,11 @@ function revisarTodo(origen, turno = null) {
     alTerminar: (resultado) => terminarCorrida({ origen, revisionId, avisoBase, resultado }),
   });
   if (!lanzado) return { ok: false, error: "Ya hay una consulta en curso." };
-  guardarPausaActualizar(db, decision.hasta);
   revisionId = iniciarRevision(db, { origen, turno });
   guardarUltimoTurno(db, turnoCubierto(leerHorarios(db), leerUltimoTurno(db)));
   if (origen !== "manual") registrar(`revisión ${origen}${turno ? ` del turno ${turno}` : ""}: empieza`);
   publicarAutomatica();
-  return { ok: true, hasta: decision.hasta };
+  return { ok: true };
 }
 
 function revisarDesdeBandeja() {
@@ -733,7 +729,6 @@ function iniciarProgramador() {
       return {
         horas: leerHorarios(db),
         ultimoTurno: leerUltimoTurno(db),
-        pausaHasta: leerPausaActualizar(db),
         ocupado: foto.revisando || foto.cargando || foto.puntual,
       };
     },
@@ -879,7 +874,6 @@ if (bloqueo) {
       }
       return {
         ...estadoCorrida(),
-        actualizarHasta: leerPausaActualizar(db),
         informe: leerInformeRevision(db),
         automatica,
         abrirCambios: pendientes,
@@ -923,6 +917,7 @@ if (bloqueo) {
       if (!trabajo("agregar", limpio)) return { ok: false, error: "Ya hay una consulta en curso." };
       return { ok: true };
     });
+    ipcMain.handle("agregar-cancelar", () => ({ ok: true, detenida: cancelarCorrida("agregar") }));
     ipcMain.handle("elegir-csv", async () => {
       const elegido = await dialog.showOpenDialog(ventana, {
         title: "Cargar radicados",

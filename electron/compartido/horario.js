@@ -1,4 +1,4 @@
-import { ahora, instanteLocal } from "./logica.js";
+import { ahora } from "./logica.js";
 
 export const HORARIOS_PREDETERMINADOS = Object.freeze(["07:00", "13:00"]);
 export const MAXIMO_HORARIOS = 2;
@@ -84,7 +84,7 @@ export function turnoCubierto(horas, ultimoTurno, fecha = new Date()) {
   return !ultimoTurno || clave > ultimoTurno ? clave : ultimoTurno;
 }
 
-export function decidirAutomatica({ horas, ultimoTurno = null, pausaHasta = null, ocupado = false, fecha = new Date() }) {
+export function decidirAutomatica({ horas, ultimoTurno = null, ocupado = false, fecha = new Date() }) {
   const clave = claveTurno(turnoAnterior(horas, fecha));
   const siguiente = proximoTurno(horas, fecha);
   const proximo = claveTurno(siguiente);
@@ -93,16 +93,6 @@ export function decidirAutomatica({ horas, ultimoTurno = null, pausaHasta = null
   }
   if (ocupado) {
     return { accion: "posponer", turno: clave, en: REINTENTO_OCUPADO_MS, motivo: "Ya hay una consulta en curso.", proximo };
-  }
-  const fin = instanteLocal(pausaHasta);
-  if (fin != null && fin > fecha.getTime()) {
-    return {
-      accion: "posponer",
-      turno: clave,
-      en: fin - fecha.getTime() + 1000,
-      motivo: `Actualizar todo está en pausa hasta las ${String(pausaHasta).slice(11, 16)}.`,
-      proximo,
-    };
   }
   return { accion: "correr", turno: clave, en: 0, proximo };
 }

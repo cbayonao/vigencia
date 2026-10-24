@@ -8,6 +8,7 @@ const oyentes = new Set();
 function vacia(modo) {
   return {
     corriendo: false,
+    cancelada: false,
     exit_code: null,
     lineas: [],
     inicio: null,
@@ -37,6 +38,7 @@ function marcas() {
 function foto(corrida) {
   return {
     corriendo: corrida.corriendo,
+    cancelada: corrida.cancelada,
     exit_code: corrida.exit_code,
     lineas: corrida.lineas.map((linea) => lineaDeCarga(linea)).filter(Boolean),
     inicio: corrida.inicio,
@@ -84,6 +86,15 @@ export function alCambiar(fn) {
   return () => oyentes.delete(fn);
 }
 
+// Detener un trabajo en curso (hoy la usa la búsqueda completa de un
+// radicado): el trabajo para entre peticiones y avisa que se detuvo.
+export function cancelarCorrida(modo) {
+  const corrida = corridas[modo];
+  if (!corrida || !corrida.corriendo) return false;
+  corrida.cancelada = true;
+  return true;
+}
+
 function publicar(modo) {
   const dato = foto(corridas[modo]);
   for (const fn of oyentes) fn(dato);
@@ -113,6 +124,7 @@ export function lanzar({
   const archivo = bitacoraEn(datosDir);
   const crudas = [];
   corrida.corriendo = true;
+  corrida.cancelada = false;
   corrida.exit_code = null;
   corrida.lineas = [];
   corrida.informe = null;
@@ -140,10 +152,11 @@ export function lanzar({
     permitirRed,
     pedir,
     dormir,
-    ctx: { log, aviso: archivo.aviso, notificar: avisarSistema ? notificarSistema : undefined },
+    ctx: { log, aviso: archivo.aviso, notificar: avisarSistema ? notificarSistema : undefined, cancelada: () => corrida.cancelada },
   }).then((resultado) => {
     corrida.exit_code = resultado.codigo;
     corrida.informe = resultado.informe || null;
+    corrida.cancelada = Boolean(resultado.cancelado);
     final = { ...resultado, error: null };
   }).catch((error) => {
     try {

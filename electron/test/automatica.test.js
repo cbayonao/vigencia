@@ -139,14 +139,12 @@ test("un turno perdido corre una sola vez y luego espera el siguiente", () => {
   assert.equal(temprano.en, 60 * 1000);
 });
 
-test("no corre durante otra consulta ni durante la pausa de Actualizar todo", () => {
+test("no corre durante otra consulta; sin pausa de Actualizar todo", () => {
   const ocupado = decidirAutomatica({ horas: HORAS, ultimoTurno: "2026-10-09 13:00:00", ocupado: true, fecha: en(10, 7, 1) });
   assert.equal(ocupado.accion, "posponer");
   assert.equal(ocupado.en, REINTENTO_OCUPADO_MS);
-  const pausa = decidirAutomatica({ horas: HORAS, ultimoTurno: "2026-10-09 13:00:00", pausaHasta: "2026-10-10 07:30:00", fecha: en(10, 7, 1) });
-  assert.equal(pausa.accion, "posponer");
-  assert.equal(pausa.en, 29 * 60 * 1000 + 1000);
-  assert.match(pausa.motivo, /07:30/);
+  const sinPausa = decidirAutomatica({ horas: HORAS, ultimoTurno: "2026-10-09 13:00:00", pausaHasta: "2026-10-10 07:30:00", fecha: en(10, 7, 1) });
+  assert.equal(sinPausa.accion, "correr", "la pausa del botón ya no detiene la revisión");
   assert.equal(decidirAutomatica({ horas: HORAS, ultimoTurno: "2026-10-09 13:00:00", pausaHasta: "2026-10-10 06:00:00", fecha: en(10, 7, 1) }).accion, "correr");
 });
 

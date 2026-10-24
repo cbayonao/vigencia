@@ -34,6 +34,11 @@ const CABECERAS = {
 const PAUSA_MS = 500;
 const MAX_PAGINAS = 50;
 const MAX_FALLOS_SEGUIDOS = 5;
+// Lotes de 50 con arranque lento: se empieza de a un expediente y se suma
+// uno concurrente por éxito (máximo 5); ante un fallo se vuelve a uno.
+// Así la revisión va más rápido sin aporrear a la Rama a la primera.
+const TAMANO_LOTE = 50;
+const CONCURRENCIA_MAXIMA = 5;
 
 export async function pedirRed(url, params) {
   const destino = new URL(url);
@@ -131,6 +136,7 @@ export async function pedirLista(url, clave, paginar, ctx) {
   let usarPagina = paginar;
   let rompimos = false;
   while (pagina <= MAX_PAGINAS) {
+    if (detenido(ctx)) return { items, completo: true, cancelado: true };
     const params = usarPagina ? { pagina: String(pagina) } : null;
     const data = await obtenerJson(url, params, ctx, true);
     if (!data || !Object.keys(data).length) return { items: [], completo: true };
@@ -163,13 +169,14 @@ export async function consultarRadicado(numero, ctx) {
   const paginas = [];
   let pagina = 1;
   while (pagina <= MAX_PAGINAS) {
+    if (detenido(ctx)) return { paginas, cancelado: true };
     const data = await obtenerJson(CONSULTA_URL, { numero, SoloActivos: "false", pagina: String(pagina) }, ctx);
     paginas.push(data);
     const cantidad = cantidadPaginas(data);
     if (pagina >= cantidad || !data.procesos?.length) break;
     pagina += 1;
   }
-  return paginas;
+  return { paginas, cancelado: false };
 }
 
 function yaConsultado(db, numero) {
@@ -182,6 +189,7 @@ async function pasoConsulta(db, numeros, actualizar, ctx) {
   let errores = 0;
   let fallo = false;
   for (let indice = 0; indice < numeros.length; indice += 1) {
+    if (detenido(ctx)) return { nuevos, errores, fallo, cancelado: true };
     const numero = numeros[indice];
     ctx.log(`[consulta ${indice + 1}/${numeros.length}] ${numero}`);
     if (!actualizar && yaConsultado(db, numero)) {
@@ -189,7 +197,8 @@ async function pasoConsulta(db, numeros, actualizar, ctx) {
       continue;
     }
     try {
-      const paginas = await consultarRadicado(numero, ctx);
+      const { paginas, cancelado } = await consultarRadicado(numero, ctx);
+      if (cancelado) return { nuevos, errores, fallo, cancelado: true };
       const ids = transaccion(db, () => guardarConsulta(db, numero, paginas));
       nuevos += ids.length;
       ctx.log(ids.length ? `  procesos=${ids.length}` : "  la Rama no devolvió procesos");
@@ -216,7 +225,9 @@ async function pasoDetalle(db, actualizar, radicado, ctx) {
   ctx.log(`Detalles pendientes: ${pendientes.length}`);
   let nuevos = 0;
   let errores = 0;
+  if (detenido(ctx)) return { nuevos, errores, cancelado: true };
   for (let indice = 0; indice < pendientes.length; indice += 1) {
+    if (detenido(ctx)) return { nuevos, errores, cancelado: true };
     const idProceso = pendientes[indice].id_proceso;
     ctx.log(`[detalle ${indice + 1}/${pendientes.length}] ${idProceso}`);
     try {
@@ -233,8 +244,18 @@ async function pasoDetalle(db, actualizar, radicado, ctx) {
 }
 
 function textoCorto(valor) {
-  if (valor == null) return "";
-  return String(valor).replace(/\s+/g, " ").trim();
+  return String(valor == null ? "" : valor).replace(/\s+/g, " ").trim();
+}
+
+// La búsqueda completa se puede detener desde la ventana: se avisa una
+// sola vez y cada fase corta lo pendiente devolviendo cancelado: true.
+function detenido(ctx) {
+  if (!ctx.cancelada?.()) return false;
+  if (!ctx.avisoCancelado) {
+    ctx.avisoCancelado = true;
+    ctx.log("Búsqueda detenida por el usuario. Lo ya guardado queda en la base.");
+  }
+  return true;
 }
 
 function informeDe(resultados) {
@@ -275,21 +296,29 @@ async function pasoSeguimiento(db, { limite, soloFaltantes, radicado, idProceso,
   }
   if (limite > 0) procesos = procesos.slice(0, limite);
   ctx.log(soloActuaciones ? `Actuaciones de ${procesos.length} expediente(s)` : `Seguimiento de ${procesos.length} expediente(s)`);
-  let cambios = 0;
-  let errores = 0;
-  let fallosSeguidos = 0;
-  const resultados = [];
-  const anotar = (fila, ok, causa = "") => {
+  const cuenta = { cambios: 0, errores: 0, fallos: 0 };
+  const salidas = new Array(procesos.length).fill(null);
+  if (detenido(ctx)) return { cambios: 0, errores: 0, informe: soloActuaciones ? informeDe([]) : null, cancelado: true };
+  const estado = { parar: false, motivo: "" };
+  const anotar = (indice, fila, ok, causa = "") => {
     if (!soloActuaciones) return;
-    resultados.push({
+    salidas[indice] = {
       radicado: fila.radicado,
       despacho: fila.despacho || "",
       ok,
       causa: ok ? "" : causa,
-    });
+    };
   };
-  for (let indice = 0; indice < procesos.length; indice += 1) {
+  function pararPor(motivo) {
+    if (estado.parar) return;
+    estado.parar = true;
+    estado.motivo = motivo;
+    ctx.log(`  paro el seguimiento: ${motivo} Lo pendiente queda para la próxima corrida`);
+  }
+  async function tarea(indice) {
     const fila = procesos[indice];
+    if (detenido(ctx)) return "cancelado";
+    if (estado.parar) return "parado";
     ctx.log(`[seguimiento ${indice + 1}/${procesos.length}] ${fila.radicado} idProceso=${fila.id_proceso}`);
     let sujetos = [];
     let sujetosOk = false;
@@ -297,11 +326,13 @@ async function pasoSeguimiento(db, { limite, soloFaltantes, radicado, idProceso,
     let documentosOk = false;
     let actuaciones = [];
     let actuacionesOk = false;
+    let canceladoLista = false;
     try {
       if (soloActuaciones) {
         const acto = await pedirLista(`${ACTUACIONES_URL}/${fila.id_proceso}`, "actuaciones", true, ctx);
         actuaciones = acto.items;
         actuacionesOk = acto.completo;
+        canceladoLista = acto.cancelado;
       } else {
         const sujeto = await pedirLista(`${SUJETOS_URL}/${fila.id_proceso}`, "sujetos", true, ctx);
         const documento = await pedirLista(`${DOCUMENTOS_URL}/${fila.id_proceso}`, "documentos", false, ctx);
@@ -312,74 +343,139 @@ async function pasoSeguimiento(db, { limite, soloFaltantes, radicado, idProceso,
         documentosOk = documento.completo;
         actuaciones = acto.items;
         actuacionesOk = acto.completo;
+        canceladoLista = sujeto.cancelado || documento.cancelado || acto.cancelado;
       }
     } catch (error) {
-      errores += 1;
+      cuenta.errores += 1;
       const causa = causaDePeticion(error.message);
       ctx.log(`  error: ${error.message}`);
-      anotar(fila, false, causa);
-      fallosSeguidos += 1;
-      if (fallosSeguidos >= MAX_FALLOS_SEGUIDOS && !String(error.message).includes("403")) {
-        ctx.log(`  paro el seguimiento: ${fallosSeguidos} errores seguidos, sin respuesta de la Rama. Lo pendiente queda para la próxima corrida`);
-        for (let siguiente = indice + 1; siguiente < procesos.length; siguiente += 1) {
-          errores += 1;
-          anotar(procesos[siguiente], false, "No se intentó: la Rama no respondió varias veces seguidas.");
-        }
-        break;
-      }
+      anotar(indice, fila, false, causa);
+      cuenta.fallos += 1;
       if (String(error.message).includes("403")) {
-        ctx.log("  paro el seguimiento: la Rama bloqueó las peticiones. Lo pendiente queda para la próxima corrida");
-        for (let siguiente = indice + 1; siguiente < procesos.length; siguiente += 1) {
-          errores += 1;
-          anotar(procesos[siguiente], false, "No se intentó: la Rama bloqueó las peticiones.");
-        }
-        break;
+        pararPor("la Rama bloqueó las peticiones.");
+      } else if (cuenta.fallos >= MAX_FALLOS_SEGUIDOS) {
+        pararPor("la Rama no respondió varias veces seguidas.");
       }
-      continue;
+      return "falla";
     }
-    fallosSeguidos = 0;
+    cuenta.fallos = 0;
+    if (canceladoLista || detenido(ctx)) return "cancelado";
+    if (estado.parar) return "parado";
     if (!uno(db, "SELECT id_proceso FROM proceso WHERE id_proceso = ?", [fila.id_proceso])) {
       ctx.log("  el expediente ya no está en la lista");
-      continue;
+      return "ok";
     }
     if (soloActuaciones && !actuacionesOk) {
-      errores += 1;
+      cuenta.errores += 1;
       const causa = "Las actuaciones llegaron incompletas.";
       ctx.log(`  ${causa}`);
-      anotar(fila, false, causa);
-      continue;
+      anotar(indice, fila, false, causa);
+      cuenta.fallos += 1;
+      if (cuenta.fallos >= MAX_FALLOS_SEGUIDOS) pararPor("la Rama no respondió varias veces seguidas.");
+      return "falla";
     }
     const momento = ahora();
     try {
     transaccion(db, () => {
       if (sujetosOk) {
-        cambios += guardarSujetos(db, fila.id_proceso, fila.radicado, sujetos, true, fila.sujetos_consultado_en != null, ctx);
+        cuenta.cambios += guardarSujetos(db, fila.id_proceso, fila.radicado, sujetos, true, fila.sujetos_consultado_en != null, ctx);
         runSilencioso(db, momento, "sujetos_consultado_en", fila.id_proceso);
       } else if (!soloActuaciones) {
         ctx.log("  sujetos incompletos; no se marcan ni se borran");
       }
       if (documentosOk) {
-        cambios += guardarDocumentos(db, fila.id_proceso, fila.radicado, documentos, true, fila.documentos_consultado_en != null, ctx);
+        cuenta.cambios += guardarDocumentos(db, fila.id_proceso, fila.radicado, documentos, true, fila.documentos_consultado_en != null, ctx);
         runSilencioso(db, momento, "documentos_consultado_en", fila.id_proceso);
       } else if (!soloActuaciones) {
         ctx.log("  documentos incompletos; no se marcan ni se borran");
       }
       if (actuacionesOk) {
-        cambios += guardarActuaciones(db, fila.id_proceso, fila.radicado, actuaciones, true, fila.actuaciones_consultado_en != null, ctx);
+        cuenta.cambios += guardarActuaciones(db, fila.id_proceso, fila.radicado, actuaciones, true, fila.actuaciones_consultado_en != null, ctx);
         runSilencioso(db, momento, "actuaciones_consultado_en", fila.id_proceso);
       } else {
         ctx.log("  actuaciones incompletas; no se marcan ni se borran");
       }
     });
     } catch (error) {
-      errores += 1;
+      cuenta.errores += 1;
       ctx.log(`  error: ${error.message}`);
-      anotar(fila, false, "No se pudo guardar la respuesta.");
+      anotar(indice, fila, false, "No se pudo guardar la respuesta.");
+      cuenta.fallos += 1;
+      if (cuenta.fallos >= MAX_FALLOS_SEGUIDOS) pararPor("la Rama no respondió varias veces seguidas.");
+      return "falla";
+    }
+    anotar(indice, fila, true);
+    ctx.log(soloActuaciones ? `  actuaciones=${actuaciones.length}` : `  sujetos=${sujetos.length} documentos=${documentos.length} actuaciones=${actuaciones.length}`);
+    return "ok";
+  }
+  async function correrLote(indices) {
+    let siguiente = 0;
+    let tope = 1;
+    let activos = 0;
+    let resolveListo;
+    let rejectListo;
+    const listo = new Promise((res, rej) => { resolveListo = res; rejectListo = rej; });
+    const frenar = () => estado.parar || detenido(ctx);
+    function masObreros() {
+      while (activos < tope && siguiente < indices.length && !frenar()) {
+        activos += 1;
+        obrero().then(
+          () => {
+            activos -= 1;
+            if (activos === 0) resolveListo();
+            else masObreros();
+          },
+          (error) => {
+            activos -= 1;
+            if (activos === 0) rejectListo(error);
+            else masObreros();
+          },
+        );
+      }
+      if (activos === 0) resolveListo();
+    }
+    async function obrero() {
+      for (;;) {
+        if (frenar()) return;
+        const k = siguiente;
+        siguiente += 1;
+        if (k >= indices.length) return;
+        const r = await tarea(indices[k]);
+        if (r === "ok") tope = Math.min(tope + 1, CONCURRENCIA_MAXIMA);
+        else tope = 1;
+        masObreros();
+      }
+    }
+    masObreros();
+    await listo;
+  }
+  const totalLotes = Math.max(1, Math.ceil(procesos.length / TAMANO_LOTE));
+  let cancelado = false;
+  for (let ini = 0, lote = 1; ini < procesos.length; ini += TAMANO_LOTE, lote += 1) {
+    if (estado.parar || detenido(ctx)) break;
+    const indices = [];
+    for (let i = ini; i < Math.min(ini + TAMANO_LOTE, procesos.length); i += 1) indices.push(i);
+    if (procesos.length > TAMANO_LOTE) ctx.log(`Lote ${lote} de ${totalLotes}: ${indices.length} expediente(s)`);
+    await correrLote(indices);
+  }
+  const resultados = [];
+  for (let i = 0; i < procesos.length; i += 1) {
+    if (salidas[i]) {
+      resultados.push(salidas[i]);
       continue;
     }
-    anotar(fila, true);
-    ctx.log(soloActuaciones ? `  actuaciones=${actuaciones.length}` : `  sujetos=${sujetos.length} documentos=${documentos.length} actuaciones=${actuaciones.length}`);
+    if (detenido(ctx)) {
+      cancelado = true;
+      break;
+    }
+    if (estado.parar) {
+      cuenta.errores += 1;
+      const causa = `No se intentó: ${estado.motivo}`;
+      salidas[i] = { radicado: procesos[i].radicado, despacho: procesos[i].despacho || "", ok: false, causa };
+      resultados.push(salidas[i]);
+    }
   }
+  if (cancelado) return { cambios: cuenta.cambios, errores: cuenta.errores, informe: soloActuaciones ? informeDe(resultados) : null, cancelado: true };
   if (soloActuaciones) {
     const informe = informeDe(resultados);
     ctx.log(`Informe: ${informe.total} expediente(s). ${informe.exitosos} actualizados. ${informe.fallidos} con falla.`);
@@ -387,7 +483,7 @@ async function pasoSeguimiento(db, { limite, soloFaltantes, radicado, idProceso,
       ctx.log(`  ${falla.radicado}${falla.despacho ? ` — ${falla.despacho}` : ""}: ${falla.causa}`);
     }
   }
-  return { cambios, errores, informe: soloActuaciones ? informeDe(resultados) : null };
+  return { cambios: cuenta.cambios, errores: cuenta.errores, informe: soloActuaciones ? informeDe(resultados) : null };
 }
 
 function runSilencioso(db, momento, columna, idProceso) {
@@ -397,7 +493,9 @@ function runSilencioso(db, momento, columna, idProceso) {
 async function cargarRadicado(db, numero, contexto) {
   transaccion(db, () => asegurarRadicado(db, numero));
   const consulta = await pasoConsulta(db, [numero], true, contexto);
+  if (consulta.cancelado) return { consulta, detalle: { nuevos: 0, errores: 0 }, seguimiento: { cambios: 0, errores: 0 }, cancelado: true };
   const detalle = await pasoDetalle(db, true, numero, contexto);
+  if (detalle.cancelado) return { consulta, detalle, seguimiento: { cambios: 0, errores: 0 }, cancelado: true };
   const seguimiento = await pasoSeguimiento(db, {
     limite: 0,
     soloFaltantes: false,
@@ -405,6 +503,7 @@ async function cargarRadicado(db, numero, contexto) {
     soloActuaciones: false,
     ctx: contexto,
   });
+  if (seguimiento.cancelado) return { consulta, detalle, seguimiento, cancelado: true };
   return { consulta, detalle, seguimiento };
 }
 
@@ -433,12 +532,14 @@ export async function ejecutarTrabajo({ db, modo, radicado, idProceso = null, nu
     contexto.pausaMs = () => pausaAleatoriaMs(contexto.azar);
     contexto.log(`Carga de ${lista.length} radicado(s). Entre cada petición hay una pausa de 1 a 3 segundos.`);
     for (let indice = 0; indice < lista.length; indice += 1) {
+      if (detenido(contexto)) return { codigo: 0, errores, cambios, informe: null, cancelado: true };
       const numero = lista[indice];
       contexto.log(`Radicado ${indice + 1} de ${lista.length}: ${numero}`);
       const carga = await cargarRadicado(db, numero, contexto);
       errores += carga.consulta.errores + carga.detalle.errores + carga.seguimiento.errores;
       cambios += carga.seguimiento.cambios;
       falloConsulta = falloConsulta || carga.consulta.fallo;
+      if (carga.cancelado) return { codigo: 0, errores, cambios, informe: null, cancelado: true };
     }
     contexto.log(`Carga lista. Cambios: ${cambios}. Errores: ${errores}`);
   } else if (modo === "uno") {
@@ -466,6 +567,7 @@ export async function ejecutarTrabajo({ db, modo, radicado, idProceso = null, nu
     errores += carga.consulta.errores + carga.detalle.errores + carga.seguimiento.errores;
     cambios += carga.seguimiento.cambios;
     falloConsulta = carga.consulta.fallo;
+    if (carga.cancelado) return { codigo: 0, errores, cambios, informe: null, cancelado: true };
     contexto.log(`Paso 1 listo. Procesos tocados: ${carga.consulta.nuevos}. Errores: ${carga.consulta.errores}`);
     contexto.log(`Paso 2 listo. Detalles nuevos: ${carga.detalle.nuevos}. Errores: ${carga.detalle.errores}`);
     contexto.log(`Seguimiento listo. Cambios: ${cambios}. Errores: ${carga.seguimiento.errores}`);

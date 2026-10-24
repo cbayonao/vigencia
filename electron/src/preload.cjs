@@ -172,6 +172,7 @@ contextBridge.exposeInMainWorld("vigencia", {
   actualizar: () => ipcRenderer.invoke("actualizar"),
   actualizarUno: (id) => ipcRenderer.invoke("actualizar-uno", id),
   agregar: (numero) => ipcRenderer.invoke("agregar", numero),
+  agregarCancelar: () => ipcRenderer.invoke("agregar-cancelar"),
   elegirCsv: () => ipcRenderer.invoke("elegir-csv"),
   cargarCsv: (indice) => ipcRenderer.invoke("cargar-csv", indice),
   copiar: (numero) => ipcRenderer.invoke("copiar", numero),

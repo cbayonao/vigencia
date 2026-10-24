@@ -5,7 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { abrirBase, asignarCliente, guardarCliente, uno } from "../src/db.js";
 import { lanzar, estadoCorrida, cancelarCorrida } from "../src/jobs.js";
-import { ACTUACIONES_URL, CONSULTA_URL, ejecutarTrabajo, obtenerJson, textoErrorRespuesta } from "../src/rama.js";
+import { ACTUACIONES_URL, CONSULTA_URL, ejecutarTrabajo, idsDeFallas, obtenerJson, textoErrorRespuesta } from "../src/rama.js";
 
 const NUMERO = "11001418901820190162700";
 
@@ -424,6 +424,44 @@ test("la revisión va en lotes de 50 con hasta 5 a la vez y orden del informe", 
     assert.ok(maxVivas > 1 && maxVivas <= 5, `concurrencia acotada, fue ${maxVivas}`);
     const orden = resultado.informe.fallas.map((f) => f.radicado);
     assert.deepEqual(orden, [...orden].sort(), "las fallas salen en orden de radicado");
+  } finally {
+    tmp.borrar();
+  }
+});
+
+test("reintentar fallidos solo consulta esos expedientes", async () => {
+  const tmp = temporal();
+  try {
+    for (const [id, despacho] of [[1, "Juzgado Uno"], [2, "Juzgado Dos"], [3, "Juzgado Tres"]]) {
+      const rad = `11001${String(30000000000000000 + id)}`;
+      tmp.db.prepare("INSERT OR IGNORE INTO radicado (numero) VALUES (?)").run(rad);
+      tmp.db.prepare("INSERT INTO proceso (id_proceso, radicado, despacho, es_privado) VALUES (?, ?, ?, 0)").run(id, rad, despacho);
+    }
+    const fallas = [
+      { radicado: `11001${String(30000000000000000 + 2)}`, despacho: "Juzgado Dos", causa: "x" },
+      { radicado: `11001${String(30000000000000000 + 3)}`, despacho: "Otro despacho", causa: "x" },
+      { radicado: `11001${String(30000000000000000 + 3)}`, despacho: "Otro despacho", causa: "x" },
+      { radicado: "11001999999999999999999", despacho: "Nadie", causa: "x" },
+    ];
+    assert.deepEqual(idsDeFallas(tmp.db, fallas), [2, 3]);
+    assert.deepEqual(idsDeFallas(tmp.db, []), []);
+    const tocados = [];
+    const resultado = await ejecutarTrabajo({
+      db: tmp.db,
+      modo: "todo",
+      ids: [2],
+      ctx: { log() {}, aviso() {}, notificar() {} },
+      pedir: async (url) => {
+        tocados.push(url);
+        return { status: 200, text: JSON.stringify({ actuaciones: [], paginacion: { cantidadPaginas: 1, cantidadRegistros: 0 } }) };
+      },
+      dormir: async () => {},
+    });
+    assert.equal(resultado.codigo, 0);
+    assert.equal(resultado.informe.total, 1);
+    assert.ok(tocados.some((u) => String(u).includes("/Actuaciones/2")));
+    assert.ok(!tocados.some((u) => String(u).includes("/Actuaciones/1")));
+    assert.ok(!tocados.some((u) => String(u).includes("/Actuaciones/3")));
   } finally {
     tmp.borrar();
   }

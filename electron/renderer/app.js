@@ -1252,6 +1252,10 @@ function mostrarInforme(informe) {
     }
   }
   mostrarDialogo("dialogo-informe");
+  const hayFallas = (informe.fallas || []).length > 0;
+  $("informe-reintentar").hidden = !hayFallas;
+  $("informe-reintentar").disabled = false;
+  $("informe-reintentar").textContent = "Reintentar fallidos";
   $("informe-cerrar").focus();
 }
 
@@ -1695,7 +1699,20 @@ $("dialogo-detener").addEventListener("click", async () => {
 });
 
 $("actualizar").addEventListener("click", async () => {
-  const respuesta = await window.vigencia.actualizar();
+  arrancarRevision(await window.vigencia.actualizar());
+});
+
+$("informe-reintentar").addEventListener("click", async () => {
+  const boton = $("informe-reintentar");
+  boton.disabled = true;
+  boton.textContent = "Reintentando…";
+  ocultarDialogo("dialogo-informe");
+  arrancarRevision(await window.vigencia.actualizarFallidos());
+  boton.disabled = false;
+  boton.textContent = "Reintentar fallidos";
+});
+
+function arrancarRevision(respuesta) {
   if (!respuesta.ok) {
     pintarActualizar();
     ayuda(respuesta.error, true);
@@ -1708,7 +1725,7 @@ $("actualizar").addEventListener("click", async () => {
   $("registro-titulo").textContent = "Registro";
   mostrarCaja(false);
   pintarOcupados();
-});
+}
 
 $("recargar").addEventListener("click", async () => {
   $("recargar").disabled = true;

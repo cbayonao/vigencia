@@ -31,6 +31,8 @@ Aquí van las decisiones más relevantes que el agente debe recordar.
 
 ## Decisiones recientes
 
+- **reintentar solo lo fallido (oct 2026)**: El informe de Actualizar todo trae botón Reintentar fallidos (`actualizar-fallidos`): mapea las fallas del último informe a expedientes (`idsDeFallas` en `rama.js`: radicado+despacho, con fallback a radicado, sin duplicados ni borrados) y corre `revisarTodo` solo con esos `ids` (el filtro `id_proceso IN` volvió a `pasoSeguimiento`). Así no se repite lo que ya quedó al día ni se empieza desde cero. 293 pruebas en verde.
+
 - **revisiones en lotes de 50 con arranque lento (oct 2026)**: `pasoSeguimiento` procesa en lotes de 50 (`TAMANO_LOTE`) con arranque lento: empieza con 1 expediente a la vez y suma uno concurrente por éxito hasta 5 (`CONCURRENCIA_MAXIMA`), y ante un fallo vuelve a 1. El informe conserva el orden de la lista y los ya guardados quedan; el paro por 403, por 5 fallos y la cancelación (`detenido`) se propagan igual que antes. 292 pruebas en verde.
 
 - **sin bloqueo de una hora (oct 2026)**: Actualizar todo ya no se bloquea una hora: el botón queda libre en cuanto termina (solo se deshabilita mientras otra consulta corre). Se quitaron `decidirActualizar` con pausa, la escritura/lectura de `pausa_boton` en el flujo (`guardarPausaActualizar`/`leerPausaActualizar` quedan en `db.js` sin uso; la tabla sigue existiendo) y el `posponer` por pausa de `decidirAutomatica`. 291 pruebas en verde.

@@ -247,6 +247,27 @@ function textoCorto(valor) {
   return String(valor == null ? "" : valor).replace(/\s+/g, " ").trim();
 }
 
+// Del último informe, solo los expedientes que fallaron (los no
+// intentados y los que ya no están se ignoran): así la siguiente
+// corrida no repite lo que ya quedó al día.
+export function idsDeFallas(db, fallas) {
+  const procesos = filas(db, "SELECT id_proceso, radicado, despacho FROM proceso");
+  const mismos = (proceso, falla) => proceso.radicado === falla.radicado
+    && String(proceso.despacho || "") === String(falla.despacho || "");
+  const vistos = new Set();
+  const ids = [];
+  for (const falla of fallas || []) {
+    const hallado = procesos.find((proceso) => proceso.id_proceso && mismos(proceso, falla))
+      || procesos.find((proceso) => proceso.id_proceso && proceso.radicado === falla.radicado);
+    const id = Number(hallado?.id_proceso) || 0;
+    if (id > 0 && !vistos.has(id)) {
+      vistos.add(id);
+      ids.push(id);
+    }
+  }
+  return ids;
+}
+
 // La búsqueda completa se puede detener desde la ventana: se avisa una
 // sola vez y cada fase corta lo pendiente devolviendo cancelado: true.
 function detenido(ctx) {
@@ -272,7 +293,7 @@ function informeDe(resultados) {
   };
 }
 
-async function pasoSeguimiento(db, { limite, soloFaltantes, radicado, idProceso, soloActuaciones, ctx }) {
+async function pasoSeguimiento(db, { limite, soloFaltantes, radicado, idProceso, ids = null, soloActuaciones, ctx }) {
   const condiciones = [];
   const params = [];
   if (idProceso) {
@@ -281,6 +302,10 @@ async function pasoSeguimiento(db, { limite, soloFaltantes, radicado, idProceso,
   } else if (radicado) {
     condiciones.push("radicado = ?");
     params.push(radicado);
+  } else if (Array.isArray(ids)) {
+    const lista = ids.map(Number).filter((n) => Number.isInteger(n) && n > 0);
+    condiciones.push(lista.length ? `id_proceso IN (${lista.map(() => "?").join(",")})` : "0");
+    params.push(...lista);
   }
   const where = condiciones.length ? `WHERE ${condiciones.join(" AND ")}` : "";
   let procesos = filas(db, `
@@ -507,7 +532,7 @@ async function cargarRadicado(db, numero, contexto) {
   return { consulta, detalle, seguimiento };
 }
 
-export async function ejecutarTrabajo({ db, modo, radicado, idProceso = null, numeros = null, ctx, pedir, dormir, permitirRed = false, azar = Math.random }) {
+export async function ejecutarTrabajo({ db, modo, radicado, idProceso = null, numeros = null, ids = null, ctx, pedir, dormir, permitirRed = false, azar = Math.random }) {
   const red = pedir || (permitirRed ? pedirRed : async () => {
     throw new Error("La consulta a la Rama no está habilitada.");
   });
@@ -578,6 +603,7 @@ export async function ejecutarTrabajo({ db, modo, radicado, idProceso = null, nu
       limite: 0,
       soloFaltantes: false,
       radicado: null,
+      ids: Array.isArray(ids) ? ids : null,
       soloActuaciones: true,
       ctx: contexto,
     });

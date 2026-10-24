@@ -170,6 +170,7 @@ contextBridge.exposeInMainWorld("vigencia", {
   guardarRepresentado: (idProceso, representado) => ipcRenderer.invoke("guardar-representado", { idProceso, representado }),
   estado: () => ipcRenderer.invoke("estado"),
   actualizar: () => ipcRenderer.invoke("actualizar"),
+  actualizarFallidos: () => ipcRenderer.invoke("actualizar-fallidos"),
   actualizarUno: (id) => ipcRenderer.invoke("actualizar-uno", id),
   agregar: (numero) => ipcRenderer.invoke("agregar", numero),
   agregarCancelar: () => ipcRenderer.invoke("agregar-cancelar"),

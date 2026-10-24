@@ -94,6 +94,7 @@ import { docxDeEscrito, textoDeDocx } from "./docx.js";
 import { htmlInforme, fechaInforme, nombreArchivoInforme } from "./informe.js";
 import { pdfDesdeHtml } from "./pdf.js";
 import { alCambiar, cancelarCorrida, estadoCorrida, lanzar } from "./jobs.js";
+import { idsDeFallas } from "./rama.js";
 import { fichaDeDetalle, redactarEscrito } from "../compartido/redactor.js";
 import { activarPieza, borrarPieza, guardarPieza, listarPiezas } from "./biblioteca.js";
 import { generarBorrador, generarInicial, guardarActivo, guardarModo, importarModelo, listarModelos, descargarModelo, modelosRecomendados, leerNubes, guardarNube, borrarModelo, quitarNube } from "./ia.js";
@@ -683,7 +684,7 @@ function terminarCorrida({ origen, revisionId, avisoBase, resultado }) {
   programador?.reprogramar();
 }
 
-function revisarTodo(origen, turno = null) {
+function revisarTodo(origen, turno = null, ids = null) {
   const cerrado = planCerrado();
   if (cerrado) return cerrado;
   const foto = estadoCorrida();
@@ -695,6 +696,7 @@ function revisarTodo(origen, turno = null) {
     db,
     datosDir,
     modo: "todo",
+    ids: Array.isArray(ids) ? ids : null,
     permitirRed: true,
     origen,
     avisarSistema: origen === "manual",
@@ -882,6 +884,20 @@ if (bloqueo) {
     ipcMain.handle("actualizar", () => {
       try {
         return revisarTodo("manual");
+      } catch (error) {
+        return { ok: false, error: mensajeHumano(error) };
+      }
+    });
+    ipcMain.handle("actualizar-fallidos", () => {
+      try {
+        const cerrado = planCerrado();
+        if (cerrado) return cerrado;
+        const informe = leerInformeRevision(db);
+        const fallas = informe?.fallas || [];
+        if (!fallas.length) return { ok: false, error: "El último informe no trae fallas." };
+        const ids = idsDeFallas(db, fallas);
+        if (!ids.length) return { ok: false, error: "Esos expedientes ya no están en la lista." };
+        return revisarTodo("manual", null, ids);
       } catch (error) {
         return { ok: false, error: mensajeHumano(error) };
       }

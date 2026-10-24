@@ -27,6 +27,7 @@ import {
   claveTurno,
   proximoTurno,
   resumenCambios,
+  textoFalloRevision,
   turnoCubierto,
 } from "../compartido/horario.js";
 import { ahora, decidirActualizar, nombreCliente, normalizarRadicado } from "../compartido/logica.js";
@@ -670,12 +671,22 @@ function terminarCorrida({ origen, revisionId, avisoBase, resultado }) {
     });
     guardarUltimoTurno(db, turnoCubierto(leerHorarios(db), leerUltimoTurno(db)));
     registrar(`revisión ${origen}: revisados=${resultado?.informe?.exitosos ?? 0} con cambios=${resumen ? resumen.procesos.length : 0} errores=${resultado?.informe?.fallidos ?? (resultado?.errores || 0)}`);
-    if (origen !== "manual" && resumen) {
-      notificar({
-        title: `Vigencia · ${resumen.titulo}`,
-        body: resumen.cuerpo,
-        alClic: () => abrirCambios(resumen.ids),
-      });
+    if (origen !== "manual") {
+      if (resumen) {
+        notificar({
+          title: `Vigencia · ${resumen.titulo}`,
+          body: resumen.cuerpo,
+          alClic: () => abrirCambios(resumen.ids),
+        });
+      } else {
+        const fallas = resultado?.informe?.fallas || [];
+        const texto = textoFalloRevision({
+          turno,
+          fallidos: resultado?.informe?.fallidos ?? resultado?.errores ?? 0,
+          causa: fallas[0]?.causa || resultado?.error || "",
+        });
+        if (texto) notificar({ title: "Vigencia", body: texto });
+      }
     }
   } catch (error) {
     registrar(`revisión ${origen}: no pude cerrar el registro (${error?.message || error})`);

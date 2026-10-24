@@ -31,6 +31,8 @@ Aquí van las decisiones más relevantes que el agente debe recordar.
 
 ## Decisiones recientes
 
+- **aviso si la automática falla (oct 2026)**: La revisión automática de las 07:00 falló completa (157 errores 502) y nadie se enteró hasta abrir la app, porque los errores no generan aviso nativo. Ahora `terminarCorrida` avisa (`textoFalloRevision` en `horario.js`, con turno, conteo y primera causa) cuando la corrida no manual termina sin cambios pero con fallas. 294 pruebas en verde.
+
 - **CI simplificado (oct 2026)**: De 5 workflows a 3 (`ci.yml`, `release.yml` en tag `v*`, `deploy.yml` por rutas con `dorny/paths-filter`) + 2 acciones compartidas (`aws-auth`, `llave-firma`). Se eliminó la matriz duplicada que armaba los 3 instaladores en cada push a main y los volvía a armar en el tag; ahora se compilan una sola vez. Sin artefactos intermedios (subida directa al release con `gh --clobber`) y sin `softprops/action-gh-release`. El semáforo sigue siendo el propio build del tag: si falla, el release queda en borrador y no se publica ni se espeja.
 
 - **reintentar solo lo fallido (oct 2026)**: El informe de Actualizar todo trae botón Reintentar fallidos (`actualizar-fallidos`): mapea las fallas del último informe a expedientes (`idsDeFallas` en `rama.js`: radicado+despacho, con fallback a radicado, sin duplicados ni borrados) y corre `revisarTodo` solo con esos `ids` (el filtro `id_proceso IN` volvió a `pasoSeguimiento`). Así no se repite lo que ya quedó al día ni se empieza desde cero. 293 pruebas en verde.

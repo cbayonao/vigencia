@@ -116,6 +116,18 @@ function nombreDe(fila) {
     .join(" ");
 }
 
+// Aviso cuando la revisión automática termina con fallas y sin cambios
+// que mostrar: sin esto nadie se entera hasta abrir la ventana (los
+// errores no generan aviso nativo). Devuelve null si no hay que avisar.
+export function textoFalloRevision({ turno = null, fallidos = 0, causa = "" } = {}) {
+  const n = Number(fallidos) || 0;
+  if (n <= 0) return null;
+  const cuando = turno ? ` de las ${String(turno).slice(11, 16)}` : "";
+  const base = `La revisión automática${cuando} terminó con ${n} ${n === 1 ? "falla" : "fallas"}`;
+  const limpia = String(causa || "").trim().replace(/\s+/g, " ").replace(/[.\s]+$/, "").slice(0, 120);
+  return limpia ? `${base}: ${limpia}.` : `${base}.`;
+}
+
 export function resumenCambios(avisos, maximoLineas = 4) {
   const porProceso = new Map();
   for (const aviso of avisos || []) {

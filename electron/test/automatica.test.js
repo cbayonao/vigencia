@@ -10,6 +10,7 @@ import {
   decidirAutomatica,
   proximoTurno,
   resumenCambios,
+  textoFalloRevision,
   turnoAnterior,
   turnoCubierto,
   validarHorarios,
@@ -148,8 +149,20 @@ test("no corre durante otra consulta; sin pausa de Actualizar todo", () => {
   assert.equal(decidirAutomatica({ horas: HORAS, ultimoTurno: "2026-10-09 13:00:00", pausaHasta: "2026-10-10 06:00:00", fecha: en(10, 7, 1) }).accion, "correr");
 });
 
-test("una corrida manual cuenta como el turno que ya pasó", () => {
-  assert.equal(turnoCubierto(HORAS, "2026-10-09 13:00:00", en(10, 7, 10)), "2026-10-10 07:00:00");
+test("la automática avisa si termina con fallas y calla si todo sale bien", () => {
+  assert.equal(textoFalloRevision({ fallidos: 0 }), null);
+  assert.equal(textoFalloRevision({}), null);
+  assert.equal(
+    textoFalloRevision({ turno: "2026-10-24 07:00:00", fallidos: 157, causa: "La Rama no respondió." }),
+    "La revisión automática de las 07:00 terminó con 157 fallas: La Rama no respondió.",
+  );
+  assert.equal(
+    textoFalloRevision({ fallidos: 1, causa: "" }),
+    "La revisión automática terminó con 1 falla.",
+  );
+});
+
+test("una corrida manual cuenta como el turno que ya pasó", () => {  assert.equal(turnoCubierto(HORAS, "2026-10-09 13:00:00", en(10, 7, 10)), "2026-10-10 07:00:00");
   assert.equal(turnoCubierto(HORAS, "2026-10-10 07:00:00", en(10, 7, 10)), "2026-10-10 07:00:00");
   assert.equal(turnoCubierto(HORAS, null, en(10, 6)), "2026-10-09 13:00:00");
   assert.equal(turnoCubierto(HORAS, "2026-10-10 13:00:00", en(10, 8)), "2026-10-10 13:00:00");

@@ -84,6 +84,7 @@ export function resolverCambio(db, { id, aceptar, guardarVersion, ultimaVersion 
   if (c.estado !== "propuesto") throw new Aviso("Ese cambio ya se resolvió.");
   if (!aceptar) {
     run(db, "UPDATE doc_bloque_cambio SET estado = 'rechazado', resuelto_en = ? WHERE id = ?", [ahora(), id]);
+    run(db, "DELETE FROM doc_cita WHERE bloque_id = ? AND version_id IS NULL", [c.bloque_id]);
     anotarVuelta(db, c.proyecto_id, { decision: `Rechazado: ${c.pedido} (se conservó el texto anterior)` });
     return { cambio: leerCambio(db, id) };
   }
@@ -98,6 +99,7 @@ export function resolverCambio(db, { id, aceptar, guardarVersion, ultimaVersion 
   // El bloque conserva su id con el texto nuevo.
   run(db, "UPDATE doc_bloque SET texto = ?, version_id = ?, actualizado_en = ? WHERE id = ?", [c.despues, v.id, ahora(), c.bloque_id]);
   sincronizar(db, c.proyecto_id, { ...v, cuerpo: nuevo });
+  run(db, "UPDATE doc_cita SET version_id = ? WHERE bloque_id = ? AND version_id IS NULL", [v.id, c.bloque_id]);
   anotarVuelta(db, c.proyecto_id, { cuerpo: nuevo, decision: `Aceptado en ${bloque.seccion || "el documento"}: ${c.pedido}` });
   return { cambio: leerCambio(db, id), version: v };
 }

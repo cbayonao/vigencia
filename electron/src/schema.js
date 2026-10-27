@@ -814,4 +814,29 @@ export const MIGRACIONES = [
       `);
     },
   },
+  {
+    version: 21,
+    nombre: "citas del documento",
+    up(db) {
+      // Citas nativas de una vuelta de Documentos. version_id puede quedar
+      // vacío mientras el párrafo está propuesto; al aceptarlo toma la
+      // versión nueva. Borrar el párrafo no borra la cita de la versión.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS doc_cita (
+          id INTEGER PRIMARY KEY,
+          version_id INTEGER,
+          bloque_id TEXT,
+          inicio INTEGER NOT NULL,
+          fin INTEGER NOT NULL,
+          fuente_tipo TEXT NOT NULL,
+          fuente_id TEXT NOT NULL,
+          pagina INTEGER,
+          texto_citado TEXT NOT NULL DEFAULT '',
+          creado_en TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS doc_cita_version ON doc_cita(version_id);
+        CREATE INDEX IF NOT EXISTS doc_cita_bloque ON doc_cita(bloque_id);
+      `);
+    },
+  },
 ];

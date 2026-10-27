@@ -63,6 +63,36 @@ test("cambio de un bloque: propuesta, diff, aceptar, rechazar e historial", asyn
   assert.throws(() => resolverBloque(t.db, cambio.id, true), /ya se resolvió/);
 });
 
+test("aceptar un párrafo deja las citas en la versión nueva y rechazar las borra", async () => {
+  const t = tmp();
+  const p = crearProyecto(t.db, { nombre: "T", tipo: "tutela" });
+  await conversar({ db: t.db, datosDir: t.dir, proyectoId: p.id, mensaje: "tutela", resolverModelo: local, pedirTexto: async () => ({ texto: DOC, origen: "local" }) });
+  const objetivo = leerProyecto(t.db, p.id).bloques.find((b) => b.texto.startsWith("Segundo"));
+  const args = { db: t.db, datosDir: t.dir, proyectoId: p.id, bloqueId: objetivo.id, mensaje: "agrega la fecha", resolverModelo: local };
+  const cita = { inicio: 0, fin: 12, fuente_tipo: "pieza", fuente_id: "3", pagina: null, texto_citado: "marzo" };
+  const { cambio } = await proponerBloque({
+    ...args,
+    pedirTexto: async () => ({ texto: "Segundo hecho, ocurrido el 3 de marzo.", origen: "local", citas: [cita] }),
+  });
+  const pendiente = uno(t.db, "SELECT * FROM doc_cita WHERE bloque_id = ? AND version_id IS NULL", [objetivo.id]);
+  assert.equal(pendiente.fuente_id, "3");
+  assert.equal(pendiente.fuente_tipo, "pieza");
+  const r = resolverBloque(t.db, cambio.id, true);
+  const guardada = uno(t.db, "SELECT * FROM doc_cita WHERE fuente_id = '3'");
+  assert.equal(guardada.version_id, r.version.id);
+  assert.equal(guardada.bloque_id, objetivo.id);
+  await proponerBloque({
+    ...args,
+    mensaje: "más corto",
+    pedirTexto: async () => ({ texto: "Corto.", origen: "local", citas: [{ inicio: 0, fin: 6, fuente_tipo: "archivo", fuente_id: "4", pagina: 2, texto_citado: "Corto." }] }),
+  });
+  assert.equal(Number(uno(t.db, "SELECT COUNT(*) AS n FROM doc_cita WHERE version_id IS NULL").n), 1);
+  const propuesto = uno(t.db, "SELECT id FROM doc_bloque_cambio WHERE estado = 'propuesto'");
+  resolverBloque(t.db, propuesto.id, false);
+  assert.equal(Number(uno(t.db, "SELECT COUNT(*) AS n FROM doc_cita WHERE version_id IS NULL").n), 0);
+  assert.equal(uno(t.db, "SELECT version_id FROM doc_cita WHERE fuente_id = '3'").version_id, r.version.id);
+});
+
 test("bloque a la nube exige Solo local apagado y el hash exacto", async () => {
   const t = tmp();
   const p = crearProyecto(t.db, { nombre: "T", tipo: "tutela" });

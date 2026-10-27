@@ -470,6 +470,74 @@ test("el último gasto del proyecto trae sus tokens", async () => {
   db.close();
 });
 
+test("la migración 21 crea doc_cita en una base que ya estaba en la 20", async () => {
+  const { DatabaseSync } = await import("node:sqlite");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "vig-cita-mig-"));
+  const ruta = path.join(dir, "grokvig.sqlite");
+  const previa = new DatabaseSync(ruta);
+  previa.exec(`
+    CREATE TABLE schema_migracion (
+      version INTEGER PRIMARY KEY,
+      nombre TEXT NOT NULL,
+      aplicada_en TEXT NOT NULL
+    );
+    INSERT INTO schema_migracion (version, nombre, aplicada_en) VALUES (20, 'juzgados aprendidos', '2026-01-01');
+  `);
+  previa.close();
+  const db = abrirBase(ruta);
+  try {
+    assert.equal(uno(db, "SELECT nombre FROM schema_migracion WHERE version = 21").nombre, "citas del documento");
+    const cols = db.prepare("PRAGMA table_info(doc_cita)").all();
+    assert.deepEqual(cols.map((c) => c.name), ["id", "version_id", "bloque_id", "inicio", "fin", "fuente_tipo", "fuente_id", "pagina", "texto_citado", "creado_en"]);
+    assert.equal(cols.find((c) => c.name === "version_id").notnull, 0);
+    assert.equal(cols.find((c) => c.name === "pagina").notnull, 0);
+  } finally {
+    db.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("una vuelta guarda las citas en la versión y borrar la versión las quita", async () => {
+  const tmp = temporal();
+  try {
+    const p = crearProyecto(tmp.db, { nombre: "T", tipo: "tutela" });
+    const texto = "Asunto: Tutela salud\n\n## Hechos\nLa EPS Sana negó la cirugía.\n\n## Pretensiones\nQue se ordene el tratamiento.";
+    const span = "La EPS Sana negó la cirugía.";
+    const inicio = texto.indexOf(span);
+    const cita = { inicio, fin: inicio + span.length, fuente_tipo: "pieza", fuente_id: "9", pagina: null, texto_citado: "negó la cirugía" };
+    const dudas = await conversar({
+      db: tmp.db, datosDir: tmp.dir, proyectoId: p.id, mensaje: "tutela",
+      resolverModelo: modeloFalso("local"),
+      pedirTexto: async () => ({ texto: "DUDAS:\n1. ¿Cuál EPS?", origen: "local", citas: [cita] }),
+    });
+    assert.ok(dudas.mensajes.at(-1).dudas);
+    assert.equal(Number(uno(tmp.db, "SELECT COUNT(*) AS n FROM doc_cita").n), 0);
+    const r = await conversar({
+      db: tmp.db, datosDir: tmp.dir, proyectoId: p.id, mensaje: "La EPS Sana",
+      resolverModelo: modeloFalso("local"),
+      pedirTexto: async () => ({ texto, origen: "local", citas: [cita, { inicio: 0, fin: 1, fuente_tipo: "", fuente_id: "" }] }),
+    });
+    const filas = tmp.db.prepare("SELECT * FROM doc_cita").all();
+    assert.equal(filas.length, 1);
+    assert.equal(filas[0].version_id, r.actual.id);
+    assert.equal(filas[0].fuente_tipo, "pieza");
+    assert.equal(filas[0].fuente_id, "9");
+    assert.equal(filas[0].texto_citado, "negó la cirugía");
+    assert.equal(filas[0].pagina, null);
+    const bloque = r.bloques.find((b) => b.texto.includes(span));
+    assert.equal(filas[0].bloque_id, bloque.id);
+    await conversar({
+      db: tmp.db, datosDir: tmp.dir, proyectoId: p.id, mensaje: "más corto",
+      resolverModelo: modeloFalso("local"),
+      pedirTexto: async () => ({ texto: "Asunto: Tutela salud\n\n## Hechos\nTexto corto.", origen: "local" }),
+    });
+    borrarVersion(tmp.db, r.actual.id);
+    assert.equal(Number(uno(tmp.db, "SELECT COUNT(*) AS n FROM doc_cita WHERE version_id = ?", [r.actual.id]).n), 0);
+  } finally {
+    tmp.borrar();
+  }
+});
+
 async function confirmar(args) {
   const previa = prepararVuelta(args);
   return conversar({ ...args, confirmado: previa.informe?.hash || "" });

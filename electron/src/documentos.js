@@ -206,6 +206,8 @@ export function duplicarProyecto(db, id) {
 export function borrarProyecto(db, id) {
   const actual = exigirProyecto(db, id);
   transaccion(db, () => {
+    run(db, "DELETE FROM doc_cita WHERE version_id IN (SELECT id FROM doc_version WHERE proyecto_id = ?)", [actual.id]);
+    run(db, "DELETE FROM doc_cita WHERE bloque_id IN (SELECT id FROM doc_bloque WHERE proyecto_id = ?)", [actual.id]);
     run(db, "DELETE FROM doc_mensaje WHERE proyecto_id = ?", [actual.id]);
     run(db, "DELETE FROM doc_version WHERE proyecto_id = ?", [actual.id]);
     run(db, "DELETE FROM doc_fuente WHERE proyecto_id = ?", [actual.id]);
@@ -277,6 +279,7 @@ export function borrarVersion(db, versionId) {
   const eraUltima = !uno(db, "SELECT id FROM doc_version WHERE proyecto_id = ? AND numero > ?", [v.proyecto_id, v.numero]);
   transaccion(db, () => {
     run(db, "UPDATE doc_mensaje SET version_id = NULL WHERE version_id = ?", [v.id]);
+    run(db, "DELETE FROM doc_cita WHERE version_id = ?", [v.id]);
     run(db, "DELETE FROM doc_version WHERE id = ?", [v.id]);
     tocar(db, v.proyecto_id);
   });
@@ -387,6 +390,42 @@ export function modeloDelProyecto(datosDir, perfil, modeloId) {
 
 export function hashEncargo(encargo) {
   return crypto.createHash("sha256").update(String(encargo || "")).digest("hex");
+}
+
+function bloqueDeSpan(bloques, span) {
+  const t = String(span || "").trim();
+  if (t.length < 2) return null;
+  const hits = (bloques || []).filter((b) => String(b.texto || "").includes(t));
+  return hits.length === 1 ? hits[0].id : null;
+}
+
+// Citas de una vuelta. Sin versión quedan colgadas del párrafo propuesto
+// hasta que se acepte (resolverCambio les pone la versión nueva).
+export function guardarCitas(db, { versionId = null, bloqueId = null, citas = [], texto = "", bloques = [] } = {}) {
+  const lista = (citas || []).filter((c) => c && c.fuente_tipo && c.fuente_id != null && String(c.fuente_id) !== "");
+  if (!lista.length || (versionId == null && !bloqueId)) return 0;
+  const ins = db.prepare(`INSERT INTO doc_cita (version_id, bloque_id, inicio, fin, fuente_tipo, fuente_id, pagina, texto_citado, creado_en)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  const marca = ahora();
+  transaccion(db, () => {
+    for (const c of lista) {
+      const span = texto ? String(texto).slice(Number(c.inicio) || 0, Number(c.fin) || 0) : "";
+      const idBloque = bloqueId || bloqueDeSpan(bloques, span);
+      const pagina = c.pagina == null || c.pagina === "" ? null : Number(c.pagina);
+      ins.run(
+        versionId,
+        idBloque,
+        Number(c.inicio) || 0,
+        Number(c.fin) || 0,
+        String(c.fuente_tipo),
+        String(c.fuente_id),
+        Number.isInteger(pagina) ? pagina : null,
+        String(c.texto_citado || ""),
+        marca,
+      );
+    }
+  });
+  return lista.length;
 }
 
 export const AVISO_SOLO_LOCAL = "Este proyecto está en Solo local: no se envía nada a la nube. Elija un modelo local o quite Solo local en Contexto del proyecto.";
@@ -563,7 +602,8 @@ export async function conversar({ db, datosDir, proyectoId, mensaje, modeloId, p
       return { ...leerProyecto(db, proyecto.id), modelo: elegido };
     }
     const v = guardarVersion(db, proyecto.id, { cuerpo: nuevo, modelo: nombreModelo, origen, nota: `Pasaje: ${pedido}` });
-    sincronizar(db, proyecto.id, { id: v.id, cuerpo: nuevo });
+    const bloques = sincronizar(db, proyecto.id, { id: v.id, cuerpo: nuevo });
+    guardarCitas(db, { versionId: v.id, citas: respuesta?.citas, texto: crudo, bloques });
     anotarVuelta(db, proyecto.id, { pedido, cuerpo: nuevo, modelo: nombreModelo, fuentes: usadas(previa) });
     agregarMensaje(db, proyecto.id, { rol: "asistente", texto: `Reescribí el pasaje. Quedó la versión ${v.numero}.${resumenAvisos(v.avisos)}`, versionId: v.id, origen });
     return { ...leerProyecto(db, proyecto.id), modelo: elegido };
@@ -580,7 +620,8 @@ export async function conversar({ db, datosDir, proyectoId, mensaje, modeloId, p
   }
   const cuerpo = textoDeEscrito({ asunto: leido.asunto, secciones: leido.secciones });
   const v = guardarVersion(db, proyecto.id, { cuerpo, modelo: nombreModelo, origen, nota: pedido.slice(0, 120) });
-  sincronizar(db, proyecto.id, { id: v.id, cuerpo });
+  const bloques = sincronizar(db, proyecto.id, { id: v.id, cuerpo });
+  guardarCitas(db, { versionId: v.id, citas: respuesta?.citas, texto: crudo, bloques });
   anotarVuelta(db, proyecto.id, { pedido, cuerpo, modelo: nombreModelo, fuentes: usadas(previa) });
   const verbo = actual ? "Revisé el documento" : "Redacté el documento";
   agregarMensaje(db, proyecto.id, { rol: "asistente", texto: `${verbo}. Quedó la versión ${v.numero}.${resumenAvisos(v.avisos)}`, versionId: v.id, origen });
@@ -638,7 +679,10 @@ export async function proponerBloque({ db, datosDir, proyectoId, bloqueId, mensa
   const despues = String(r?.texto || "").trim();
   if (!despues) throw new Aviso("El modelo no devolvió el párrafo. El documento quedó como estaba.");
   const citables = fuentesDeCitas({ expediente: previa.contexto, fragmentos: [...previa.fragmentos, ...previa.archivosFrag], historia: previa.historia, documentoPrevio: previa.actual.cuerpo, pedido: previa.pedido });
-  return { cambio: guardarPropuesta(db, { proyectoId: proyecto.id, bloque, despues, pedido: previa.pedido, modelo: r?.nombre || elegido.nombre, origen: r?.origen || elegido.origen, fuentesTexto: citables }) };
+  const cambio = guardarPropuesta(db, { proyectoId: proyecto.id, bloque, despues, pedido: previa.pedido, modelo: r?.nombre || elegido.nombre, origen: r?.origen || elegido.origen, fuentesTexto: citables });
+  run(db, "DELETE FROM doc_cita WHERE bloque_id = ? AND version_id IS NULL", [bloque.id]);
+  guardarCitas(db, { bloqueId: bloque.id, citas: r?.citas, texto: String(r?.texto || "") });
+  return { cambio };
 }
 
 export function resolverBloque(db, id, aceptar) {

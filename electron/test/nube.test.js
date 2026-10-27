@@ -56,6 +56,30 @@ test("el chat Anthropic solo toma los deltas de texto", async () => {
   assert.equal(texto, "Respetuosamente, solicito");
 });
 
+test("el chat Anthropic reconstruye las citas del stream", async () => {
+  const fetchFn = async () => respuestaSSE([
+    'event: content_block_start\ndata: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}\n\n',
+    'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Según la sentencia"}}\n\n',
+    'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"citations_delta","citation":{"type":"search_result_location","source":"pieza:9","title":"T-760, página 2","cited_text":"la salud","search_result_index":0,"start_block_index":0,"end_block_index":1}}}\n\n',
+  ]);
+  let citas = null;
+  const texto = await chatNube({
+    proveedor: "anthropic",
+    key: "k",
+    modelo: "claude-x",
+    texto: "hola",
+    onCitas: (lista) => { citas = lista; },
+    fetchFn,
+  });
+  assert.equal(texto, "Según la sentencia");
+  assert.equal(citas.length, 1);
+  assert.equal(citas[0].fuente_tipo, "pieza");
+  assert.equal(citas[0].fuente_id, "9");
+  assert.equal(citas[0].inicio, 0);
+  assert.equal(citas[0].fin, texto.length);
+  assert.equal(citas[0].texto_citado, "la salud");
+});
+
 test("la clave rechazada avisa en claro", async () => {
   const fetchFn = async () => ({ ok: false, status: 401, text: async () => "bad key" });
   await assert.rejects(

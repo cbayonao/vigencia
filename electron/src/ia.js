@@ -677,6 +677,7 @@ async function textoDelModelo({ datosDir, elegido, encargo, onProgreso, maxToken
     const modelo = nube.modelo || definicion.modeloSugerido;
     if (!modelo) throw new Aviso(`Escriba el nombre del modelo de ${definicion.nombre}.`);
     let acumulado = "";
+    let citas = [];
     const esAnthropic = proveedor === "anthropic";
     const respuesta = await chatNube({
       proveedor,
@@ -689,6 +690,7 @@ async function textoDelModelo({ datosDir, elegido, encargo, onProgreso, maxToken
       esfuerzo: esAnthropic ? esfuerzo : "",
       partes: esAnthropic ? partes : null,
       citable: esAnthropic ? citable : null,
+      onCitas: esAnthropic ? (lista) => { citas = Array.isArray(lista) ? lista : []; } : null,
       fetchFn,
       onUso: (uso) => {
         try {
@@ -706,6 +708,7 @@ async function textoDelModelo({ datosDir, elegido, encargo, onProgreso, maxToken
       texto: String(respuesta || acumulado || ""),
       nombre: `${definicion.nombre} · ${modelo}`,
       origen: "nube",
+      citas,
     };
   }
   if (elegido.id.startsWith("gguf:")) {

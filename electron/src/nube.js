@@ -1,5 +1,6 @@
 import { bloquesConCache } from "../compartido/encargo.js";
 import { contenidoCitable } from "../compartido/documentos.js";
+import { reconstruirCitas } from "../compartido/citas.js";
 
 export const PROVEEDORES = {
   openai: {
@@ -205,7 +206,7 @@ function contenidoAnthropic(texto, partes, citable) {
   return bloques;
 }
 
-async function chatAnthropic({ key, modelo, texto, maxTokens = 1024, onToken, fetchFn = fetch, instrucciones = "", esfuerzo = "", partes = null, citable = null, onUso = null }) {
+async function chatAnthropic({ key, modelo, texto, maxTokens = 1024, onToken, fetchFn = fetch, instrucciones = "", esfuerzo = "", partes = null, citable = null, onUso = null, onCitas = null }) {
   const controlador = new AbortController();
   const reloj = setTimeout(() => controlador.abort(), 5 * 60 * 1000);
   try {
@@ -233,8 +234,10 @@ async function chatAnthropic({ key, modelo, texto, maxTokens = 1024, onToken, fe
       throw errorNube(respuesta.status, await respuesta.text().catch(() => ""));
     }
     let salida = "";
+    const eventos = [];
     const uso = { entrada: 0, salida: 0, cacheCreacion: null, cache5m: null, cache1h: null, cacheLectura: null };
     await leerSSE(respuesta, (evento, dato) => {
+      if (dato && typeof dato === "object") eventos.push(dato.type ? dato : { ...dato, type: evento });
       if (evento === "message_start" || evento === "message_delta") {
         anotarUsoAnthropic(dato?.message?.usage, uso);
         anotarUsoAnthropic(dato?.usage, uso);
@@ -256,6 +259,13 @@ async function chatAnthropic({ key, modelo, texto, maxTokens = 1024, onToken, fe
         onUso?.(medido);
       } catch {
         /* medir no tumba la redacción */
+      }
+    }
+    if (onCitas) {
+      try {
+        onCitas(reconstruirCitas(eventos, { documentos: citable?.mapa || [] }).citas);
+      } catch {
+        /* citar no tumba la redacción */
       }
     }
     return salida;
@@ -391,7 +401,7 @@ export function mensajePrueba(error) {
   return AVISO_PRUEBA.test(texto) ? texto : "";
 }
 
-export async function chatNube({ proveedor, key, modelo, base, texto, maxTokens = 2048, onToken, fetchFn, instrucciones = "", esfuerzo = "", partes = null, citable = null, onUso = null }) {
+export async function chatNube({ proveedor, key, modelo, base, texto, maxTokens = 2048, onToken, fetchFn, instrucciones = "", esfuerzo = "", partes = null, citable = null, onUso = null, onCitas = null }) {
   const definicion = PROVEEDORES[proveedor];
   if (!definicion) throw new Error("Ese proveedor no está soportado.");
   key = limpiar(key);
@@ -409,7 +419,7 @@ export async function chatNube({ proveedor, key, modelo, base, texto, maxTokens 
     throw new Error("Escriba la dirección base del proveedor.");
   }
   if (definicion.formato === "anthropic") {
-    return chatAnthropic({ key, modelo, texto, maxTokens, onToken, fetchFn, onUso, instrucciones, esfuerzo, partes, citable });
+    return chatAnthropic({ key, modelo, texto, maxTokens, onToken, fetchFn, onUso, instrucciones, esfuerzo, partes, citable, onCitas });
   }
   // Meta rinde con sus valores de fábrica: sin temperature y con esfuerzo medio.
   const esMeta = proveedor === "meta";

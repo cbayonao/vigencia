@@ -666,7 +666,7 @@ function respuestaInservible(valor) {
   return limpio.length < 400 && /lo siento|no puedo (cumplir|ayudar|redactar)|como modelo de lenguaje/i.test(limpio);
 }
 
-async function textoDelModelo({ datosDir, elegido, encargo, onProgreso, maxTokens, onUso = null, esfuerzo = "", partes = null, fetchFn }) {
+async function textoDelModelo({ datosDir, elegido, encargo, onProgreso, maxTokens, onUso = null, esfuerzo = "", partes = null, citable = null, fetchFn }) {
   if (elegido.id.startsWith("nube:")) {
     const proveedor = elegido.id.slice("nube:".length);
     const tiendaDato = leerTienda(datosDir);
@@ -688,6 +688,7 @@ async function textoDelModelo({ datosDir, elegido, encargo, onProgreso, maxToken
       instrucciones: proveedor === "meta" ? INSTRUCCION_DOCUMENTO_META : "",
       esfuerzo: esAnthropic ? esfuerzo : "",
       partes: esAnthropic ? partes : null,
+      citable: esAnthropic ? citable : null,
       fetchFn,
       onUso: (uso) => {
         try {
@@ -1002,7 +1003,7 @@ export function modeloParaDocumento(datosDir, modeloId) {
   return { id: elegido.id, nombre: elegido.nombre, usa: usaModelo(elegido), origen: elegido.id.startsWith("nube:") ? "nube" : "local" };
 }
 
-export async function textoParaDocumento({ datosDir, modeloId, encargo, onProgreso, onUso = null, partes = null, ajuste = false, fetchFn } = {}) {
+export async function textoParaDocumento({ datosDir, modeloId, encargo, onProgreso, onUso = null, partes = null, citable = null, ajuste = false, fetchFn } = {}) {
   const elegido = elegirModelo(datosDir, modeloId);
   if (!usaModelo(elegido)) return null;
   const tope = topeDeVuelta(ajuste);
@@ -1015,6 +1016,7 @@ export async function textoParaDocumento({ datosDir, modeloId, encargo, onProgre
       maxTokens: { nube: tope.maxTokens, local: 2048 },
       esfuerzo: tope.esfuerzo,
       partes,
+      citable,
       fetchFn,
       onUso,
     });

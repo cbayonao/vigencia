@@ -7,9 +7,10 @@ import { bloqueDeArchivos, fragmentosDeTrozos, informeArchivos, recortarAgentes,
 import { unirPartes } from "../compartido/encargo.js";
 import { fichaDeDetalle } from "../compartido/redactor.js";
 import {
-  TIPOS_DOCUMENTO, armarEncargoPasaje, contarAvisos, escritoDeTexto, partesEncargoDocumento,
+  TIPOS_DOCUMENTO, armarEncargoPasaje, busquedasDeFragmentos, contenidoCitable, contarAvisos,
+  documentosDeArchivos, escritoDeTexto, partesEncargoDocumento,
   fragmentosRelevantes, fuentesDeCitas, interpretarRespuesta, marcarCitasDocumento,
-  nombreTipo, plantillaBasica, presupuestoDe, reemplazarPasaje, textoDeEscrito,
+  nombreTipo, plantillaBasica, presupuestoDe, reemplazarPasaje, textoDeEscrito, textoVisible,
 } from "../compartido/documentos.js";
 import { Aviso, detalleProceso, filas, guardarUso, run, transaccion, uno } from "./db.js";
 import { listarPiezas } from "./biblioteca.js";
@@ -436,6 +437,20 @@ export function prepararVuelta({ db, datosDir, proyectoId, mensaje, modeloId, pa
     });
     encargo = unirPartes(partes);
   }
+  let citable = null;
+  let hash = hashEncargo(encargo);
+  if (String(elegido.id || "").startsWith("nube:anthropic")) {
+    const paginas = documentosDeArchivos(incluidos, trozosDeArchivos(db, ids));
+    const busquedas = busquedasDeFragmentos([...fragmentos, ...archivosFrag]);
+    if (paginas.documentos.length || busquedas.length) {
+      const bloques = contenidoCitable({ partes, documentos: paginas.documentos, busquedas });
+      if (bloques) {
+        citable = { documentos: paginas.documentos, busquedas, mapa: paginas.mapa };
+        encargo = textoVisible(bloques, paginas.mapa);
+        hash = hashEncargo(JSON.stringify(bloques));
+      }
+    }
+  }
   const informe = {
     origen: elegido.origen,
     modelo: elegido.nombre,
@@ -454,9 +469,9 @@ export function prepararVuelta({ db, datosDir, proyectoId, mensaje, modeloId, pa
     memoria: Boolean(memoria),
     agentesRecortado: agentes.recortado,
     expediente: Boolean(contexto),
-    hash: hashEncargo(encargo),
+    hash,
   };
-  return { datos, proyecto, perfil, historia, preguntas, actual, elegido, ficha, contexto, pedido, encargo, partes, informe, fragmentos, archivosFrag };
+  return { datos, proyecto, perfil, historia, preguntas, actual, elegido, ficha, contexto, pedido, encargo, partes, citable, informe, fragmentos, archivosFrag };
 }
 
 function terminosDe(consulta) {
@@ -493,7 +508,7 @@ export async function conversar({ db, datosDir, proyectoId, mensaje, modeloId, p
   if (documento != null && String(documento).trim() && String(documento).trim() !== (datos.actual?.cuerpo || "")) {
     guardarVersion(db, proyecto.id, { cuerpo: documento, autor: "usuario", nota: "Edición directa" });
   }
-  const { historia, preguntas, elegido, ficha, contexto, pedido, encargo, partes, fragmentos, archivosFrag } = previa;
+  const { historia, preguntas, elegido, ficha, contexto, pedido, encargo, partes, citable, fragmentos, archivosFrag } = previa;
   agregarMensaje(db, proyecto.id, { rol: "usuario", texto: pasaje ? `${pedido}\n\nPasaje elegido: ${pasaje}` : pedido });
   const actual = ultimaVersion(db, proyecto.id);
 
@@ -529,7 +544,7 @@ export async function conversar({ db, datosDir, proyectoId, mensaje, modeloId, p
     const onUsoDoc = (uso) => guardarUso(db, { ...uso, motivo: "documento", proyectoId: proyecto.id });
     if (elegido.origen === "nube") registrarEnvio(db, { proyectoId: proyecto.id, informe: previa.informe });
     const ajuste = Boolean(pasaje) || Boolean(previa.actual?.cuerpo);
-    respuesta = await pedirTexto({ datosDir, modeloId: elegido.id, onProgreso: avance, onUso: onUsoDoc, encargo, partes, ajuste });
+    respuesta = await pedirTexto({ datosDir, modeloId: elegido.id, onProgreso: avance, onUso: onUsoDoc, encargo, partes, citable, ajuste });
   } catch (error) {
     if (error instanceof Aviso) throw error;
     console.error(error);
@@ -583,17 +598,28 @@ export function prepararBloque({ db, datosDir, proyectoId, bloqueId, mensaje, mo
   if (!previa.elegido.usa) throw new Aviso("Para cambiar un párrafo elija un modelo local o de nube en Modelos de IA.");
   if (!previa.actual) throw new Aviso("Todavía no hay documento.");
   if (!bloquesDelProyecto(db, previa.proyecto.id).length) sincronizar(db, previa.proyecto.id, previa.actual);
-  const { bloque, encargo, hash } = prepararCambioBloque({
+  const base = prepararCambioBloque({
     db, proyectoId: previa.proyecto.id, bloqueId, pedido: previa.pedido, tipo: previa.proyecto.tipo, perfil: previa.perfil,
     cuerpo: previa.actual.cuerpo, fragmentos: [...previa.fragmentos, ...previa.archivosFrag.map((f) => ({ ...f, fuente: { nombre: f.nombre } }))],
     origen: previa.elegido.origen, memoriaTexto: bloqueMemoria(leerMemoria(db, previa.proyecto.id), previa.elegido.origen),
   });
+  let encargo = base.encargo;
+  let hash = base.hash;
+  const partes = [{ clave: "vuelta", cache: false, texto: base.encargo }];
+  const citable = previa.citable || null;
+  if (citable) {
+    const bloques = contenidoCitable({ partes, documentos: citable.documentos, busquedas: citable.busquedas });
+    if (bloques) {
+      encargo = textoVisible(bloques, citable.mapa);
+      hash = hashEncargo(JSON.stringify(bloques));
+    }
+  }
   const informe = { ...previa.informe, caracteres: encargo.length, tokens: Math.ceil(encargo.length / 4), hash };
-  return { previa, bloque, encargo, informe };
+  return { previa, bloque: base.bloque, encargo, partes, citable, informe };
 }
 
 export async function proponerBloque({ db, datosDir, proyectoId, bloqueId, mensaje, modeloId, confirmado = "", onProgreso, pedirTexto = textoParaDocumento, resolverModelo = modeloDelProyecto }) {
-  const { previa, bloque, encargo, informe } = prepararBloque({ db, datosDir, proyectoId, bloqueId, mensaje, modeloId, resolverModelo });
+  const { previa, bloque, encargo, partes, citable, informe } = prepararBloque({ db, datosDir, proyectoId, bloqueId, mensaje, modeloId, resolverModelo });
   const { elegido, proyecto } = previa;
   if (elegido.origen === "nube") {
     if (proyecto.solo_local) throw new Aviso(AVISO_SOLO_LOCAL);
@@ -605,7 +631,7 @@ export async function proponerBloque({ db, datosDir, proyectoId, bloqueId, mensa
     registrarEnvio(db, { proyectoId: proyecto.id, informe, motivo: "parrafo" });
   }
   const r = await pedirTexto({
-    datosDir, modeloId: elegido.id, encargo, ajuste: true,
+    datosDir, modeloId: elegido.id, encargo, partes, citable, ajuste: true,
     onProgreso: (d) => onProgreso?.({ proyectoId: proyecto.id, texto: d?.texto || "", pasaje: true }),
     onUso: (uso) => guardarUso(db, { ...uso, motivo: "parrafo", proyectoId: proyecto.id }),
   });

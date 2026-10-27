@@ -7,7 +7,8 @@ import test from "node:test";
 import {
   PERFILES_SEMILLA, armarEncargoDocumento, armarEncargoPasaje, claseDePieza, contarAvisos, diferencias,
   escritoDeTexto, fragmentosRelevantes, interpretarRespuesta, leerEtiquetas, marcarCitasDocumento,
-  partesEncargoDocumento, plantillaBasica, reemplazarPasaje, textoDeEscrito, topeDeVuelta, trocear,
+  partesEncargoDocumento, plantillaBasica, reemplazarPasaje, textoDeEscrito, textoVisible, topeDeVuelta, trocear,
+  bloqueBusqueda, busquedasDeFragmentos, contenidoCitable, documentosDeArchivos,
 } from "../compartido/documentos.js";
 import { bloquesConCache, unirPartes } from "../compartido/encargo.js";
 import { abrirBase, run, uno } from "../src/db.js";
@@ -87,6 +88,10 @@ test("el encargo lleva perfil, lineamientos, documento actual y el pedido; el lo
   assert.ok(partes[0].texto.includes("AGENTS.md"));
   assert.ok(partes[1].texto.includes("Expediente:"));
   assert.ok(partes[1].texto.includes("Archivos del proyecto"));
+  assert.equal(partes[1].estable.includes("Hecho del archivo"), false);
+  assert.equal(partes[1].estable.includes("Archivos del proyecto"), false);
+  assert.equal(partes[2].sinFuentes.includes("T-760"), false);
+  assert.ok(partes[2].texto.includes("T-760"));
   assert.equal(partes[1].texto.includes("Memoria del documento"), false);
   assert.ok(partes[2].texto.includes("Memoria del documento"));
   assert.ok(armado.indexOf("Fuentes del usuario") < armado.indexOf("Memoria del documento"));
@@ -100,6 +105,76 @@ test("el encargo lleva perfil, lineamientos, documento actual y el pedido; el lo
   assert.deepEqual(topeDeVuelta(true), { maxTokens: 8000, esfuerzo: "medium" });
   const pasaje = armarEncargoPasaje({ tipo: "contrato", documento: "Asunto: C\n\n## Objeto\nEl objeto es X.", pasaje: "El objeto es X.", pedido: "más formal", origen: "local" });
   assert.match(pasaje, /Pasaje que debes reescribir:\nEl objeto es X\./);
+});
+
+test("anthropic manda search_result y document, y la caché no cubre los fragmentos", () => {
+  const pieza = bloqueBusqueda({ fuente: { id: 9, nombre: "T-760 de 2008" }, texto: "La sentencia trata la salud.", entero: true });
+  assert.equal(pieza.source, "pieza:9");
+  assert.equal(pieza.title, "T-760 de 2008");
+  assert.deepEqual(pieza.citations, { enabled: true });
+  assert.deepEqual(pieza.content, [{ type: "text", text: "La sentencia trata la salud." }]);
+  const pagina = bloqueBusqueda({ archivo_id: 4, nombre: "demanda.pdf", pagina: 2, texto: "El demandado fue notificado." });
+  assert.equal(pagina.source, "archivo:4:2");
+  assert.equal(pagina.title, "demanda.pdf, página 2");
+  assert.equal(bloqueBusqueda({ texto: "sin id" }), null);
+
+  const { documentos, mapa } = documentosDeArchivos(
+    [{ id: 4, nombre: "demanda.pdf" }, { id: 8, nombre: "vacio.pdf" }],
+    [
+      { archivo_id: 4, pagina: 2, orden: 1, texto: "Segunda parte." },
+      { archivo_id: 4, pagina: 1, orden: 0, texto: "Primer párrafo." },
+      { archivo_id: 4, pagina: 1, orden: 2, texto: "Sigue en la uno." },
+    ],
+  );
+  assert.equal(documentos.length, 1);
+  assert.equal(documentos[0].source.type, "content");
+  assert.deepEqual(documentos[0].source.content, [
+    { type: "text", text: "Primer párrafo.\n\nSigue en la uno." },
+    { type: "text", text: "Segunda parte." },
+  ]);
+  assert.deepEqual(documentos[0].citations, { enabled: true });
+  assert.deepEqual(mapa, [{ id: 4, nombre: "demanda.pdf", paginas: [1, 2] }]);
+
+  const base = {
+    tipo: "tutela",
+    perfil: { nombre: "Constitucionalista", instrucciones: "Explica la subsidiariedad." },
+    expediente: "Radicado: 123",
+    fragmentos: [{ fuente: { id: 9, nombre: "T-760 de 2008" }, orden: 0, texto: "La sentencia trata la salud.", entero: true }],
+    documento: "Asunto: Tutela\n\n## Hechos\nUno.",
+    pedido: "hazlo más corto",
+    origen: "nube",
+    archivos: "[demanda.pdf, página 1]\nHecho suelto que cambia.",
+    memoria: "Tercera persona.",
+  };
+  const partes = partesEncargoDocumento(base);
+  const busquedas = busquedasDeFragmentos([...base.fragmentos, { archivo_id: 4, nombre: "demanda.pdf", pagina: 2, texto: "El demandado fue notificado." }]);
+  const uno = contenidoCitable({ partes, documentos, busquedas });
+  const otro = contenidoCitable({
+    partes,
+    documentos,
+    busquedas: busquedasDeFragmentos([{ fuente: { id: 3, nombre: "Ley 100" }, texto: "Otra norma, otra pregunta.", entero: true }]),
+  });
+  const corte = (bloques) => bloques.findIndex((b) => b.type === "document" && b.cache_control);
+  assert.equal(uno.filter((b) => b.cache_control).length, 2);
+  assert.equal(uno[0].type, "text");
+  assert.deepEqual(uno[0].cache_control, { type: "ephemeral" });
+  assert.equal(corte(uno), corte(otro));
+  assert.equal(JSON.stringify(uno.slice(0, corte(uno) + 1)), JSON.stringify(otro.slice(0, corte(otro) + 1)));
+  const busqueda = uno.findIndex((b) => b.type === "search_result");
+  assert.ok(busqueda > corte(uno));
+  assert.equal(uno[busqueda].cache_control, undefined);
+  assert.equal(uno.some((b) => b.type === "text" && b.text.includes("Hecho suelto que cambia")), false);
+  assert.ok(uno.some((b) => b.type === "text" && b.text.includes("Tercera persona")));
+  assert.equal(uno.some((b) => b.type === "text" && b.text.includes("La sentencia trata la salud")), false);
+  const plano = unirPartes(partes);
+  assert.match(plano, /Hecho suelto que cambia/);
+  assert.match(plano, /\[Cita no aportada\]/);
+  const visible = textoVisible(uno, mapa);
+  assert.match(visible, /demanda.pdf/);
+  assert.match(visible, /Página 1/);
+  assert.match(visible, /Primer párrafo/);
+  assert.match(visible, /Página 2/);
+  assert.match(visible, /pieza:9|T-760 de 2008/);
 });
 
 test("las citas de sentencias y leyes sin fuente quedan marcadas", () => {

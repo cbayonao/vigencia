@@ -445,17 +445,22 @@ export function partesEncargoDocumento({
   }
   if (hoy) caso.push("", `Fecha: ${hoy}`);
   caso.push("", "Expediente:", recortar(expediente, lim.expediente) || "(Sin expediente vinculado.)");
+  // Lo estable del caso termina en el expediente. Los fragmentos BM25 de
+  // los archivos cambian en cada vuelta y, si entraran aquí, romperían la
+  // caché. Anthropic los reemplaza por documentos de página completa.
+  const estable = textoDe(caso);
   const hayArchivos = Boolean(String(archivos || "").trim());
   if (hayArchivos) caso.push("", "Archivos del proyecto (fragmentos con archivo y página; cita así: [archivo, página n]):", String(archivos).trim());
 
-  const vuelta = [];
+  const fuentesLineas = [];
   if (hayArchivos) {
-    if (fragmentos?.length) vuelta.push("Fuentes del usuario:", recortar(bloqueDeFragmentos(fragmentos), lim.fuentes + 2000));
-    vuelta.push("", "Solo se pueden citar los archivos y las fuentes de arriba.");
+    if (fragmentos?.length) fuentesLineas.push("Fuentes del usuario:", recortar(bloqueDeFragmentos(fragmentos), lim.fuentes + 2000));
+    fuentesLineas.push("", "Solo se pueden citar los archivos y las fuentes de arriba.");
   } else {
-    vuelta.push("Fuentes del usuario (solo estas se pueden citar):", recortar(bloqueDeFragmentos(fragmentos || []), lim.fuentes + 2000));
+    fuentesLineas.push("Fuentes del usuario (solo estas se pueden citar):", recortar(bloqueDeFragmentos(fragmentos || []), lim.fuentes + 2000));
   }
-  if (String(memoria || "").trim()) vuelta.push("", "Memoria del documento (lo decidido en vueltas anteriores, con cualquier modelo; respétalo salvo que el usuario pida otra cosa):", String(memoria).trim());
+  const resto = [];
+  if (String(memoria || "").trim()) resto.push("", "Memoria del documento (lo decidido en vueltas anteriores, con cualquier modelo; respétalo salvo que el usuario pida otra cosa):", String(memoria).trim());
   const previos = [];
   let usado = 0;
   for (const m of [...historia].reverse()) {
@@ -464,23 +469,162 @@ export function partesEncargoDocumento({
     previos.unshift(linea);
     usado += linea.length;
   }
-  if (previos.length) vuelta.push("", "Conversación anterior:", ...previos);
-  if (actual) vuelta.push("", "Documento actual (la base que debes corregir; conserva lo que el usuario no pidió cambiar):", recortar(actual, lim.documento));
+  if (previos.length) resto.push("", "Conversación anterior:", ...previos);
+  if (actual) resto.push("", "Documento actual (la base que debes corregir; conserva lo que el usuario no pidió cambiar):", recortar(actual, lim.documento));
   if (aclaracion?.respuesta) {
-    vuelta.push("", "Aclaración del usuario:");
-    (aclaracion.preguntas || []).forEach((p, i) => vuelta.push(`${i + 1}. ${p}`));
-    vuelta.push("Respuesta:", String(aclaracion.respuesta).trim());
+    resto.push("", "Aclaración del usuario:");
+    (aclaracion.preguntas || []).forEach((p, i) => resto.push(`${i + 1}. ${p}`));
+    resto.push("Respuesta:", String(aclaracion.respuesta).trim());
   }
-  vuelta.push("", "Mensaje del usuario:", String(pedido || "").trim() || "Redacta el documento.");
+  resto.push("", "Mensaje del usuario:", String(pedido || "").trim() || "Redacta el documento.");
+  const vuelta = [...fuentesLineas, ...resto];
   return [
     { clave: "instrucciones", cache: true, texto: textoDe(lineamientos) },
-    { clave: "caso", cache: true, texto: textoDe(caso) },
-    { clave: "vuelta", cache: false, texto: textoDe(vuelta) },
+    { clave: "caso", cache: true, texto: textoDe(caso), estable },
+    { clave: "vuelta", cache: false, texto: textoDe(vuelta), sinFuentes: textoDe(resto) },
   ];
 }
 
 export function armarEncargoDocumento(opciones) {
   return unirPartes(partesEncargoDocumento(opciones));
+}
+
+// Identificador que Anthropic devuelve al citar: pieza de la biblioteca
+// o página de un archivo del proyecto.
+export function fuenteDeFragmento(fragmento) {
+  const pagina = Number(fragmento?.pagina) || 0;
+  const archivoId = fragmento?.archivo_id;
+  if (archivoId) return { tipo: "archivo", id: String(archivoId), pagina, source: `archivo:${archivoId}:${pagina}` };
+  const piezaId = fragmento?.fuente?.id;
+  if (piezaId != null && piezaId !== "") return { tipo: "pieza", id: String(piezaId), pagina, source: `pieza:${piezaId}` };
+  const ligado = fragmento?.fuente?.archivo_id;
+  if (ligado) return { tipo: "archivo", id: String(ligado), pagina, source: `archivo:${ligado}:${pagina}` };
+  return null;
+}
+
+export function tituloDeFragmento(fragmento) {
+  const nombre = String(fragmento?.nombre || fragmento?.fuente?.nombre || "Fuente").trim() || "Fuente";
+  const pagina = Number(fragmento?.pagina) || 0;
+  return pagina ? `${nombre}, página ${pagina}` : nombre;
+}
+
+// Un fragmento BM25, como bloque search_result de la Messages API.
+export function bloqueBusqueda(fragmento) {
+  const texto = String(fragmento?.texto || "").trim();
+  const fuente = fuenteDeFragmento(fragmento);
+  if (!texto || !fuente) return null;
+  return {
+    type: "search_result",
+    source: fuente.source,
+    title: tituloDeFragmento(fragmento),
+    content: [{ type: "text", text: texto }],
+    citations: { enabled: true },
+  };
+}
+
+export function busquedasDeFragmentos(fragmentos) {
+  return (fragmentos || []).map(bloqueBusqueda).filter(Boolean);
+}
+
+// Un archivo del proyecto: documento de contenido personalizado, un bloque
+// de texto por página. Los trozos de la misma página se unen.
+export function documentosDeArchivos(archivos, trozos) {
+  const grupos = new Map();
+  for (const t of trozos || []) {
+    const id = Number(t?.archivo_id);
+    const texto = String(t?.texto || "").trim();
+    if (!id || !texto) continue;
+    if (!grupos.has(id)) grupos.set(id, new Map());
+    const paginas = grupos.get(id);
+    const pagina = Number(t.pagina) || 0;
+    const lista = paginas.get(pagina) || [];
+    lista.push(texto);
+    paginas.set(pagina, lista);
+  }
+  const documentos = [];
+  const mapa = [];
+  for (const archivo of archivos || []) {
+    const paginas = grupos.get(Number(archivo.id));
+    if (!paginas?.size) continue;
+    const ordenadas = [...paginas.entries()].sort((a, b) => a[0] - b[0]);
+    documentos.push({
+      type: "document",
+      title: archivo.nombre || "Archivo",
+      source: {
+        type: "content",
+        content: ordenadas.map(([, textos]) => ({ type: "text", text: textos.join("\n\n") })),
+      },
+      citations: { enabled: true },
+    });
+    mapa.push({
+      id: Number(archivo.id),
+      nombre: archivo.nombre || "Archivo",
+      paginas: ordenadas.map(([pagina]) => pagina),
+    });
+  }
+  return { documentos, mapa };
+}
+
+// Contenido del mensaje de Anthropic. La caché queda en las instrucciones
+// y al final de los documentos (el caso). Los search_result van después:
+// cambian con la pregunta y no deben invalidar ese prefijo.
+export function contenidoCitable({ partes = [], documentos = [], busquedas = [] } = {}) {
+  const docs = (documentos || []).filter((d) => d?.type === "document" && d.source?.content?.length);
+  const finds = (busquedas || []).filter((b) => b?.type === "search_result" && b.content?.length);
+  if (!docs.length && !finds.length) return null;
+  const lista = partes || [];
+  const instrucciones = lista.find((p) => p?.clave === "instrucciones");
+  const caso = lista.find((p) => p?.clave === "caso");
+  const vuelta = lista.find((p) => p?.clave === "vuelta") || (lista.length === 1 ? lista[0] : null);
+  const bloques = [];
+  const ponerTexto = (valor, cache) => {
+    const limpio = String(valor || "").replace(/^\n+|\n+$/g, "");
+    if (!limpio) return;
+    const bloque = { type: "text", text: limpio };
+    if (cache) bloque.cache_control = { type: "ephemeral" };
+    bloques.push(bloque);
+  };
+  if (instrucciones) ponerTexto(instrucciones.texto, true);
+  if (caso) ponerTexto(docs.length && caso.estable != null ? caso.estable : caso.texto, docs.length === 0);
+  docs.forEach((doc, i) => {
+    const copia = { ...doc, source: { ...doc.source, content: doc.source.content.map((c) => ({ ...c })) } };
+    if (i === docs.length - 1) copia.cache_control = { type: "ephemeral" };
+    bloques.push(copia);
+  });
+  for (const b of finds) bloques.push({ ...b, content: b.content.map((c) => ({ ...c })) });
+  if (vuelta) ponerTexto(finds.length && vuelta.sinFuentes != null ? vuelta.sinFuentes : vuelta.texto, false);
+  for (let i = 0; i < bloques.length - 1; i += 1) {
+    if (bloques[i].type === "text" && !bloques[i].text.endsWith("\n\n")) {
+      bloques[i] = { ...bloques[i], text: `${bloques[i].text}\n\n` };
+    }
+  }
+  return bloques.length ? bloques : null;
+}
+
+// Texto que ve quien revisa el envío: los mismos caracteres que van en los
+// bloques, con el nombre del archivo y la página.
+export function textoVisible(bloques, mapa = []) {
+  const partes = [];
+  let doc = 0;
+  for (const b of bloques || []) {
+    if (!b) continue;
+    if (b.type === "text") {
+      const t = String(b.text || "").trim();
+      if (t) partes.push(t);
+    } else if (b.type === "search_result") {
+      const cuerpo = (b.content || []).map((c) => c.text || "").filter(Boolean).join("\n\n");
+      partes.push(`${b.title || "Fuente"}\n${cuerpo}`.trim());
+    } else if (b.type === "document") {
+      const reales = mapa[doc]?.paginas || [];
+      doc += 1;
+      const paginas = (b.source?.content || []).map((c, i) => {
+        const n = reales[i];
+        return `${n ? `Página ${n}` : `Página ${i + 1}`}\n${c.text || ""}`.trim();
+      });
+      partes.push([b.title || "Archivo", ...paginas].filter(Boolean).join("\n\n"));
+    }
+  }
+  return partes.join("\n\n").trim();
 }
 
 export function armarEncargoPasaje({ tipo, perfil, documento, pasaje, pedido, fragmentos, origen } = {}) {

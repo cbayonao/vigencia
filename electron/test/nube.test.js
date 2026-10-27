@@ -163,6 +163,58 @@ test("Anthropic manda dos cortes de caché y el esfuerzo, sin temperature", asyn
   assert.equal(cuerpo.messages[0].content.map((b) => b.text).join(""), unirPartes(partes));
 });
 
+test("Anthropic manda documentos y search_result sin mover la caché", async () => {
+  let cuerpo = null;
+  const fetchFn = async (_url, pedido) => {
+    cuerpo = JSON.parse(pedido.body);
+    return respuestaSSE(['event: content_block_delta\ndata: {"delta":{"text":"ok"}}\n\n']);
+  };
+  const { contenidoCitable, documentosDeArchivos, bloqueBusqueda } = await import("../compartido/documentos.js");
+  const { unirPartes } = await import("../compartido/encargo.js");
+  const partes = [
+    { clave: "instrucciones", cache: true, texto: "Lineamientos y perfil.", estable: "Lineamientos y perfil." },
+    { clave: "caso", cache: true, texto: "Expediente.\n\nArchivos del proyecto\nfragmento que cambia", estable: "Expediente." },
+    { clave: "vuelta", cache: false, texto: "Fuentes del usuario:\nLa sentencia.\n\nMensaje del usuario:\nhola", sinFuentes: "Mensaje del usuario:\nhola" },
+  ];
+  const { documentos } = documentosDeArchivos([{ id: 4, nombre: "demanda.pdf" }], [
+    { archivo_id: 4, pagina: 1, texto: "Hecho de la página uno." },
+  ]);
+  const busquedas = [bloqueBusqueda({ fuente: { id: 9, nombre: "T-760" }, texto: "La sentencia." })];
+  const citable = { documentos, busquedas };
+  await chatNube({
+    proveedor: "anthropic",
+    key: "k",
+    modelo: "claude-sonnet-5-5",
+    texto: unirPartes(partes),
+    partes,
+    citable,
+    esfuerzo: "high",
+    fetchFn,
+  });
+  const content = cuerpo.messages[0].content;
+  const esperado = contenidoCitable({ partes, documentos, busquedas });
+  assert.deepEqual(content, esperado);
+  const corte = content.findIndex((b) => b.cache_control && b.type === "document");
+  assert.equal(content.filter((b) => b.cache_control).length, 2);
+  assert.ok(content.findIndex((b) => b.type === "search_result") > corte);
+  assert.equal(content.some((b) => b.type === "text" && String(b.text).includes("fragmento que cambia")), false);
+  assert.equal("temperature" in cuerpo, false);
+
+  cuerpo = null;
+  await chatNube({
+    proveedor: "openai",
+    key: "k",
+    modelo: "gpt-6.1-sol",
+    texto: "hola",
+    partes,
+    citable,
+    esfuerzo: "high",
+    fetchFn,
+  });
+  assert.equal(cuerpo.temperature, 0.2);
+  assert.deepEqual(cuerpo.messages, [{ role: "user", content: "hola" }]);
+});
+
 test("OpenAI, Grok y custom ignoran caché y esfuerzo de Anthropic", async () => {
   for (const proveedor of ["openai", "xai", "custom"]) {
     let cuerpo = null;

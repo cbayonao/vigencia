@@ -2,12 +2,10 @@ import {
   causaDelFallo,
   etiquetaCliente,
   fechaCorta,
-  instanteLocal,
   nombreCliente,
   normalizarRadicado,
   ordenEs,
   texto,
-  textoPausa,
   tipoClave,
   tituloLista,
   tramosDeActuaciones,
@@ -51,7 +49,6 @@ const estado = {
   eliminarId: null,
   formAsignar: false,
   editando: null,
-  pausaHasta: null,
   revisando: false,
   agregando: false,
   cargando: false,
@@ -59,7 +56,6 @@ const estado = {
   expediente: null,
   informe: null,
   ejemploDocx: null,
-  relojPausa: 0,
   soloIds: null,
   automatica: null,
   sistema: SISTEMA_INICIAL,
@@ -1119,17 +1115,11 @@ async function cargar() {
 }
 
 function pintarActualizar() {
-  window.clearTimeout(estado.relojPausa);
-  const fin = instanteLocal(estado.pausaHasta);
-  const bloqueado = fin != null && fin > Date.now();
-  $("actualizar").disabled = Boolean(estado.revisando || estado.cargando || estado.puntual) || bloqueado;
+  $("actualizar").disabled = Boolean(estado.revisando || estado.cargando || estado.puntual);
   $("actualizar").textContent = estado.revisando ? "Revisando…" : "Actualizar todo";
   $("actualizar").title = estado.revisando
     ? "Revisando las actuaciones. Puedes agregar un radicado mientras tanto."
-    : (bloqueado ? textoPausa(estado.pausaHasta) : "Revisa solo las actuaciones de cada expediente");
-  if (bloqueado && !estado.revisando) {
-    estado.relojPausa = window.setTimeout(pintarActualizar, fin - Date.now());
-  }
+    : "Revisa solo las actuaciones de cada expediente";
 }
 
 function pintarOcupados() {
@@ -1170,7 +1160,8 @@ function aplicarAgregar(dato) {
   }
   if (dato.corriendo) return;
   const numero = dato.radicado || normalizarRadicado($("nuevo").value);
-  if (dato.exit_code) mostrarFallo(numero, dato.exit_code, lineas, dato.fin);
+  if (dato.cancelado) mostrarDetenido(numero, lineas, dato.fin);
+  else if (dato.exit_code) mostrarFallo(numero, dato.exit_code, lineas, dato.fin);
   else {
     ocultarDialogo("dialogo-busqueda");
     if (!estado.revisando && !estado.cargando && lineas.length) {
@@ -1181,7 +1172,8 @@ function aplicarAgregar(dato) {
     }
   }
   cargar().then(() => {
-    if (!dato.exit_code) mostrarAgregado(numero);
+    if (dato.exit_code || dato.cancelado) return;
+    mostrarAgregado(numero);
   });
 }
 
@@ -1260,6 +1252,10 @@ function mostrarInforme(informe) {
     }
   }
   mostrarDialogo("dialogo-informe");
+  const hayFallas = (informe.fallas || []).length > 0;
+  $("informe-reintentar").hidden = !hayFallas;
+  $("informe-reintentar").disabled = false;
+  $("informe-reintentar").textContent = "Reintentar fallidos";
   $("informe-cerrar").focus();
 }
 
@@ -1329,6 +1325,11 @@ function prepararDialogo(numero) {
   $("dialogo-log").classList.remove("registro-error");
   $("dialogo-log").textContent = "Esperando la respuesta de la Rama…";
   $("dialogo-cerrar").hidden = true;
+  $("dialogo-reintentar").hidden = true;
+  const detener = $("dialogo-detener");
+  detener.hidden = false;
+  detener.disabled = false;
+  detener.textContent = "Detener";
   if (!estado.revisando && !estado.cargando) {
     $("registro-titulo").textContent = "Registro de la búsqueda";
     $("registro").classList.remove("registro-error");
@@ -1346,7 +1347,9 @@ function mostrarFallo(numero, codigo, lineas, fin) {
   $("dialogo-barra").hidden = true;
   $("dialogo-log").classList.add("registro-error");
   $("dialogo-log").textContent = lineas.length ? lineas.join("\n") : "El proceso no escribió nada.";
+  $("dialogo-detener").hidden = true;
   $("dialogo-cerrar").hidden = false;
+  $("dialogo-reintentar").hidden = false;
   if (estado.revisando || estado.cargando) {
     ayuda(causa, true);
     return;
@@ -1357,6 +1360,25 @@ function mostrarFallo(numero, codigo, lineas, fin) {
   $("registro").textContent = `${causa}\n\n${lineas.join("\n")}${cierre}`;
   pintarMensaje(`La búsqueda de ${numero} falló`, `${causa}\n\nEl registro completo está arriba. La ventana de la búsqueda sigue abierta hasta que la cierres.`);
   ayuda(causa, true);
+}
+
+function mostrarDetenido(numero, lineas, fin) {
+  $("dialogo-titulo").textContent = "Búsqueda detenida";
+  $("dialogo-causa").hidden = false;
+  $("dialogo-causa").textContent = "Se detuvo a petición suya. Lo que ya se guardó queda en este computador.";
+  $("dialogo-barra").hidden = true;
+  $("dialogo-log").classList.remove("registro-error");
+  const cierre = fin ? `\nSe detuvo a las ${fin}.` : "";
+  $("dialogo-log").textContent = `${lineas.join("\n")}${cierre}`;
+  $("dialogo-detener").hidden = true;
+  $("dialogo-cerrar").hidden = false;
+  $("dialogo-reintentar").hidden = false;
+  if (!estado.revisando && !estado.cargando) {
+    $("registro-titulo").textContent = "Registro de la búsqueda";
+    mostrarCaja(false);
+    $("registro").textContent = `Búsqueda de ${numero} detenida.${cierre}\n\n${lineas.join("\n")}`;
+  }
+  ayuda("Búsqueda detenida.", false);
 }
 
 async function mostrarAgregado(numero) {
@@ -1644,40 +1666,66 @@ $("csv-cargar").addEventListener("click", async () => {
   pintarOcupados();
 });
 
-$("agregar").addEventListener("click", async () => {
-  const numero = normalizarRadicado($("nuevo").value);
-  if (numero.length !== 23) {
+async function buscarRadicado(numero) {
+  const limpio = normalizarRadicado(numero);
+  if (limpio.length !== 23) {
     ayuda("El radicado debe tener 23 dígitos.", true);
     return;
   }
   ayuda("Buscando en la Rama…");
-  const respuesta = await window.vigencia.agregar(numero);
+  const respuesta = await window.vigencia.agregar(limpio);
   if (!respuesta.ok) {
     ayuda(respuesta.error, true);
     return;
   }
   estado.agregando = true;
   pintarOcupados();
-  prepararDialogo(numero);
+  prepararDialogo(limpio);
+}
+
+$("agregar").addEventListener("click", async () => {
+  await buscarRadicado($("nuevo").value);
+});
+
+$("dialogo-reintentar").addEventListener("click", async () => {
+  await buscarRadicado($("dialogo-numero").textContent);
+});
+
+$("dialogo-detener").addEventListener("click", async () => {
+  const boton = $("dialogo-detener");
+  boton.disabled = true;
+  boton.textContent = "Deteniendo…";
+  await window.vigencia.agregarCancelar();
 });
 
 $("actualizar").addEventListener("click", async () => {
-  const respuesta = await window.vigencia.actualizar();
+  arrancarRevision(await window.vigencia.actualizar());
+});
+
+$("informe-reintentar").addEventListener("click", async () => {
+  const boton = $("informe-reintentar");
+  boton.disabled = true;
+  boton.textContent = "Reintentando…";
+  ocultarDialogo("dialogo-informe");
+  arrancarRevision(await window.vigencia.actualizarFallidos());
+  boton.disabled = false;
+  boton.textContent = "Reintentar fallidos";
+});
+
+function arrancarRevision(respuesta) {
   if (!respuesta.ok) {
-    if (respuesta.hasta) estado.pausaHasta = respuesta.hasta;
     pintarActualizar();
     ayuda(respuesta.error, true);
     if (respuesta.error === "Ya hay una consulta en curso.") mostrarCaja(false);
     return;
   }
-  estado.pausaHasta = respuesta.hasta;
   estado.revisando = true;
   $("registro").classList.remove("registro-error");
   $("registro").textContent = "Revisando actuaciones…";
   $("registro-titulo").textContent = "Registro";
   mostrarCaja(false);
   pintarOcupados();
-});
+}
 
 $("recargar").addEventListener("click", async () => {
   $("recargar").disabled = true;
@@ -3256,10 +3304,6 @@ function textoMarca(marca) {
 function pintarAutomatica(info) {
   if (!info) return;
   estado.automatica = info;
-  if ("actualizarHasta" in info) {
-    estado.pausaHasta = info.actualizarHasta || null;
-    pintarActualizar();
-  }
   const ultima = info.ultima;
   let linea = "Última revisión automática: todavía no";
   if (ultima) {
@@ -3443,7 +3487,6 @@ async function entrarSiVigente(info) {
   if (!planAbierto(info?.estado) || aplicacionLista) return;
   aplicacionLista = true;
   const estadoInicial = await window.vigencia.estado();
-  estado.pausaHasta = estadoInicial.actualizarHasta || null;
   pintarAutomatica(estadoInicial.automatica);
   estado.informe = estadoInicial.informe || null;
   pintarVerInforme();

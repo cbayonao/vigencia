@@ -4,8 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { abrirBase, asignarCliente, guardarCliente, uno } from "../src/db.js";
-import { lanzar, estadoCorrida } from "../src/jobs.js";
-import { ACTUACIONES_URL, CONSULTA_URL, ejecutarTrabajo, obtenerJson } from "../src/rama.js";
+import { lanzar, estadoCorrida, cancelarCorrida } from "../src/jobs.js";
+import { ACTUACIONES_URL, CONSULTA_URL, ejecutarTrabajo, idsDeFallas, obtenerJson, textoErrorRespuesta } from "../src/rama.js";
 
 const NUMERO = "11001418901820190162700";
 
@@ -204,6 +204,35 @@ test("actualizar todo espera entre 1 y 3 segundos entre peticiones", async () =>
   }
 });
 
+test("el error del gateway se lee sin HTML y se reintenta con paciencia", async () => {
+  const html502 = "<html><head><title>502 Bad Gateway</title></head><body><center><h1>502 Bad Gateway</h1></center><hr><center>Microsoft-Azure-Application-Gateway/v2</center></body></html>";
+  assert.equal(textoErrorRespuesta(html502), "502 Bad Gateway 502 Bad Gateway Microsoft-Azure-Application-Gateway/v2");
+  assert.equal(textoErrorRespuesta(""), "");
+  let llamadas = 0;
+  const esperas = [];
+  const ctx = {
+    ...ctxDe(async () => {
+      llamadas += 1;
+      return { status: 502, text: html502 };
+    }),
+    dormir: async (ms) => { esperas.push(ms); },
+  };
+  await assert.rejects(obtenerJson(CONSULTA_URL, { numero: NUMERO }, ctx), /HTTP 502: 502 Bad Gateway/);
+  assert.equal(llamadas, 4);
+  assert.deepEqual(esperas, [2000, 5000, 15000, 15000]);
+});
+
+test("si el gateway se recupera, el reintento trae los datos", async () => {
+  let llamadas = 0;
+  const data = await obtenerJson(CONSULTA_URL, { numero: NUMERO }, ctxDe(async () => {
+    llamadas += 1;
+    if (llamadas < 3) return { status: 502, text: "<html><h1>502 Bad Gateway</h1></html>" };
+    return { status: 200, text: JSON.stringify({ procesos: [] }) };
+  }));
+  assert.deepEqual(data.procesos, []);
+  assert.equal(llamadas, 3);
+});
+
 test("si la consulta del radicado falla, el trabajo termina con error y no abre la red sola", async () => {
   const tmp = temporal();
   const resultado = await ejecutarTrabajo({
@@ -326,6 +355,113 @@ test("el informe de actualizar todo cuenta exitosos y la causa de cada falla", a
     assert.equal(resultado.informe.fallas[0].causa, "La Rama no respondió.");
     assert.equal(JSON.stringify(resultado.informe).includes("idProceso"), false);
     assert.equal("id_proceso" in resultado.informe.fallas[0], false);
+  } finally {
+    tmp.borrar();
+  }
+});
+
+test("se puede detener la búsqueda de un radicado y queda lo guardado", async () => {
+  const tmp = temporal();
+  try {
+    let soltar = null;
+    const puerta = new Promise((resolver) => { soltar = resolver; });
+    let llamadas = 0;
+    const pedir = async () => {
+      llamadas += 1;
+      await puerta;
+      return { status: 200, text: JSON.stringify({ procesos: [], paginacion: { cantidadPaginas: 1 } }) };
+    };
+    assert.equal(lanzar({ db: tmp.db, datosDir: tmp.dir, modo: "agregar", radicado: NUMERO, pedir, dormir: async () => {} }), true);
+    for (let i = 0; i < 50 && llamadas === 0; i += 1) await new Promise((r) => setTimeout(r, 10));
+    assert.equal(llamadas >= 1, true);
+    assert.equal(cancelarCorrida("agregar"), true);
+    assert.equal(cancelarCorrida("agregar"), true, "se puede volver a pedir mientras para");
+    soltar();
+    for (let i = 0; i < 100 && estadoCorrida().corriendo; i += 1) await new Promise((r) => setTimeout(r, 10));
+    assert.equal(estadoCorrida().corriendo, false);
+    const foto = estadoCorrida().trabajos.agregar;
+    assert.equal(foto.cancelada, true);
+    assert.equal(foto.exit_code, 0);
+    assert.equal(llamadas, 1, "no pide más a la Rama después de detener");
+    assert.equal(cancelarCorrida("agregar"), false, "sin trabajo en curso no hay nada que detener");
+  } finally {
+    tmp.borrar();
+  }
+});
+
+test("la revisión va en lotes de 50 con hasta 5 a la vez y orden del informe", async () => {
+  const tmp = temporal();
+  try {
+    const N = 55;
+    for (let i = 1; i <= N; i += 1) {
+      const rad = `11001${String(30000000000000000 + i)}`;
+      tmp.db.prepare("INSERT OR IGNORE INTO radicado (numero) VALUES (?)").run(rad);
+      tmp.db.prepare("INSERT INTO proceso (id_proceso, radicado, despacho, es_privado) VALUES (?, ?, ?, 0)").run(i, rad, `Juzgado ${i}`);
+    }
+    let vivas = 0;
+    let maxVivas = 0;
+    let llamadas = 0;
+    const resultado = await ejecutarTrabajo({
+      db: tmp.db,
+      modo: "todo",
+      ctx: { log() {}, aviso() {}, notificar() {} },
+      pedir: async (url) => {
+        llamadas += 1;
+        vivas += 1;
+        maxVivas = Math.max(maxVivas, vivas);
+        await new Promise((r) => setTimeout(r, 5));
+        vivas -= 1;
+        const m = String(url).match(/\/Actuaciones\/(\d+)/);
+        const id = m ? Number(m[1]) : 0;
+        if (id % 7 === 0) return { status: 500, text: "caida" };
+        return { status: 200, text: JSON.stringify({ actuaciones: [{ idRegActuacion: id * 1000 + 1, fechaActuacion: "2026-10-10", actuacion: "Auto", consActuacion: 1, llaveProceso: "x" }], paginacion: { cantidadPaginas: 1, cantidadRegistros: 1 } }) };
+      },
+      dormir: async () => {},
+    });
+    assert.equal(resultado.codigo, 0);
+    assert.equal(resultado.informe.total, N);
+    assert.equal(resultado.informe.exitosos + resultado.informe.fallidos, N);
+    assert.ok(maxVivas > 1 && maxVivas <= 5, `concurrencia acotada, fue ${maxVivas}`);
+    const orden = resultado.informe.fallas.map((f) => f.radicado);
+    assert.deepEqual(orden, [...orden].sort(), "las fallas salen en orden de radicado");
+  } finally {
+    tmp.borrar();
+  }
+});
+
+test("reintentar fallidos solo consulta esos expedientes", async () => {
+  const tmp = temporal();
+  try {
+    for (const [id, despacho] of [[1, "Juzgado Uno"], [2, "Juzgado Dos"], [3, "Juzgado Tres"]]) {
+      const rad = `11001${String(30000000000000000 + id)}`;
+      tmp.db.prepare("INSERT OR IGNORE INTO radicado (numero) VALUES (?)").run(rad);
+      tmp.db.prepare("INSERT INTO proceso (id_proceso, radicado, despacho, es_privado) VALUES (?, ?, ?, 0)").run(id, rad, despacho);
+    }
+    const fallas = [
+      { radicado: `11001${String(30000000000000000 + 2)}`, despacho: "Juzgado Dos", causa: "x" },
+      { radicado: `11001${String(30000000000000000 + 3)}`, despacho: "Otro despacho", causa: "x" },
+      { radicado: `11001${String(30000000000000000 + 3)}`, despacho: "Otro despacho", causa: "x" },
+      { radicado: "11001999999999999999999", despacho: "Nadie", causa: "x" },
+    ];
+    assert.deepEqual(idsDeFallas(tmp.db, fallas), [2, 3]);
+    assert.deepEqual(idsDeFallas(tmp.db, []), []);
+    const tocados = [];
+    const resultado = await ejecutarTrabajo({
+      db: tmp.db,
+      modo: "todo",
+      ids: [2],
+      ctx: { log() {}, aviso() {}, notificar() {} },
+      pedir: async (url) => {
+        tocados.push(url);
+        return { status: 200, text: JSON.stringify({ actuaciones: [], paginacion: { cantidadPaginas: 1, cantidadRegistros: 0 } }) };
+      },
+      dormir: async () => {},
+    });
+    assert.equal(resultado.codigo, 0);
+    assert.equal(resultado.informe.total, 1);
+    assert.ok(tocados.some((u) => String(u).includes("/Actuaciones/2")));
+    assert.ok(!tocados.some((u) => String(u).includes("/Actuaciones/1")));
+    assert.ok(!tocados.some((u) => String(u).includes("/Actuaciones/3")));
   } finally {
     tmp.borrar();
   }

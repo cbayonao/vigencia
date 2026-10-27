@@ -1,19 +1,42 @@
-# Arma los instaladores en cada cambio de electron/** en main y los deja
-# como artefactos (30 días). Es el semáforo antes de crear un tag v*:
-# si un instalador sale con el verificador del motor en rojo, el build
-# falla aquí y ese tag no se publica.
-name: Armar instaladores
+# Un solo camino para publicar: al pushear un tag v* (ej. git tag v3.2.0
+# && git push origin v3.2.0) se arma cada instalador una sola vez en su SO
+# nativo, se sube al release de GitHub (borrador), se espeja a S3 con
+# nombres estables —los que enlaza el landing (el repo es privado: sus
+# releases no son descargables por el público)— y se publica.
+# Si un instalador falla (p. ej. el verificador del motor en rojo), el
+# release queda en borrador y nada se publica: ese es el semáforo.
+# Los tags se crean solo desde main verde (ver CI) y con package.json
+# ya subido a la misma versión (se verifica antes de crear el borrador).
+name: Publicar release
 
 on:
   push:
-    branches: [main]
-    paths: ["electron/**"]
+    tags: ["v*"]
 
 permissions:
-  contents: read
+  contents: write
+  id-token: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
+  crear:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          TAG="${{ github.ref_name }}"
+          PKG=$(node -p "require('./electron/package.json').version")
+          test "$PKG" = "${TAG#v}" || { echo "package.json dice $PKG pero el tag es $TAG: suba la versión primero"; exit 1; }
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --draft --title "$TAG" --generate-notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+
   armar:
+    needs: crear
     strategy:
       fail-fast: true
       matrix:
@@ -36,11 +59,28 @@ jobs:
         working-directory: electron
       - run: npm run ${{ matrix.comando }}
         working-directory: electron
-      - uses: actions/upload-artifact@v4
-        # No tumba el semáforo si la cuota de artefactos está llena.
-        continue-on-error: true
+      # Subida directa al release (borrador). Sin cuota de artefactos y
+      # re-ejecutable: --clobber reemplaza los archivos si ya existen.
+      # shell bash también en Windows: PowerShell no expande $VAR.
+      - run: gh release upload "$TAG" electron/dist/Vigencia* --clobber
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+
+  espejar:
+    needs: armar
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/aws-auth
         with:
-          name: instaladores-${{ runner.os }}
-          path: electron/dist/Vigencia*
-          if-no-files-found: error
-          retention-days: 2
+          aws-role-arn: ${{ secrets.AWS_ROLE_ARN }}
+      - run: ./electron/script/publicar-descargas.sh "$TAG"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+      - run: gh release edit "$TAG" --draft=false
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}

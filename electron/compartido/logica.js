@@ -16,16 +16,10 @@ export function ahora(fechaActual = new Date()) {
   return `${fechaActual.getFullYear()}-${p(fechaActual.getMonth() + 1)}-${p(fechaActual.getDate())} ${p(fechaActual.getHours())}:${p(fechaActual.getMinutes())}:${p(fechaActual.getSeconds())}`;
 }
 
-export const PAUSA_ACTUALIZAR_MS = 60 * 60 * 1000;
-
 export function pausaAleatoriaMs(azar = Math.random) {
   const n = Number(azar());
   const unidad = Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : 0;
   return 1000 + Math.round(unidad * 2000);
-}
-
-export function marcaMas(ms, fechaActual = new Date()) {
-  return ahora(new Date(fechaActual.getTime() + ms));
 }
 
 export function instanteLocal(marca) {
@@ -42,21 +36,9 @@ export function instanteLocal(marca) {
   return Number.isNaN(fecha.getTime()) ? null : fecha.getTime();
 }
 
-export function textoPausa(marca, fechaActual = new Date()) {
-  const fin = instanteLocal(marca);
-  if (fin == null || fin <= fechaActual.getTime()) return "";
-  const hora = String(marca).slice(11, 16);
-  const mismoDia = String(marca).slice(0, 10) === ahora(fechaActual).slice(0, 10);
-  return mismoDia
-    ? `Puedes actualizar de nuevo a las ${hora}.`
-    : `Puedes actualizar de nuevo a las ${hora} del ${fechaCorta(marca)}.`;
-}
-
-export function decidirActualizar(hasta, ocupado, fechaActual = new Date()) {
-  const aviso = textoPausa(hasta, fechaActual);
-  if (aviso) return { ok: false, error: aviso, hasta };
+export function decidirActualizar(ocupado) {
   if (ocupado) return { ok: false, error: "Ya hay una consulta en curso." };
-  return { ok: true, hasta: marcaMas(PAUSA_ACTUALIZAR_MS, fechaActual) };
+  return { ok: true };
 }
 
 export function tipoClave(valor) {

@@ -227,6 +227,10 @@ export function escritoDeTexto(cuerpo) {
 
 const SENTENCIA = String.raw`\b(?:sentencia\s+)?(?:T|C|SU|A)-\d{2,4}(?:\s+de\s+(?:\d{4}|\d{2}))?|\bsentencia\s+(?:de\s+)?(?:casaci[oó]n\s+)?(?:SL|SC|STC|STL|SP)\s?\d+(?:-\d{4})?`;
 
+export function mencionaSentencia(texto) {
+  return new RegExp(SENTENCIA, "i").test(String(texto || ""));
+}
+
 function nucleoSentencia(cita) {
   const n = normalizar(cita).replace(/^sentencia\s+/, "").replace(/\s+/g, " ").trim();
   const m = n.match(/^(t|c|su|a)-(\d+)(?:\s+de\s+(\d+))?/);

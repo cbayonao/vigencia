@@ -4,7 +4,8 @@
 // Los «...» de la doc se completaron con los campos que el mismo ejemplo lista.
 import assert from "node:assert/strict";
 import test from "node:test";
-import { leerFuente, reconstruirCitas } from "../compartido/citas.js";
+import { MARCA_SIN_FUENTE, citasEnFragmento, leerFuente, parrafosSinFuente, proyectarCitas, reconstruirCitas } from "../compartido/citas.js";
+import { marcarCitasDocumento } from "../compartido/documentos.js";
 
 const FLUJO = `event: message_start
 data: {"type":"message_start","message":{"usage":{"input_tokens":10,"output_tokens":0}}}
@@ -168,4 +169,34 @@ test("reconstruye texto y citas desde el stream de la documentación", () => {
   assert.ok(citas.every((c, i) => i === 0 || c.inicio >= citas[i - 1].inicio));
   assert.equal(reconstruirCitas("").texto, "");
   assert.deepEqual(reconstruirCitas("").citas, []);
+});
+
+test("marca norma o sentencia sin cita nativa y deja [Cita no aportada]", () => {
+  const marcada = marcarCitasDocumento([{ titulo: "H", parrafos: ["La Ley 9999 de 2099 obliga al juez."] }], "")[0].parrafos[0];
+  assert.match(marcada, /\[Cita no aportada\]/);
+  const parrafos = [
+    { texto: "La Ley 1751 de 2015 reconoce la salud.", inicio: 0 },
+    { texto: "El artículo 86 de la Constitución permite la tutela.", inicio: 80 },
+    { texto: "El Decreto 2591 de 1991 reglamenta el trámite.", inicio: 160 },
+    { texto: "La sentencia T-760 de 2008 protege el acceso.", inicio: 240 },
+    { texto: "La sentencia SU-123 de 2020 reiteró esa línea.", inicio: 320 },
+    { texto: "Según la sentencia de casación SL1234-2020, el despido fue nulo.", inicio: 400 },
+    { texto: marcada, inicio: 480 },
+    { texto: "La EPS negó la cirugía el 3 de marzo.", inicio: 560 },
+    { texto: "En el artículo de prensa no hay una norma.", inicio: 640 },
+    { texto: "La Ley 100 de 1993 creó el sistema de salud.", inicio: 720 },
+  ];
+  assert.equal(parrafos.length, 10);
+  const citas = [{ inicio: 720, fin: 770, fuente_tipo: "pieza", fuente_id: "1", pagina: null, texto_citado: "sistema" }];
+  const marcas = parrafosSinFuente(parrafos, citas);
+  assert.deepEqual(marcas.map((m) => m.indice), [0, 1, 2, 3, 4, 5, 6]);
+  assert.ok(marcas.every((m) => m.marca === MARCA_SIN_FUENTE));
+  assert.match(marcas.find((m) => m.indice === 6).texto, /\[Cita no aportada\]/);
+  assert.equal(parrafos[6].texto, marcada);
+  const locales = citasEnFragmento(parrafos[9].texto, citas, 720);
+  assert.equal(locales.length, 1);
+  assert.equal(locales[0].inicio, 0);
+  const vistos = proyectarCitas("La Ley 100 de 1993 creó el sistema.", "La Ley 100 de 1993 creó el sistema.", locales);
+  assert.equal(vistos[0].fin > vistos[0].inicio, true);
+  assert.equal(parrafosSinFuente([{ texto: "La sentencia C-355 de 2006.", inicio: 0 }], [{ inicio: 0, fin: 20 }]).length, 0);
 });

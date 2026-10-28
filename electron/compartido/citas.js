@@ -3,6 +3,10 @@
 // el arreglo citations, y content_block_delta trae text_delta o
 // citations_delta. El rango es de caracteres en el texto final, no en la
 // fuente. Documentación: citations y search results (2026).
+import { mencionaNorma } from "./encargo.js";
+import { mencionaSentencia } from "./documentos.js";
+
+export const MARCA_SIN_FUENTE = "Sin fuente, verificar";
 
 function paginaDe(valor) {
   const n = Number(valor);
@@ -124,4 +128,61 @@ export function reconstruirCitas(entrada, { documentos = [] } = {}) {
     }
   }
   return { texto, citas };
+}
+
+export function mencionaFuente(texto) {
+  return mencionaNorma(texto) || mencionaSentencia(texto);
+}
+
+// Citas cuyo rango cae dentro de [offset, offset + fragmento). Los índices
+// que devuelve son relativos al fragmento.
+export function citasEnFragmento(fragmento, citas, offset = 0) {
+  const texto = String(fragmento || "");
+  const desde = Number(offset) || 0;
+  const hasta = desde + texto.length;
+  const local = [];
+  for (const c of citas || []) {
+    const a = Math.max(Number(c.inicio) || 0, desde);
+    const b = Math.min(Number(c.fin) || 0, hasta);
+    if (b <= a) continue;
+    local.push({ ...c, inicio: a - desde, fin: b - desde });
+  }
+  return local;
+}
+
+function ubicarTrozo(visible, trozo) {
+  const v = String(visible || "");
+  const t = String(trozo || "");
+  if (!t) return null;
+  let i = v.indexOf(t);
+  if (i >= 0) return { inicio: i, fin: i + t.length };
+  const limpio = t.replace(/[*_`]+/g, "").replace(/\s+/g, " ").trim();
+  if (limpio.length < 2) return null;
+  i = v.indexOf(limpio);
+  return i >= 0 ? { inicio: i, fin: i + limpio.length } : null;
+}
+
+// Pasa un rango del markdown del párrafo al texto que se ve en la hoja.
+export function proyectarCitas(markdown, visible, citas) {
+  const base = String(markdown || "");
+  const salida = [];
+  for (const c of citas || []) {
+    const puesto = ubicarTrozo(visible, base.slice(Number(c.inicio) || 0, Number(c.fin) || 0));
+    if (puesto) salida.push({ ...c, inicio: puesto.inicio, fin: puesto.fin });
+  }
+  return salida;
+}
+
+// Párrafo que nombra una norma o una sentencia y ninguna cita nativa cubre
+// ese tramo. No toca el texto: [Cita no aportada] sigue donde estaba.
+export function parrafosSinFuente(parrafos, citas = []) {
+  return (parrafos || []).map((p, indice) => {
+    const texto = typeof p === "string" ? p : String(p?.texto || "");
+    const inicio = typeof p === "string" ? 0 : Number(p?.inicio) || 0;
+    const fin = inicio + texto.length;
+    if (!mencionaFuente(texto)) return null;
+    const cubierta = (citas || []).some((c) => Number(c.fin) > inicio && Number(c.inicio) < fin);
+    if (cubierta) return null;
+    return { indice, texto, inicio, fin, marca: MARCA_SIN_FUENTE };
+  }).filter(Boolean);
 }

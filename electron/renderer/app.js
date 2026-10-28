@@ -4182,7 +4182,7 @@ window.addEventListener("vigencia:ir", async (e) => {
     }
   } else if (d.a === "convertir") {
     elegirSistema("convertir");
-    if (d.archivoId) await verConvertido(Number(d.archivoId));
+    if (d.archivoId) await verConvertido(Number(d.archivoId), Number(d.pagina) || 0);
   }
 });
 iniciarComentarios({ mostrarDialogo, ocultarDialogo });

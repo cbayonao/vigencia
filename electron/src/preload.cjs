@@ -62,6 +62,7 @@ contextBridge.exposeInMainWorld("vigencia", {
   documentosBorrar: (id) => ipcRenderer.invoke("documentos-borrar", { id }),
   documentosFuentes: (id, fuentes) => ipcRenderer.invoke("documentos-fuentes", { id, fuentes }),
   documentosVersion: (id) => ipcRenderer.invoke("documentos-version", { id }),
+  documentosCitas: (id) => ipcRenderer.invoke("documentos-citas", { id }),
   documentosDiferencias: (antes, despues) => ipcRenderer.invoke("documentos-diferencias", { antes, despues }),
   documentosRestaurar: (id) => ipcRenderer.invoke("documentos-restaurar", { id }),
   documentosVersionBorrar: (id) => ipcRenderer.invoke("documentos-version-borrar", { id }),

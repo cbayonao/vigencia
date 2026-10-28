@@ -129,8 +129,8 @@ async function marcadosABiblioteca() {
   avisar(errores.length ? "Algunos no se pudieron agregar." : "Listo en la biblioteca.", errores.length ? "error" : "ok");
 }
 
-export async function verConvertido(id) {
-  if (id) await abrirVista(id);
+export async function verConvertido(id, pagina = 0) {
+  if (id) await abrirVista(id, Number(pagina) || 0);
 }
 
 async function eliminarArchivo(a) {
@@ -213,7 +213,7 @@ function elegirVista(cual) {
   if (bonita) pintarBonito();
 }
 
-async function abrirVista(id) {
+async function abrirVista(id, pagina = 0) {
   const r = await window.vigencia.convertirLeer(id);
   if (!r?.ok) return estado("conv-ocr", r?.error || "No pude abrirlo.", true);
   cv.elegido = r.archivo;
@@ -234,6 +234,10 @@ async function abrirVista(id) {
   // Sube la página de golpe (el suave arrastra el panel interno al final).
   $("conv-vista").scrollIntoView({ block: "start" });
   vista.scrollTop = 0;
+  if (pagina) {
+    const marca = [...vista.querySelectorAll(".conv-pagina")].find((p) => p.textContent.trim() === `página ${pagina}`);
+    if (marca) marca.scrollIntoView({ block: "start" });
+  }
 }
 
 async function convertir(rutas) {

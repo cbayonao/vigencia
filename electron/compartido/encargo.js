@@ -261,6 +261,10 @@ function nucleoDe(cita) {
 
 const CITA = String.raw`\b(?:art(?:ículo|\.)\s*\d+|ley\s+\d+(?:\s+de\s+\d{4})?|decreto\s+\d+(?:\s+de\s+\d{4})?)`;
 
+export function mencionaNorma(texto) {
+  return new RegExp(CITA, "i").test(String(texto || ""));
+}
+
 export function marcarCitas(secciones, fuentes) {
   const base = normalizar(fuentes);
   return (secciones || []).map((seccion) => ({

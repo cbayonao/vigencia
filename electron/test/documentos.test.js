@@ -14,7 +14,7 @@ import { bloquesConCache, unirPartes } from "../compartido/encargo.js";
 import { abrirBase, run, uno } from "../src/db.js";
 import { buscarFuentes, guardarPieza, listarPiezas, activarPieza } from "../src/biblioteca.js";
 import {
-  borrarProyecto, conversar, prepararVuelta, crearProyecto, duplicarProyecto, elegirFuentes, guardarPerfil, guardarVersion,
+  borrarProyecto, citasDeVersion, conversar, prepararVuelta, crearProyecto, duplicarProyecto, elegirFuentes, guardarPerfil, guardarVersion,
   leerProyecto, listarPerfiles, listarProyectos, restaurarVersion, actualizarProyecto, borrarVersion,
 } from "../src/documentos.js";
 import { textoDePdf } from "../src/pdftexto.js";
@@ -533,6 +533,33 @@ test("una vuelta guarda las citas en la versión y borrar la versión las quita"
     });
     borrarVersion(tmp.db, r.actual.id);
     assert.equal(Number(uno(tmp.db, "SELECT COUNT(*) AS n FROM doc_cita WHERE version_id = ?", [r.actual.id]).n), 0);
+  } finally {
+    tmp.borrar();
+  }
+});
+
+test("las citas de una versión traen el nombre de la fuente", async () => {
+  const tmp = temporal();
+  try {
+    const fuente = guardarPieza(tmp.db, { nombre: "T-760 de 2008", clase: "jurisprudencia", texto: "La sentencia protege la salud." });
+    const p = crearProyecto(tmp.db, { nombre: "T", tipo: "tutela" });
+    const texto = "Asunto: Tutela salud\n\n## Hechos\nLa salud es un derecho.";
+    const r = await conversar({
+      db: tmp.db, datosDir: tmp.dir, proyectoId: p.id, mensaje: "tutela",
+      resolverModelo: modeloFalso("local"),
+      pedirTexto: async () => ({
+        texto, origen: "local",
+        citas: [{ inicio: texto.indexOf("La salud"), fin: texto.indexOf("La salud") + 8, fuente_tipo: "pieza", fuente_id: String(fuente.id), pagina: 2, texto_citado: "protege la salud" }],
+      }),
+    });
+    const citas = citasDeVersion(tmp.db, r.actual.id);
+    assert.equal(citas.length, 1);
+    assert.equal(citas[0].titulo, "T-760 de 2008");
+    assert.equal(citas[0].fuente_tipo, "pieza");
+    assert.equal(citas[0].fuente_id, String(fuente.id));
+    assert.equal(citas[0].pagina, 2);
+    assert.equal(citas[0].texto_citado, "protege la salud");
+    assert.equal(citasDeVersion(tmp.db, 0).length, 0);
   } finally {
     tmp.borrar();
   }

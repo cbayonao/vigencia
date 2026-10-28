@@ -9,7 +9,7 @@ import { listarProcesos } from "./db.js";
 import { borrarPieza, buscarFuentes, etiquetasUsadas, guardarPieza, leerPieza } from "./biblioteca.js";
 import {
   actualizarProyecto, borrarPerfil, borrarProyecto, conversar, crearProyecto, duplicarProyecto, elegirFuentes,
-  escritoDeVersion, guardarEdicionDocumento, guardarPerfil, guardarVersion, leerProyecto, leerVersion, listarPerfiles, listarProyectos,
+  citasDeVersion, escritoDeVersion, guardarEdicionDocumento, guardarPerfil, guardarVersion, leerProyecto, leerVersion, listarPerfiles, listarProyectos,
   modeloDelProyecto, restaurarVersion, borrarVersion,
 } from "./documentos.js";
 import { listarModelos } from "./ia.js";
@@ -53,6 +53,7 @@ export function registrarDocumentos({ ipcMain, dialog, db, datosDir, ventana, re
     return {};
   }));
   ipcMain.handle("documentos-version", (_e, dato) => responder(() => ({ version: leerVersion(base(), dato?.id) })));
+  ipcMain.handle("documentos-citas", (_e, dato) => responder(() => ({ citas: citasDeVersion(base(), dato?.id) })));
   ipcMain.handle("documentos-diferencias", (_e, dato) => responder(() => {
     const a = dato?.antes ? leerVersion(base(), dato.antes) : null;
     const b = leerVersion(base(), dato?.despues);

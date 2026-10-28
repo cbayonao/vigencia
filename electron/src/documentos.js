@@ -428,6 +428,33 @@ export function guardarCitas(db, { versionId = null, bloqueId = null, citas = []
   return lista.length;
 }
 
+function tituloDeFuente(db, c) {
+  if (c.fuente_tipo === "pieza") {
+    const p = uno(db, "SELECT nombre FROM pieza WHERE id = ?", [Number(c.fuente_id) || 0]);
+    return p?.nombre || "Fuente de la biblioteca";
+  }
+  if (c.fuente_tipo === "archivo") {
+    const a = uno(db, "SELECT nombre FROM archivo WHERE id = ?", [Number(c.fuente_id) || 0]);
+    return a?.nombre || "Archivo del proyecto";
+  }
+  return "Fuente";
+}
+
+export function citasDeVersion(db, versionId) {
+  return filas(db, "SELECT * FROM doc_cita WHERE version_id = ? ORDER BY inicio, id", [Number(versionId) || 0]).map((c) => ({
+    id: Number(c.id),
+    version_id: c.version_id == null ? null : Number(c.version_id),
+    bloque_id: c.bloque_id || "",
+    inicio: Number(c.inicio) || 0,
+    fin: Number(c.fin) || 0,
+    fuente_tipo: c.fuente_tipo,
+    fuente_id: String(c.fuente_id),
+    pagina: c.pagina == null || c.pagina === "" ? null : Number(c.pagina),
+    texto_citado: c.texto_citado || "",
+    titulo: tituloDeFuente(db, c),
+  }));
+}
+
 export const AVISO_SOLO_LOCAL = "Este proyecto está en Solo local: no se envía nada a la nube. Elija un modelo local o quite Solo local en Contexto del proyecto.";
 
 // Arma el encargo de la próxima vuelta sin escribir nada en la base. Lo

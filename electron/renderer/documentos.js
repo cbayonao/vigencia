@@ -1,10 +1,11 @@
 // Pantalla Documentos: proyectos, conversación, hoja viva, versiones,
 // biblioteca de fuentes y perfiles. Todo pasa por window.vigencia.
 import { contarAvisos, diferencias, escritoDeTexto, estimarTokens, textoDeEscrito } from "../compartido/documentos.js";
+import { MARCA_SIN_FUENTE, citasEnFragmento, parrafosSinFuente, proyectarCitas } from "../compartido/citas.js";
 import { escritoAJson, jsonAEscrito, parrafoHtml, textoPlano } from "../compartido/formato.js";
 import { bloquesDeCuerpo } from "../compartido/memoria.js";
 import { EXTENSIONES, detalleArchivo } from "../compartido/convertir.js";
-import { conAvance } from "./proyectos.js";
+import { conAvance, irA } from "./proyectos.js";
 import { avisar } from "./aviso.js";
 
 const $ = (id) => document.getElementById(id);
@@ -356,20 +357,34 @@ function conMarcas(contenedor, valor) {
   }
 }
 
-function hojaDe(cuerpo, origen) {
+function hojaDe(cuerpo, origen, citas = []) {
   const escrito = escritoDeTexto(cuerpo);
   const ids = cuerpo === doc.datos?.actual?.cuerpo ? idsDe(cuerpo) : [];
   let orden = 0;
+  let cursor = 0;
+  const entradas = [];
+  for (const s of escrito.secciones) {
+    for (const p of s.parrafos) {
+      const i = String(cuerpo).indexOf(p, cursor);
+      const inicio = i >= 0 ? i : cursor;
+      entradas.push({ texto: p, inicio });
+      cursor = inicio + String(p).length;
+    }
+  }
+  const sinFuente = new Set(parrafosSinFuente(entradas, citas).map((x) => x.indice));
   const hoja = nodo("article", "doc-hoja doc-hoja-viva");
   hoja.append(nodo("p", "marca", "Vista del documento"));
   hoja.append(nodo("h1", "", escrito.asunto));
+  let nEntrada = 0;
   for (const s of escrito.secciones) {
     const sec = nodo("section");
     if (!["Escrito", "Texto", "Destinatario", "Referencia", "Cierre"].includes(s.titulo)) sec.append(nodo("h2", "", s.titulo));
     let n = 0;
     for (const p of s.parrafos) {
       n += 1;
-      sec.append(parrafoDe(s.titulo, n, p, ids[orden++]));
+      const entrada = entradas[nEntrada];
+      sec.append(parrafoDe(s.titulo, n, p, ids[orden++], citasEnFragmento(p, citas, entrada?.inicio || 0), sinFuente.has(nEntrada)));
+      nEntrada += 1;
     }
     hoja.append(sec);
   }
@@ -382,7 +397,7 @@ function hojaDe(cuerpo, origen) {
 // Cada párrafo de la hoja trae sus acciones: corregirlo solo a él o
 // citarlo en el mensaje. Es el corazón del editor: el abogado apunta a un
 // pedazo pequeño en vez de reescribir todo.
-function parrafoDe(seccion, numero, texto, bloqueId = "") {
+function parrafoDe(seccion, numero, texto, bloqueId = "", citas = [], sinFuente = false) {
   const caja = nodo("div", "doc-parrafo");
   const ref = `${seccion} · ¶${numero}`;
   caja.dataset.pasaje = String(texto || "");
@@ -390,6 +405,7 @@ function parrafoDe(seccion, numero, texto, bloqueId = "") {
   const el = nodo("div", "doc-parrafo-cuerpo");
   // parrafoHtml escapa todo el texto; solo agrega etiquetas de formato.
   el.innerHTML = parrafoHtml(texto);
+  subrayar(el, proyectarCitas(texto, el.textContent, citas));
   const acciones = nodo("div", "doc-parrafo-acciones");
   const corregir = nodo("button", "doc-parrafo-btn", "✎ Corregir solo este");
   corregir.type = "button";
@@ -410,8 +426,110 @@ function parrafoDe(seccion, numero, texto, bloqueId = "") {
     acciones.append(ia);
   }
   caja.append(el, acciones);
+  if (sinFuente) caja.append(nodo("p", "doc-sin-fuente", MARCA_SIN_FUENTE));
   if (doc.pasaje && String(texto) === doc.pasaje) caja.classList.add("elegido");
   return caja;
+}
+
+async function citasDe(versionId) {
+  if (!versionId || !window.vigencia.documentosCitas) return [];
+  const r = await window.vigencia.documentosCitas(versionId);
+  return r?.ok ? r.citas || [] : [];
+}
+
+function textoGlobo(c) {
+  const pagina = c.pagina == null || c.pagina === "" ? "" : `página ${c.pagina}`;
+  return [c.texto_citado, c.titulo, pagina].filter((x) => String(x || "").trim()).join(" · ");
+}
+
+async function abrirCita(c) {
+  if (!c) return;
+  if (c.fuente_tipo === "pieza") {
+    await abrirFuente(Number(c.fuente_id));
+    const caja = $("doc-fuente-texto");
+    const buscado = String(c.texto_citado || "").trim();
+    const i = buscado ? caja.value.indexOf(buscado.slice(0, 120)) : -1;
+    if (i >= 0) {
+      caja.focus();
+      caja.setSelectionRange(i, i + Math.min(buscado.length, 120));
+      const linea = caja.value.slice(0, i).split("\n").length;
+      caja.scrollTop = Math.max(0, (linea - 3) * 22);
+    }
+    return;
+  }
+  if (c.fuente_tipo === "archivo") {
+    irA({ a: "convertir", archivoId: Number(c.fuente_id), pagina: Number(c.pagina) || 0 });
+    return;
+  }
+  estadoChat("Esa fuente no está en este computador.", true);
+}
+
+function marcaCita(texto, citas) {
+  const m = document.createElement("mark");
+  m.className = "doc-cita-nativa";
+  m.tabIndex = 0;
+  m.setAttribute("role", "button");
+  const rotulo = citas.map(textoGlobo).filter(Boolean).join("\n");
+  m.setAttribute("aria-label", rotulo || "Cita");
+  m.append(document.createTextNode(texto));
+  const globo = document.createElement("span");
+  globo.className = "doc-cita-globo";
+  globo.setAttribute("role", "tooltip");
+  for (const c of citas) {
+    const linea = textoGlobo(c);
+    if (linea) globo.append(nodo("span", "doc-cita-linea", linea));
+  }
+  m.append(globo);
+  const abrir = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    abrirCita(citas[0]);
+  };
+  m.addEventListener("click", abrir);
+  m.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") abrir(e);
+  });
+  return m;
+}
+
+function subrayar(raiz, rangos) {
+  const lista = (rangos || []).filter((r) => Number(r.fin) > Number(r.inicio));
+  if (!lista.length || !raiz) return;
+  const walker = document.createTreeWalker(raiz, NodeFilter.SHOW_TEXT);
+  const nodos = [];
+  let cursor = 0;
+  let n = walker.nextNode();
+  while (n) {
+    const len = n.textContent.length;
+    nodos.push({ n, desde: cursor, hasta: cursor + len });
+    cursor += len;
+    n = walker.nextNode();
+  }
+  for (const item of nodos.reverse()) {
+    const texto = item.n.textContent;
+    const cortes = new Set([0, texto.length]);
+    const locales = [];
+    for (const r of lista) {
+      const a = Math.max(Number(r.inicio) || 0, item.desde) - item.desde;
+      const b = Math.min(Number(r.fin) || 0, item.hasta) - item.desde;
+      if (b <= a) continue;
+      cortes.add(a);
+      cortes.add(b);
+      locales.push({ a, b, r });
+    }
+    if (!locales.length) continue;
+    const puntos = [...cortes].sort((x, y) => x - y);
+    const frag = document.createDocumentFragment();
+    for (let i = 0; i < puntos.length - 1; i += 1) {
+      const a = puntos[i];
+      const b = puntos[i + 1];
+      const trozo = texto.slice(a, b);
+      if (!trozo) continue;
+      const cubren = locales.filter((l) => l.a <= a && l.b >= b).map((l) => l.r);
+      frag.append(cubren.length ? marcaCita(trozo, cubren) : document.createTextNode(trozo));
+    }
+    item.n.replaceWith(frag);
+  }
 }
 
 const PLACEHOLDER_MENSAJE = "Pida el documento o un cambio: hazlo más corto, agrega la sentencia que le aporto, cambia el tono";
@@ -465,7 +583,8 @@ async function pintarHoja() {
   const id = doc.versionVista || d.actual.id;
   const v = d.versiones.find((x) => x.id === id) || d.actual;
   cuerpoVista = await cuerpoDeVersion(v.id);
-  const { hoja, escrito } = hojaDe(cuerpoVista, v.origen);
+  const citas = await citasDe(v.id);
+  const { hoja, escrito } = hojaDe(cuerpoVista, v.origen, citas);
   if (v.id !== d.actual.id) {
     const aviso = nodo("div", "doc-no-actual");
     aviso.append(nodo("span", "", `Está viendo la versión ${v.numero}. La actual es la ${d.actual.numero}.`));

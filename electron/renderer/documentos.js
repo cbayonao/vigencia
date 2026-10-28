@@ -200,6 +200,7 @@ function pintarProyecto() {
   if (!d) {
     $("doc-hoja-caja").replaceChildren(nodo("p", "ayuda doc-papel-vacio", "Aquí se ve el documento mientras se escribe."));
     $("doc-avisos").hidden = true;
+    $("doc-pendientes").hidden = true;
     $("doc-pista-pasaje").hidden = true;
     return;
   }
@@ -432,9 +433,34 @@ function parrafoDe(seccion, numero, texto, bloqueId = "", citas = [], sinFuente 
 }
 
 async function citasDe(versionId) {
-  if (!versionId || !window.vigencia.documentosCitas) return [];
+  if (!versionId || !window.vigencia.documentosCitas) return { citas: [], pendientes: [] };
   const r = await window.vigencia.documentosCitas(versionId);
-  return r?.ok ? r.citas || [] : [];
+  if (!r?.ok) return { citas: [], pendientes: [] };
+  return { citas: r.citas || [], pendientes: r.pendientes || [] };
+}
+
+function pintarPendientes(lista, { avisoVacio = false } = {}) {
+  const caja = $("doc-pendientes");
+  if (!caja) return;
+  caja.replaceChildren();
+  if (!lista.length && !avisoVacio) {
+    caja.hidden = true;
+    return;
+  }
+  caja.hidden = false;
+  caja.append(nodo("p", "doc-pendientes-titulo", "Pendientes de cita"));
+  if (!lista.length) {
+    caja.append(nodo("p", "ayuda", "No hay afirmaciones sin respaldo."));
+    return;
+  }
+  const ul = document.createElement("ul");
+  for (const p of lista) {
+    const li = document.createElement("li");
+    if (p.parrafo) li.append(nodo("strong", "", `${p.parrafo}. `));
+    li.append(document.createTextNode(p.afirmacion));
+    ul.append(li);
+  }
+  caja.append(ul);
 }
 
 function textoGlobo(c) {
@@ -563,6 +589,42 @@ function citarParrafo(texto, ref = "") {
   estadoChat(`Párrafo ${ref || "elegido"} traído a su mensaje.`);
 }
 
+async function revisarCitasUi() {
+  if (doc.enviando || !doc.datos?.actual) return;
+  const version = doc.versionVista || doc.datos.actual.id;
+  const documento = cuerpoVista;
+  doc.enviando = true;
+  $("doc-revisar-citas").disabled = true;
+  estadoChat("Preparando la revisión de citas");
+  try {
+    const previa = await window.vigencia.documentosRevisarCitas({ id: doc.abierto, version, documento });
+    if (!previa?.ok) {
+      estadoChat(previa?.error || "No pude preparar la revisión.", true);
+      return;
+    }
+    if (previa.soloLocal) {
+      estadoChat("Este proyecto está en Solo local: no se envía nada a la nube. Quite Solo local para revisar las citas.", true);
+      return;
+    }
+    const confirmado = await revisarEnvio(previa);
+    if (!confirmado) {
+      estadoChat("No se envió nada.");
+      return;
+    }
+    estadoChat("Revisando citas con Haiku");
+    const r = await window.vigencia.documentosRevisor({ id: doc.abierto, version, documento, confirmado });
+    if (!r?.ok) {
+      estadoChat(r?.error || "No pude revisar las citas.", true);
+      return;
+    }
+    pintarPendientes(r.pendientes || [], { avisoVacio: true });
+    estadoChat(r.pendientes?.length ? `${r.pendientes.length} ${r.pendientes.length === 1 ? "pendiente de cita" : "pendientes de cita"}.` : "No hay afirmaciones sin respaldo.");
+  } finally {
+    doc.enviando = false;
+    $("doc-revisar-citas").disabled = false;
+  }
+}
+
 function pintarHojaElegido() {
   for (const caja of document.querySelectorAll("#doc-hoja-caja .doc-parrafo")) {
     caja.classList.toggle("elegido", Boolean(doc.pasaje) && caja.dataset.pasaje === doc.pasaje);
@@ -575,6 +637,7 @@ async function pintarHoja() {
   if (!d?.actual) {
     caja.replaceChildren(nodo("p", "ayuda doc-papel-vacio", "Aquí se ve el documento mientras se escribe. Todavía no hay versiones."));
     $("doc-avisos").hidden = true;
+    $("doc-pendientes").hidden = true;
     $("doc-herramientas").hidden = true;
     $("doc-pista-pasaje").hidden = true;
     return;
@@ -583,8 +646,9 @@ async function pintarHoja() {
   const id = doc.versionVista || d.actual.id;
   const v = d.versiones.find((x) => x.id === id) || d.actual;
   cuerpoVista = await cuerpoDeVersion(v.id);
-  const citas = await citasDe(v.id);
-  const { hoja, escrito } = hojaDe(cuerpoVista, v.origen, citas);
+  const cargadas = await citasDe(v.id);
+  const { hoja, escrito } = hojaDe(cuerpoVista, v.origen, cargadas.citas);
+  pintarPendientes(cargadas.pendientes);
   if (v.id !== d.actual.id) {
     const aviso = nodo("div", "doc-no-actual");
     aviso.append(nodo("span", "", `Está viendo la versión ${v.numero}. La actual es la ${d.actual.numero}.`));
@@ -1804,6 +1868,7 @@ export function iniciarDocumentos(herramientas) {
   $("doc-pdf").addEventListener("click", () => exportar("pdf"));
   $("doc-odt").addEventListener("click", () => exportar("odt"));
   $("doc-parrafo").addEventListener("click", () => abrirParrafo());
+  $("doc-revisar-citas").addEventListener("click", revisarCitasUi);
   for (const b of document.querySelectorAll("#ed-barra .ed-btn")) {
     b.addEventListener("mousedown", (e) => e.preventDefault()); // no perder la selección
     b.addEventListener("click", () => comandoEditor(b.dataset.ed));

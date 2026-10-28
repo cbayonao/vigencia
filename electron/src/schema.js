@@ -839,4 +839,23 @@ export const MIGRACIONES = [
       `);
     },
   },
+  {
+    version: 22,
+    nombre: "pendientes del revisor",
+    up(db) {
+      // Afirmaciones sin respaldo que devolvió la revisión de citas.
+      // Una lista por versión; volver a revisar reemplaza la anterior.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS doc_pendiente (
+          id INTEGER PRIMARY KEY,
+          version_id INTEGER NOT NULL,
+          orden INTEGER NOT NULL,
+          parrafo TEXT NOT NULL DEFAULT '',
+          afirmacion TEXT NOT NULL,
+          creado_en TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS doc_pendiente_version ON doc_pendiente(version_id);
+      `);
+    },
+  },
 ];

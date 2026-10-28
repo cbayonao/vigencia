@@ -5,6 +5,7 @@ import crypto from "node:crypto";
 import { ahora, texto } from "../compartido/logica.js";
 import { bloqueDeArchivos, fragmentosDeTrozos, informeArchivos, recortarAgentes, repartirFuentes } from "../compartido/contexto.js";
 import { unirPartes } from "../compartido/encargo.js";
+import { MODELO_REVISOR, PEDIDO_REVISION, leerPendientes } from "../compartido/citas.js";
 import { fichaDeDetalle } from "../compartido/redactor.js";
 import {
   TIPOS_DOCUMENTO, armarEncargoPasaje, busquedasDeFragmentos, contenidoCitable, contarAvisos,
@@ -207,6 +208,7 @@ export function borrarProyecto(db, id) {
   const actual = exigirProyecto(db, id);
   transaccion(db, () => {
     run(db, "DELETE FROM doc_cita WHERE version_id IN (SELECT id FROM doc_version WHERE proyecto_id = ?)", [actual.id]);
+    run(db, "DELETE FROM doc_pendiente WHERE version_id IN (SELECT id FROM doc_version WHERE proyecto_id = ?)", [actual.id]);
     run(db, "DELETE FROM doc_cita WHERE bloque_id IN (SELECT id FROM doc_bloque WHERE proyecto_id = ?)", [actual.id]);
     run(db, "DELETE FROM doc_mensaje WHERE proyecto_id = ?", [actual.id]);
     run(db, "DELETE FROM doc_version WHERE proyecto_id = ?", [actual.id]);
@@ -280,6 +282,7 @@ export function borrarVersion(db, versionId) {
   transaccion(db, () => {
     run(db, "UPDATE doc_mensaje SET version_id = NULL WHERE version_id = ?", [v.id]);
     run(db, "DELETE FROM doc_cita WHERE version_id = ?", [v.id]);
+    run(db, "DELETE FROM doc_pendiente WHERE version_id = ?", [v.id]);
     run(db, "DELETE FROM doc_version WHERE id = ?", [v.id]);
     tocar(db, v.proyecto_id);
   });
@@ -440,6 +443,32 @@ function tituloDeFuente(db, c) {
   return "Fuente";
 }
 
+export function pendientesDeVersion(db, versionId) {
+  return filas(db, "SELECT * FROM doc_pendiente WHERE version_id = ? ORDER BY orden, id", [Number(versionId) || 0]).map((p) => ({
+    id: Number(p.id),
+    version_id: Number(p.version_id),
+    orden: Number(p.orden) || 0,
+    parrafo: p.parrafo || "",
+    afirmacion: p.afirmacion || "",
+  }));
+}
+
+export function guardarPendientes(db, versionId, pendientes = []) {
+  const id = Number(versionId) || 0;
+  if (!id) return [];
+  const marca = ahora();
+  transaccion(db, () => {
+    run(db, "DELETE FROM doc_pendiente WHERE version_id = ?", [id]);
+    const ins = db.prepare("INSERT INTO doc_pendiente (version_id, orden, parrafo, afirmacion, creado_en) VALUES (?, ?, ?, ?, ?)");
+    pendientes.forEach((p, i) => {
+      const afirmacion = String(p?.afirmacion || "").trim();
+      if (!afirmacion) return;
+      ins.run(id, i, String(p?.parrafo || "").trim().slice(0, 120), afirmacion.slice(0, 500), marca);
+    });
+  });
+  return pendientesDeVersion(db, id);
+}
+
 export function citasDeVersion(db, versionId) {
   return filas(db, "SELECT * FROM doc_cita WHERE version_id = ? ORDER BY inicio, id", [Number(versionId) || 0]).map((c) => ({
     id: Number(c.id),
@@ -459,7 +488,7 @@ export const AVISO_SOLO_LOCAL = "Este proyecto está en Solo local: no se envía
 
 // Arma el encargo de la próxima vuelta sin escribir nada en la base. Lo
 // usa el diálogo Revisar envío (muestra el texto exacto) y la vuelta misma.
-export function prepararVuelta({ db, datosDir, proyectoId, mensaje, modeloId, pasaje, documento, hoy = ahora().slice(0, 10), resolverModelo = modeloDelProyecto }) {
+export function prepararVuelta({ db, datosDir, proyectoId, mensaje, modeloId, pasaje, documento, hoy = ahora().slice(0, 10), resolverModelo = modeloDelProyecto, consultaExtra = "" }) {
   const pedido = String(mensaje || "").trim();
   if (!pedido) throw new Aviso("Escriba qué necesita del documento.");
   const datos = leerProyecto(db, proyectoId);
@@ -479,7 +508,7 @@ export function prepararVuelta({ db, datosDir, proyectoId, mensaje, modeloId, pa
   const yaIncluidos = new Set(incluidos.map((a) => a.id));
   const fuentes = fuentesConTrozos(db, proyecto.id).filter((p) => !p.archivo_id || !yaIncluidos.has(p.archivo_id));
   const reparto = repartirFuentes(lim.fuentes, { hayArchivos: incluidos.length > 0, hayPiezas: fuentes.length > 0 });
-  const consulta = [pedido, pasaje, nombreTipo(proyecto.tipo), actual?.asunto, ...historia.filter((m) => m.rol === "usuario").slice(-3).map((m) => m.texto)].filter(Boolean).join(" ");
+  const consulta = [pedido, pasaje, consultaExtra, nombreTipo(proyecto.tipo), actual?.asunto, ...historia.filter((m) => m.rol === "usuario").slice(-3).map((m) => m.texto)].filter(Boolean).join(" ");
   const fragmentos = fuentes.length ? fragmentosRelevantes(fuentes, consulta, { presupuesto: reparto.piezas }) : [];
   const ids = incluidos.map((a) => a.id);
   const todos = trozosDeArchivos(db, ids);
@@ -653,6 +682,44 @@ export async function conversar({ db, datosDir, proyectoId, mensaje, modeloId, p
   const verbo = actual ? "Revisé el documento" : "Redacté el documento";
   agregarMensaje(db, proyecto.id, { rol: "asistente", texto: `${verbo}. Quedó la versión ${v.numero}.${resumenAvisos(v.avisos)}`, versionId: v.id, origen });
   return { ...leerProyecto(db, proyecto.id), modelo: elegido };
+}
+
+// Segunda llamada, siempre con Haiku: el borrador y las mismas fuentes
+// citables. El texto que pide no es JSON. El costo queda como "revisor".
+export function prepararRevision({ db, datosDir, proyectoId, documento, hoy = ahora().slice(0, 10) }) {
+  const datos = leerProyecto(db, proyectoId);
+  const cuerpo = documento != null ? String(documento) : (datos.actual?.cuerpo || "");
+  return prepararVuelta({
+    db, datosDir, proyectoId, mensaje: PEDIDO_REVISION, documento: cuerpo, hoy,
+    consultaExtra: cuerpo.slice(0, 4000),
+    resolverModelo: () => ({ id: "nube:anthropic", nombre: "Claude Haiku 5.5", usa: true, origen: "nube" }),
+  });
+}
+
+export async function revisarCitas({ db, datosDir, proyectoId, versionId, documento, confirmado = "", pedirTexto = textoParaDocumento, hoy = ahora().slice(0, 10) }) {
+  const previa = prepararRevision({ db, datosDir, proyectoId, documento, hoy });
+  if (!previa.actual && documento == null) throw new Aviso("Todavía no hay documento para revisar.");
+  if (previa.proyecto.solo_local) throw new Aviso(AVISO_SOLO_LOCAL);
+  if (!confirmado || confirmado !== previa.informe?.hash) {
+    const error = new Aviso("Revise el envío antes de mandarlo a la nube.");
+    error.codigo = "revisar-envio";
+    throw error;
+  }
+  const idVersion = Number(versionId) || previa.actual?.id;
+  if (!idVersion) throw new Aviso("Todavía no hay documento para revisar.");
+  registrarEnvio(db, { proyectoId: previa.proyecto.id, informe: previa.informe, motivo: "revisor" });
+  const respuesta = await pedirTexto({
+    datosDir,
+    modeloId: "nube:anthropic",
+    modelo: MODELO_REVISOR,
+    encargo: previa.encargo,
+    partes: previa.partes,
+    citable: previa.citable,
+    ajuste: true,
+    onUso: (uso) => guardarUso(db, { ...uso, motivo: "revisor", proyectoId: previa.proyecto.id }),
+  });
+  const pendientes = guardarPendientes(db, idVersion, leerPendientes(respuesta?.texto || ""));
+  return { pendientes, versionId: idVersion, modelo: MODELO_REVISOR };
 }
 
 function usadas(previa) {

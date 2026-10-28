@@ -10,6 +10,7 @@ import { borrarPieza, buscarFuentes, etiquetasUsadas, guardarPieza, leerPieza } 
 import {
   actualizarProyecto, borrarPerfil, borrarProyecto, conversar, crearProyecto, duplicarProyecto, elegirFuentes,
   citasDeVersion, escritoDeVersion, guardarEdicionDocumento, guardarPerfil, guardarVersion, leerProyecto, leerVersion, listarPerfiles, listarProyectos,
+  pendientesDeVersion, prepararRevision, revisarCitas,
   modeloDelProyecto, restaurarVersion, borrarVersion,
 } from "./documentos.js";
 import { listarModelos } from "./ia.js";
@@ -53,7 +54,31 @@ export function registrarDocumentos({ ipcMain, dialog, db, datosDir, ventana, re
     return {};
   }));
   ipcMain.handle("documentos-version", (_e, dato) => responder(() => ({ version: leerVersion(base(), dato?.id) })));
-  ipcMain.handle("documentos-citas", (_e, dato) => responder(() => ({ citas: citasDeVersion(base(), dato?.id) })));
+  ipcMain.handle("documentos-citas", (_e, dato) => responder(() => ({
+    citas: citasDeVersion(base(), dato?.id),
+    pendientes: pendientesDeVersion(base(), dato?.id),
+  })));
+  ipcMain.handle("documentos-revisar-citas", (_e, dato) => responder(() => {
+    const previa = prepararRevision({ db: base(), datosDir: datosDir(), proyectoId: dato?.id, documento: dato?.documento ?? null });
+    return { informe: previa.informe, texto: previa.encargo, soloLocal: Boolean(previa.proyecto?.solo_local) };
+  }));
+  ipcMain.handle("documentos-revisor", async (_e, dato) => {
+    try {
+      return {
+        ok: true,
+        ...(await revisarCitas({
+          db: base(),
+          datosDir: datosDir(),
+          proyectoId: dato?.id,
+          versionId: dato?.version,
+          documento: dato?.documento ?? null,
+          confirmado: String(dato?.confirmado || ""),
+        })),
+      };
+    } catch (error) {
+      return { ok: false, error: mensajeHumano(error) };
+    }
+  });
   ipcMain.handle("documentos-diferencias", (_e, dato) => responder(() => {
     const a = dato?.antes ? leerVersion(base(), dato.antes) : null;
     const b = leerVersion(base(), dato?.despues);

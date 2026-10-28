@@ -4,7 +4,7 @@
 // Los «...» de la doc se completaron con los campos que el mismo ejemplo lista.
 import assert from "node:assert/strict";
 import test from "node:test";
-import { MARCA_SIN_FUENTE, citasEnFragmento, leerFuente, parrafosSinFuente, proyectarCitas, reconstruirCitas } from "../compartido/citas.js";
+import { MARCA_SIN_FUENTE, MODELO_REVISOR, PEDIDO_REVISION, citasEnFragmento, leerFuente, leerPendientes, parrafosSinFuente, proyectarCitas, reconstruirCitas } from "../compartido/citas.js";
 import { marcarCitasDocumento } from "../compartido/documentos.js";
 
 const FLUJO = `event: message_start
@@ -199,4 +199,25 @@ test("marca norma o sentencia sin cita nativa y deja [Cita no aportada]", () => 
   const vistos = proyectarCitas("La Ley 100 de 1993 creó el sistema.", "La Ley 100 de 1993 creó el sistema.", locales);
   assert.equal(vistos[0].fin > vistos[0].inicio, true);
   assert.equal(parrafosSinFuente([{ texto: "La sentencia C-355 de 2006.", inicio: 0 }], [{ inicio: 0, fin: 20 }]).length, 0);
+});
+
+test("el revisor pide texto y no JSON", () => {
+  assert.equal(MODELO_REVISOR, "claude-haiku-5-5");
+  assert.match(PEDIDO_REVISION, /No uses JSON/);
+  assert.doesNotMatch(PEDIDO_REVISION, /output_config|json_schema/i);
+  assert.deepEqual(leerPendientes("Ninguna"), []);
+  assert.deepEqual(leerPendientes(""), []);
+  const lista = leerPendientes([
+    "Pendientes:",
+    "- [Hechos] La EPS está obligada a entregar el medicamento.",
+    "2. Párrafo Pretensiones: Hay condena en costas.",
+    "- El término de diez días no está en las fuentes.",
+    "Ninguna",
+  ].join("\n"));
+  assert.equal(lista.length, 3);
+  assert.equal(lista[0].parrafo, "Hechos");
+  assert.match(lista[0].afirmacion, /medicamento/);
+  assert.equal(lista[1].parrafo, "Pretensiones");
+  assert.equal(lista[2].parrafo, "");
+  assert.match(lista[2].afirmacion, /diez días/);
 });

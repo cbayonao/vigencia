@@ -16,6 +16,7 @@ import { buscarFuentes, guardarPieza, listarPiezas, activarPieza } from "../src/
 import {
   borrarProyecto, citasDeVersion, conversar, prepararVuelta, crearProyecto, duplicarProyecto, elegirFuentes, guardarPerfil, guardarVersion,
   leerProyecto, listarPerfiles, listarProyectos, restaurarVersion, actualizarProyecto, borrarVersion,
+  prepararRevision, revisarCitas, pendientesDeVersion,
 } from "../src/documentos.js";
 import { textoDePdf } from "../src/pdftexto.js";
 
@@ -560,6 +561,67 @@ test("las citas de una versión traen el nombre de la fuente", async () => {
     assert.equal(citas[0].pagina, 2);
     assert.equal(citas[0].texto_citado, "protege la salud");
     assert.equal(citasDeVersion(tmp.db, 0).length, 0);
+  } finally {
+    tmp.borrar();
+  }
+});
+
+test("revisar citas guarda los pendientes y el costo del revisor", async () => {
+  const tmp = temporal();
+  try {
+    const p = crearProyecto(tmp.db, { nombre: "T", tipo: "tutela" });
+    const texto = "Asunto: Tutela\n\n## Hechos\nLa EPS debe cubrir el medicamento.";
+    const r = await conversar({
+      db: tmp.db, datosDir: tmp.dir, proyectoId: p.id, mensaje: "tutela",
+      resolverModelo: modeloFalso("local"),
+      pedirTexto: async () => ({ texto, origen: "local" }),
+    });
+    await assert.rejects(
+      () => revisarCitas({ db: tmp.db, datosDir: tmp.dir, proyectoId: p.id, versionId: r.actual.id, documento: texto, confirmado: "x", pedirTexto: async () => ({ texto: "Ninguna" }) }),
+      /Solo local/,
+    );
+    actualizarProyecto(tmp.db, p.id, { solo_local: false });
+    const previa = prepararRevision({ db: tmp.db, datosDir: tmp.dir, proyectoId: p.id, documento: texto });
+    assert.match(previa.encargo, /claude-haiku|No uses JSON|Revisa el borrador/);
+    assert.match(previa.informe.modelo, /Haiku/);
+    await assert.rejects(
+      () => revisarCitas({ db: tmp.db, datosDir: tmp.dir, proyectoId: p.id, versionId: r.actual.id, documento: texto, confirmado: "no", pedirTexto: async () => ({ texto: "Ninguna" }) }),
+      /Revise el envío/,
+    );
+    let pedido = null;
+    const hecho = await revisarCitas({
+      db: tmp.db, datosDir: tmp.dir, proyectoId: p.id, versionId: r.actual.id, documento: texto, confirmado: previa.informe.hash,
+      pedirTexto: async ({ modelo, onUso, citable }) => {
+        pedido = { modelo, citable };
+        onUso?.({ proveedor: "anthropic", modelo, entrada: 1200, salida: 80 });
+        return { texto: "- [Hechos] La EPS debe cubrir el medicamento.\n" };
+      },
+    });
+    assert.equal(pedido.modelo, "claude-haiku-5-5");
+    assert.equal(hecho.pendientes.length, 1);
+    assert.equal(hecho.pendientes[0].parrafo, "Hechos");
+    assert.equal(pendientesDeVersion(tmp.db, r.actual.id).length, 1);
+    assert.equal(uno(tmp.db, "SELECT motivo, modelo FROM gasto_nube").motivo, "revisor");
+    assert.equal(uno(tmp.db, "SELECT modelo FROM gasto_nube").modelo, "claude-haiku-5-5");
+    const vacio = await revisarCitas({
+      db: tmp.db, datosDir: tmp.dir, proyectoId: p.id, versionId: r.actual.id, documento: texto, confirmado: previa.informe.hash,
+      pedirTexto: async () => ({ texto: "Ninguna" }),
+    });
+    assert.equal(vacio.pendientes.length, 0);
+    await revisarCitas({
+      db: tmp.db, datosDir: tmp.dir, proyectoId: p.id, versionId: r.actual.id, documento: texto, confirmado: previa.informe.hash,
+      pedirTexto: async ({ onUso }) => {
+        onUso?.({ proveedor: "anthropic", modelo: "claude-haiku-5-5", entrada: 10, salida: 4 });
+        return { texto: "- [Hechos] Falta el soporte.\n" };
+      },
+    });
+    await conversar({
+      db: tmp.db, datosDir: tmp.dir, proyectoId: p.id, mensaje: "más corto",
+      resolverModelo: modeloFalso("local"),
+      pedirTexto: async () => ({ texto: "Asunto: Tutela\n\n## Hechos\nTexto corto.", origen: "local" }),
+    });
+    borrarVersion(tmp.db, r.actual.id);
+    assert.equal(pendientesDeVersion(tmp.db, r.actual.id).length, 0);
   } finally {
     tmp.borrar();
   }

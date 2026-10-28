@@ -666,7 +666,7 @@ function respuestaInservible(valor) {
   return limpio.length < 400 && /lo siento|no puedo (cumplir|ayudar|redactar)|como modelo de lenguaje/i.test(limpio);
 }
 
-async function textoDelModelo({ datosDir, elegido, encargo, onProgreso, maxTokens, onUso = null, esfuerzo = "", partes = null, citable = null, fetchFn }) {
+async function textoDelModelo({ datosDir, elegido, encargo, onProgreso, maxTokens, onUso = null, esfuerzo = "", partes = null, citable = null, fetchFn, modelo: modeloPedido = "" }) {
   if (elegido.id.startsWith("nube:")) {
     const proveedor = elegido.id.slice("nube:".length);
     const tiendaDato = leerTienda(datosDir);
@@ -674,7 +674,7 @@ async function textoDelModelo({ datosDir, elegido, encargo, onProgreso, maxToken
     const definicion = PROVEEDORES[proveedor];
     if (!definicion) throw new Aviso("Ese proveedor no está soportado.");
     if (!nube.key) throw new Aviso(`Guarde su clave de ${definicion.nombre} primero.`);
-    const modelo = nube.modelo || definicion.modeloSugerido;
+    const modelo = String(modeloPedido || "").trim() || nube.modelo || definicion.modeloSugerido;
     if (!modelo) throw new Aviso(`Escriba el nombre del modelo de ${definicion.nombre}.`);
     let acumulado = "";
     let citas = [];
@@ -1006,8 +1006,11 @@ export function modeloParaDocumento(datosDir, modeloId) {
   return { id: elegido.id, nombre: elegido.nombre, usa: usaModelo(elegido), origen: elegido.id.startsWith("nube:") ? "nube" : "local" };
 }
 
-export async function textoParaDocumento({ datosDir, modeloId, encargo, onProgreso, onUso = null, partes = null, citable = null, ajuste = false, fetchFn } = {}) {
-  const elegido = elegirModelo(datosDir, modeloId);
+export async function textoParaDocumento({ datosDir, modeloId, encargo, onProgreso, onUso = null, partes = null, citable = null, ajuste = false, fetchFn, modelo = "" } = {}) {
+  const forzado = String(modelo || "").trim();
+  const elegido = forzado
+    ? { id: String(modeloId || "nube:anthropic"), nombre: `Claude · ${forzado}` }
+    : elegirModelo(datosDir, modeloId);
   if (!usaModelo(elegido)) return null;
   const tope = topeDeVuelta(ajuste);
   try {
@@ -1021,6 +1024,7 @@ export async function textoParaDocumento({ datosDir, modeloId, encargo, onProgre
       partes,
       citable,
       fetchFn,
+      modelo: forzado,
       onUso,
     });
   } catch (error) {

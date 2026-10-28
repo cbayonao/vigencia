@@ -774,6 +774,10 @@ input::selection, textarea::selection { background: var(--cobre-suave); color: v
 .doc-cita-linea { display: block; }
 .doc-cita-nativa:hover .doc-cita-globo, .doc-cita-nativa:focus .doc-cita-globo, .doc-cita-nativa:focus-within .doc-cita-globo { display: block; }
 .doc-sin-fuente { margin: 0 0 6px; font-size: 12px; font-weight: 650; color: var(--error); }
+.doc-pendientes { margin: 0 24px 8px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--hover-borde); background: var(--cobre-suave); }
+.doc-pendientes-titulo { margin: 0 0 6px; font-size: 13px; font-weight: 700; color: var(--cobre); }
+.doc-pendientes ul { margin: 0; padding-left: 18px; }
+.doc-pendientes li { margin: 3px 0; font-size: 13px; line-height: 1.4; }
 .doc-marca-dato { background: #f4ecc8; color: #5c4a0b; border-radius: 4px; padding: 0 3px; font-size: 0.92em; }
 .doc-no-actual { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; max-width: 820px; margin: 0 auto 10px; padding: 8px 12px; border-radius: 10px; background: var(--cobre-suave); font-size: 13px; }
 .doc-no-actual span { flex: 1; }

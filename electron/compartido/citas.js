@@ -7,6 +7,14 @@ import { mencionaNorma } from "./encargo.js";
 import { mencionaSentencia } from "./documentos.js";
 
 export const MARCA_SIN_FUENTE = "Sin fuente, verificar";
+export const MODELO_REVISOR = "claude-haiku-5-5";
+export const PEDIDO_REVISION = [
+  "Revisa el borrador. Lista solo las afirmaciones de hecho o de derecho que no quedan respaldadas por las fuentes citables de este encargo.",
+  "Una por línea, con el párrafo o la sección entre corchetes:",
+  "- [Hechos] La EPS está obligada a entregar el medicamento.",
+  "Si todas tienen respaldo en las fuentes, responde exactamente: Ninguna.",
+  "Responde en texto. No uses JSON.",
+].join("\n");
 
 function paginaDe(valor) {
   const n = Number(valor);
@@ -185,4 +193,25 @@ export function parrafosSinFuente(parrafos, citas = []) {
     if (cubierta) return null;
     return { indice, texto, inicio, fin, marca: MARCA_SIN_FUENTE };
   }).filter(Boolean);
+}
+
+// La revisión pide texto, no JSON. Acepta líneas «- [párrafo] afirmación»
+// o «- Párrafo X: afirmación». «Ninguna» deja la lista vacía.
+export function leerPendientes(texto) {
+  const crudo = String(texto || "").trim();
+  if (!crudo || /^ninguna\.?$/i.test(crudo)) return [];
+  const pendientes = [];
+  for (const linea of crudo.split("\n")) {
+    const limpia = linea.trim();
+    if (!limpia || /^ninguna\.?$/i.test(limpia)) continue;
+    const marcada = limpia.match(/^(?:[-*•]|\d+[.)])\s*(?:\[([^\]]+)\]|p[aá]rrafo\s+([^:]{1,80}):)\s*(.+)$/i);
+    if (marcada) {
+      const afirmacion = String(marcada[3] || "").trim();
+      if (afirmacion && !/^ninguna\.?$/i.test(afirmacion)) pendientes.push({ parrafo: String(marcada[1] || marcada[2] || "").trim(), afirmacion });
+      continue;
+    }
+    const suelta = limpia.match(/^(?:[-*•]|\d+[.)])\s+(.+)$/);
+    if (suelta && !/^ninguna\.?$/i.test(suelta[1])) pendientes.push({ parrafo: "", afirmacion: suelta[1].trim() });
+  }
+  return pendientes;
 }

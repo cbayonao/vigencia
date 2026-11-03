@@ -712,6 +712,7 @@
             <button type="button" class="boton-linea" id="doc-revisar-citas" title="Segunda lectura con Haiku: afirmaciones sin respaldo en las fuentes">Revisar citas</button>
             <button type="button" class="boton-linea" id="doc-odt" title="OpenDocument para LibreOffice">ODT</button>
             <label class="ayuda" title="Pie de página que se puede borrar en Word o LibreOffice"><input type="checkbox" id="doc-pie-ia" checked> Pie: Generado con IA. Favor revisar.</label>
+            <label class="ayuda" title="Solo en Word: cada cita nativa queda como nota al pie"><input type="checkbox" id="doc-notas-pie"> Citas como notas al pie</label>
           </div>
           <div class="doc-avisos" id="doc-avisos" hidden></div>
           <div class="doc-pendientes" id="doc-pendientes" hidden></div>
@@ -1402,6 +1403,19 @@
       </div>
       <div class="fila-fin">
         <button type="button" class="boton-texto" id="doc-historial-cerrar">Cerrar</button>
+      </div>
+    </div>
+  </div>
+  <div class="cortina" id="dialogo-exportar" hidden>
+    <div class="dialogo" role="dialog" aria-modal="true" aria-labelledby="exportar-titulo">
+      <h2 class="serif dialogo-titulo" id="exportar-titulo">Antes de exportar</h2>
+      <p class="nota" id="exportar-texto">Hay citas por verificar. Léalas y marque la casilla para guardar el archivo.</p>
+      <ul class="exportar-lista" id="exportar-lista"></ul>
+      <label class="ayuda exportar-casilla"><input type="checkbox" id="exportar-revisado"> Revisé hechos, citas y peticiones</label>
+      <label class="ayuda exportar-casilla" id="exportar-notas-caja"><input type="checkbox" id="exportar-notas"> Llevar las citas como notas al pie</label>
+      <div class="fila-fin">
+        <button type="button" class="boton-texto" id="exportar-cancelar">Cancelar</button>
+        <button type="button" class="boton-cobre" id="exportar-seguir" disabled>Guardar</button>
       </div>
     </div>
   </div>

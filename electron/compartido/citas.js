@@ -4,9 +4,10 @@
 // citations_delta. El rango es de caracteres en el texto final, no en la
 // fuente. Documentación: citations y search results (2026).
 import { mencionaNorma } from "./encargo.js";
-import { mencionaSentencia } from "./documentos.js";
+import { escritoDeTexto, mencionaSentencia } from "./documentos.js";
 
 export const MARCA_SIN_FUENTE = "Sin fuente, verificar";
+export const TEXTO_REVISION = "Revisé hechos, citas y peticiones";
 export const MODELO_REVISOR = "claude-haiku-5-5";
 export const PEDIDO_REVISION = [
   "Revisa el borrador. Lista solo las afirmaciones de hecho o de derecho que no quedan respaldadas por las fuentes citables de este encargo.",
@@ -214,4 +215,75 @@ export function leerPendientes(texto) {
     if (suelta && !/^ninguna\.?$/i.test(suelta[1])) pendientes.push({ parrafo: "", afirmacion: suelta[1].trim() });
   }
   return pendientes;
+}
+
+function corto(valor, max = 180) {
+  const s = String(valor || "").replace(/\s+/g, " ").trim();
+  return s.length > max ? `${s.slice(0, max - 1)}…` : s;
+}
+
+export function entradasDeCuerpo(cuerpo) {
+  const escrito = escritoDeTexto(cuerpo || "");
+  let cursor = 0;
+  const entradas = [];
+  for (const s of escrito.secciones || []) {
+    for (const p of s.parrafos || []) {
+      const i = String(cuerpo || "").indexOf(p, cursor);
+      const inicio = i >= 0 ? i : cursor;
+      entradas.push({ texto: p, inicio, seccion: s.titulo || "" });
+      cursor = inicio + String(p).length;
+    }
+  }
+  return entradas;
+}
+
+// Lo que hay que mostrar antes de exportar. Vacío: se guarda sin preguntar.
+export function avisosDeExportar({ pendientes = [], parrafos = [], citas = [] } = {}) {
+  const lista = [];
+  for (const p of pendientes || []) {
+    const texto = corto(p?.afirmacion || p?.texto);
+    if (!texto) continue;
+    lista.push({ tipo: "revisor", parrafo: corto(p.parrafo, 80), texto });
+  }
+  for (const m of parrafosSinFuente(parrafos, citas)) {
+    lista.push({ tipo: "sin_fuente", parrafo: corto(m.seccion || parrafos[m.indice]?.seccion || "", 80), texto: corto(m.texto), marca: MARCA_SIN_FUENTE });
+  }
+  return lista;
+}
+
+export function puedeExportar({ avisos = [], revisado = false, formato = "docx" } = {}) {
+  const puerta = formato === "docx" || formato === "pdf" || formato === "odt";
+  if (!puerta || !avisos.length) return { guardar: true, historial: false };
+  if (revisado !== true) return { guardar: false, historial: false };
+  return { guardar: true, historial: true };
+}
+
+export function notasDeCitas(cuerpo, citas = []) {
+  const base = String(cuerpo || "");
+  return (citas || []).map((c) => {
+    const ancla = base.slice(Number(c.inicio) || 0, Number(c.fin) || 0).replace(/\s+/g, " ").trim();
+    const partes = [c.texto_citado, c.titulo, c.pagina != null && c.pagina !== "" ? `página ${c.pagina}` : ""].map((x) => String(x || "").trim()).filter(Boolean);
+    return { ancla, texto: partes.join(". ") };
+  }).filter((n) => n.texto);
+}
+
+export function metricasDeCitas({ versiones = [], gastos = [] } = {}) {
+  let conCita = 0;
+  let sinFuente = 0;
+  let hallazgos = 0;
+  for (const v of versiones || []) {
+    const citas = v.citas || [];
+    conCita += citas.length;
+    sinFuente += avisosDeExportar({ parrafos: entradasDeCuerpo(v.cuerpo), citas }).filter((a) => a.tipo === "sin_fuente").length;
+    hallazgos += (v.pendientes || []).length;
+  }
+  const suma = (lista) => Math.round(lista.reduce((s, g) => s + (Number(g.costo) || 0), 0) * 1e6) / 1e6;
+  const todos = gastos || [];
+  return {
+    conCita,
+    sinFuente,
+    hallazgos,
+    costoRevisor: suma(todos.filter((g) => g.motivo === "revisor")),
+    costo: suma(todos),
+  };
 }

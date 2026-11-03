@@ -93,15 +93,24 @@ function tablaDocx(filas) {
   return `<w:tbl><w:tblPr><w:tblW w:w="5000" w:type="pct"/>${borde}</w:tblPr>${grid}${cuerpo}</w:tbl><w:p/>`;
 }
 
-function parrafo(texto, estilo) {
-  if (estilo) return `<w:p><w:pPr><w:pStyle w:val="${estilo}"/></w:pPr>${runs(texto)}</w:p>`;
+function refsNota(ids) {
+  if (!ids?.length) return "";
+  return ids.map((id) => `<w:r><w:rPr><w:vertAlign w:val="superscript"/></w:rPr><w:footnoteReference w:id="${id}"/></w:r>`).join("");
+}
+
+function parrafo(texto, estilo, notas = []) {
+  const refs = refsNota(notas);
+  if (estilo) return `<w:p><w:pPr><w:pStyle w:val="${estilo}"/></w:pPr>${runs(texto)}${refs}</w:p>`;
   const p = leerParrafo(texto);
-  if (p.tipo === "tabla") return tablaDocx(p.filas);
+  if (p.tipo === "tabla") {
+    const tabla = tablaDocx(p.filas);
+    return refs ? tabla.replace("<w:p/>", `<w:p>${refs}</w:p>`) : tabla;
+  }
   const est = { subtitulo: "Subtitulo", cita: "Cita", vineta: "Lista", numeral: "Lista", firma: "Firma" }[p.tipo] || "";
   const pre = p.tipo === "vineta" ? "\u2022\t" : p.tipo === "numeral" ? `${p.numero}.\t` : "";
   const jc = JC[p.alineacion] ? `<w:jc w:val="${JC[p.alineacion]}"/>` : "";
   const ppr = est || jc ? `<w:pPr>${est ? `<w:pStyle w:val="${est}"/>` : ""}${jc}</w:pPr>` : "";
-  return `<w:p>${ppr}${pre ? `<w:r><w:t xml:space="preserve">${pre}</w:t></w:r>` : ""}${runs(p.texto)}</w:p>`;
+  return `<w:p>${ppr}${pre ? `<w:r><w:t xml:space="preserve">${pre}</w:t></w:r>` : ""}${runs(p.texto)}${refs}</w:p>`;
 }
 
 const TITULOS_DE_CARTA = new Set([
@@ -110,13 +119,38 @@ const TITULOS_DE_CARTA = new Set([
   "Cuerpo", "Cierre", "Escrito",
 ]);
 
-function documentoXml(escrito, { pie = true, titulo = false } = {}) {
+function puestosDeNotas(escrito, notas, titulo) {
+  const bloques = [];
+  if (titulo && escrito.asunto) bloques.push({ texto: escrito.asunto, parrafo: false });
+  for (const seccion of escrito.secciones || []) {
+    if (seccion.titulo && !TITULOS_DE_CARTA.has(seccion.titulo)) bloques.push({ texto: seccion.titulo, parrafo: false });
+    for (const linea of seccion.parrafos || []) {
+      const p = leerParrafo(linea);
+      bloques.push({ texto: `${p.texto || ""} ${linea}`, parrafo: true });
+    }
+  }
+  const puestos = bloques.map(() => []);
+  (notas || []).forEach((nota, n) => {
+    const ancla = String(nota?.ancla || "").trim();
+    let idx = ancla ? bloques.findIndex((b) => b.parrafo && b.texto.includes(ancla)) : -1;
+    if (idx < 0) {
+      for (let k = bloques.length - 1; k >= 0; k -= 1) if (bloques[k].parrafo) { idx = k; break; }
+    }
+    if (idx >= 0) puestos[idx].push(n + 1);
+  });
+  return puestos;
+}
+
+function documentoXml(escrito, { pie = true, titulo = false, notas = [] } = {}) {
+  const puestos = notas.length ? puestosDeNotas(escrito, notas, titulo) : [];
+  let i = 0;
+  const tomar = () => (puestos[i++] || []);
   const bloques = [];
   // Documentos lleva su título arriba, como en ODT y PDF; el memorial no.
-  if (titulo && escrito.asunto) bloques.push(parrafo(escrito.asunto, "Titulo"));
+  if (titulo && escrito.asunto) bloques.push(parrafo(escrito.asunto, "Titulo", tomar()));
   for (const seccion of escrito.secciones || []) {
-    if (seccion.titulo && !TITULOS_DE_CARTA.has(seccion.titulo)) bloques.push(parrafo(seccion.titulo, "Seccion"));
-    for (const linea of seccion.parrafos || []) bloques.push(parrafo(linea));
+    if (seccion.titulo && !TITULOS_DE_CARTA.has(seccion.titulo)) bloques.push(parrafo(seccion.titulo, "Seccion", tomar()));
+    for (const linea of seccion.parrafos || []) bloques.push(parrafo(linea, "", tomar()));
   }
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
@@ -312,15 +346,40 @@ function unzipLocal(buffer) {
   return archivos;
 }
 
-export function docxDeEscrito(escrito, { pie = true, titulo = false } = {}) {
+const ESTILO_NOTA = `  <w:style w:type="paragraph" w:styleId="NotaTexto"><w:name w:val="footnote text"/><w:basedOn w:val="Normal"/><w:rPr><w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr></w:style>\n`;
+
+function notasXml(notas) {
+  const cuerpos = notas.map((n, i) => `<w:footnote w:id="${i + 1}"><w:p><w:pPr><w:pStyle w:val="NotaTexto"/></w:pPr><w:r><w:t xml:space="preserve">${xml(n.texto)}</w:t></w:r></w:p></w:footnote>`).join("");
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:footnote w:type="separator" w:id="-1"><w:p><w:r><w:separator/></w:r></w:p></w:footnote>
+  <w:footnote w:type="continuationSeparator" w:id="0"><w:p><w:r><w:continuationSeparator/></w:r></w:p></w:footnote>
+  ${cuerpos}
+</w:footnotes>`;
+}
+
+function relsConNotas(pie) {
+  const pieRel = pie ? `\n  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/>` : "";
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>${pieRel}
+  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/>
+</Relationships>`;
+}
+
+export function docxDeEscrito(escrito, { pie = true, titulo = false, notas = [] } = {}) {
+  const lista = (notas || []).filter((n) => String(n?.texto || "").trim());
+  let tipos = pie ? TIPOS : TIPOS.replace(/\n  <Override PartName="\/word\/footer1.xml"[^\n]*/, "");
+  if (lista.length) tipos = tipos.replace("</Types>", `  <Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/>\n</Types>`);
   const partes = {
-    "[Content_Types].xml": pie ? TIPOS : TIPOS.replace(/\n  <Override PartName="\/word\/footer1.xml"[^\n]*/, ""),
+    "[Content_Types].xml": tipos,
     "_rels/.rels": RELS,
-    "word/_rels/document.xml.rels": pie ? DOC_RELS : DOC_RELS_SIN_PIE,
-    "word/styles.xml": ESTILOS,
-    "word/document.xml": documentoXml(escrito, { pie, titulo }),
+    "word/_rels/document.xml.rels": lista.length ? relsConNotas(pie) : (pie ? DOC_RELS : DOC_RELS_SIN_PIE),
+    "word/styles.xml": lista.length ? ESTILOS.replace("</w:styles>", `${ESTILO_NOTA}</w:styles>`) : ESTILOS,
+    "word/document.xml": documentoXml(escrito, { pie, titulo, notas: lista }),
   };
   if (pie) partes["word/footer1.xml"] = PIE_XML;
+  if (lista.length) partes["word/footnotes.xml"] = notasXml(lista);
   return zip(partes);
 }
 

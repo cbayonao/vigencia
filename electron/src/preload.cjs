@@ -120,7 +120,7 @@ contextBridge.exposeInMainWorld("vigencia", {
   pdfRellenar: (ruta, valores, aplanar) => ipcRenderer.invoke("pdf-rellenar", { ruta, valores, aplanar }),
   pdfComparar: (rutaA, rutaB) => ipcRenderer.invoke("pdf-comparar", { rutaA, rutaB }),
   pdfAProyecto: (datos) => ipcRenderer.invoke("pdf-a-proyecto", datos),
-  documentosExportar: (version, formato, pie = true) => ipcRenderer.invoke("documentos-exportar", { version, formato, pie }),
+  documentosExportar: (version, formato, pie = true, extra = {}) => ipcRenderer.invoke("documentos-exportar", { version, formato, pie, revisado: extra?.revisado === true, notas: extra?.notas === true }),
   detalle: (id) => ipcRenderer.invoke("detalle", id),
   guardarCliente: (datos) => ipcRenderer.invoke("guardar-cliente", datos),
   borrarCliente: (id) => ipcRenderer.invoke("borrar-cliente", id),

@@ -861,10 +861,57 @@ function pedirBorrarVersion(v) {
   ui.mostrarDialogo("dialogo-doc-confirmar");
 }
 
+function lineaAviso(a) {
+  if (a?.tipo === "sin_fuente") return `Sin fuente, verificar. ${a.texto || ""}`.trim();
+  return a?.parrafo ? `${a.parrafo}: ${a.texto}` : (a?.texto || "");
+}
+
+function pedirRevisionExportar(avisos, formato) {
+  const lista = $("exportar-lista");
+  lista.replaceChildren();
+  for (const a of avisos || []) lista.append(nodo("li", "", lineaAviso(a)));
+  $("exportar-revisado").checked = false;
+  $("exportar-seguir").disabled = true;
+  const notas = $("exportar-notas-caja");
+  const esWord = formato === "docx";
+  notas.hidden = !esWord;
+  $("exportar-notas").checked = esWord && $("doc-notas-pie").checked;
+  ui.mostrarDialogo("dialogo-exportar");
+  return new Promise((resolve) => {
+    const cerrar = (valor) => {
+      $("exportar-seguir").onclick = null;
+      $("exportar-cancelar").onclick = null;
+      $("exportar-revisado").onchange = null;
+      ui.ocultarDialogo("dialogo-exportar");
+      resolve(valor);
+    };
+    $("exportar-revisado").onchange = () => {
+      $("exportar-seguir").disabled = !$("exportar-revisado").checked;
+    };
+    $("exportar-cancelar").onclick = () => cerrar(null);
+    $("exportar-seguir").onclick = () => {
+      if (!$("exportar-revisado").checked) return;
+      cerrar({ notas: esWord && $("exportar-notas").checked });
+    };
+  });
+}
+
 async function exportar(formato) {
   const id = doc.versionVista || doc.datos?.actual?.id;
   if (!id) return;
-  const r = await window.vigencia.documentosExportar(id, formato, $("doc-pie-ia").checked);
+  const pie = $("doc-pie-ia").checked;
+  let notas = formato === "docx" && $("doc-notas-pie").checked;
+  let r = await window.vigencia.documentosExportar(id, formato, pie, { notas });
+  if (r?.codigo === "revisar-citas") {
+    const elegido = await pedirRevisionExportar(r.avisos, formato);
+    if (!elegido) {
+      estadoChat("No se guardó el archivo.");
+      return;
+    }
+    notas = Boolean(elegido.notas);
+    if (formato === "docx") $("doc-notas-pie").checked = notas;
+    r = await window.vigencia.documentosExportar(id, formato, pie, { notas, revisado: true });
+  }
   if (r?.ok) estadoChat(`Guardado en ${r.ruta}`);
   else if (!r?.cancelado) estadoChat(r?.error || "No pude guardar el archivo.", true);
 }
@@ -1583,6 +1630,7 @@ export const CAPAS_DOCUMENTOS = [
   "dialogo-doc-fuente",
   "dialogo-doc-nombre",
   "dialogo-doc-confirmar",
+  "dialogo-exportar",
 ];
 
 // Abrir un proyecto desde otra pantalla (Convertir, Herramientas PDF). Se

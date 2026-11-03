@@ -5,7 +5,7 @@ import crypto from "node:crypto";
 import { ahora, texto } from "../compartido/logica.js";
 import { bloqueDeArchivos, fragmentosDeTrozos, informeArchivos, recortarAgentes, repartirFuentes } from "../compartido/contexto.js";
 import { unirPartes } from "../compartido/encargo.js";
-import { MODELO_REVISOR, PEDIDO_REVISION, leerPendientes } from "../compartido/citas.js";
+import { MODELO_REVISOR, PEDIDO_REVISION, TEXTO_REVISION, avisosDeExportar, entradasDeCuerpo, leerPendientes, notasDeCitas, puedeExportar } from "../compartido/citas.js";
 import { fichaDeDetalle } from "../compartido/redactor.js";
 import {
   TIPOS_DOCUMENTO, armarEncargoPasaje, busquedasDeFragmentos, contenidoCitable, contarAvisos,
@@ -468,6 +468,24 @@ export function guardarPendientes(db, versionId, pendientes = []) {
   });
   return pendientesDeVersion(db, id);
 }
+
+export function revisionDeExportar(db, versionId) {
+  const fila = uno(db, "SELECT id, proyecto_id, cuerpo FROM doc_version WHERE id = ?", [Number(versionId) || 0]);
+  if (!fila) throw new Aviso("Esa versión ya no está.");
+  const citas = citasDeVersion(db, fila.id);
+  const pendientes = pendientesDeVersion(db, fila.id);
+  const avisos = avisosDeExportar({ pendientes, parrafos: entradasDeCuerpo(fila.cuerpo), citas });
+  return { proyectoId: Number(fila.proyecto_id), cuerpo: fila.cuerpo, citas, avisos };
+}
+
+export function anotarExportacion(db, proyectoId, { formato = "docx", notas = false } = {}) {
+  const donde = { pdf: "PDF", odt: "LibreOffice", docx: "Word" }[formato] || "Word";
+  const pie = notas ? " Las citas quedaron como notas al pie." : "";
+  anotarVuelta(db, proyectoId, { decision: `${TEXTO_REVISION} antes de exportar a ${donde}.${pie}` });
+  return leerMemoria(db, proyectoId);
+}
+
+export { notasDeCitas, puedeExportar };
 
 export function citasDeVersion(db, versionId) {
   return filas(db, "SELECT * FROM doc_cita WHERE version_id = ? ORDER BY inicio, id", [Number(versionId) || 0]).map((c) => ({

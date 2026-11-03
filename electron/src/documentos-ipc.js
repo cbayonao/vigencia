@@ -9,8 +9,8 @@ import { listarProcesos } from "./db.js";
 import { borrarPieza, buscarFuentes, etiquetasUsadas, guardarPieza, leerPieza } from "./biblioteca.js";
 import {
   actualizarProyecto, borrarPerfil, borrarProyecto, conversar, crearProyecto, duplicarProyecto, elegirFuentes,
-  citasDeVersion, escritoDeVersion, guardarEdicionDocumento, guardarPerfil, guardarVersion, leerProyecto, leerVersion, listarPerfiles, listarProyectos,
-  pendientesDeVersion, prepararRevision, revisarCitas,
+  anotarExportacion, citasDeVersion, escritoDeVersion, guardarEdicionDocumento, guardarPerfil, guardarVersion, leerProyecto, leerVersion, listarPerfiles, listarProyectos,
+  notasDeCitas, pendientesDeVersion, prepararRevision, puedeExportar, revisarCitas, revisionDeExportar,
   modeloDelProyecto, restaurarVersion, borrarVersion,
 } from "./documentos.js";
 import { listarModelos } from "./ia.js";
@@ -189,15 +189,21 @@ export function registrarDocumentos({ ipcMain, dialog, db, datosDir, ventana, re
   }
   ipcMain.handle("documentos-exportar", async (_e, dato) => {
     try {
+      const formato = dato?.formato === "pdf" ? "pdf" : dato?.formato === "odt" ? "odt" : "docx";
+      const rev = revisionDeExportar(base(), dato?.version);
+      const decision = puedeExportar({ avisos: rev.avisos, revisado: dato?.revisado === true, formato });
+      if (!decision.guardar) return { ok: false, codigo: "revisar-citas", avisos: rev.avisos };
+      if (decision.historial) anotarExportacion(base(), rev.proyectoId, { formato, notas: formato === "docx" && dato?.notas === true });
       const version = leerVersion(base(), dato?.version);
       const escrito = escritoDeVersion(version);
       const pie = dato?.pie !== false;
-      if (dato?.formato === "pdf") {
+      if (formato === "pdf") {
         const pdf = await pdfDesdeHtml(htmlDocumento(escrito, { pie }), ventana());
         return await guardarComo("Descargar el documento en PDF", escrito.asunto, "pdf", pdf);
       }
-      if (dato?.formato === "odt") return await guardarComo("Guardar el documento para LibreOffice", escrito.asunto, "odt", odtDeEscrito(escrito, { pie }));
-      return await guardarComo("Guardar el documento en Word", escrito.asunto, "docx", docxDeEscrito(escrito, { pie, titulo: true }));
+      if (formato === "odt") return await guardarComo("Guardar el documento para LibreOffice", escrito.asunto, "odt", odtDeEscrito(escrito, { pie }));
+      const notas = dato?.notas === true ? notasDeCitas(rev.cuerpo, rev.citas) : [];
+      return await guardarComo("Guardar el documento en Word", escrito.asunto, "docx", docxDeEscrito(escrito, { pie, titulo: true, notas }));
     } catch (error) {
       return { ok: false, error: mensajeHumano(error) };
     }

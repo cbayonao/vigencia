@@ -93,6 +93,7 @@
     }
   },
   "devDependencies": {
+    "@modelcontextprotocol/client": "^2.4.0",
     "@tiptap/core": "^3.32.0",
     "@tiptap/extension-table": "^3.32.0",
     "@tiptap/extension-text-align": "^3.32.0",
@@ -105,6 +106,7 @@
     "tesseract.js": "^6.0.1"
   },
   "dependencies": {
+    "@modelcontextprotocol/server": "^2.4.0",
     "jpeg-js": "^0.4.4",
     "mammoth": "^1.13.0",
     "node-llama-cpp": "^3.22.1",

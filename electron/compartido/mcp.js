@@ -4,8 +4,54 @@
 import path from "node:path";
 
 export const MENSAJE_CERRADO = "Abra Vigencia para usar el conector";
+export const MENSAJE_PLAN = "Tu plan de Vigencia no está vigente. Renueva en Vigencia, Ajustes, Plan.";
+export const MENSAJE_CODIGO = "El código de emparejamiento no coincide. Genérelo de nuevo en Vigencia.";
+export const METODO_EMPAREJAR = "vigencia/emparejar";
+
+export const CLAVE_ACTIVO = "mcp_activo";
+export const CLAVE_CODIGO = "mcp_codigo_sha256";
 
 export const PLANES = ["prueba", "vigente", "vencida", "sin_pago"];
+
+// La primera línea del socket, antes del JSON-RPC de MCP. El relevo la
+// escribe igual, carácter por carácter: no puede importar este módulo.
+export function lineaEmparejar(codigo) {
+  return JSON.stringify({
+    jsonrpc: "2.0",
+    method: METODO_EMPAREJAR,
+    params: { codigo: String(codigo || "") },
+  });
+}
+
+export function codigoDeEmparejar(linea) {
+  try {
+    const mensaje = JSON.parse(String(linea || ""));
+    if (mensaje && mensaje.method === METODO_EMPAREJAR) {
+      return { emparejar: true, codigo: String(mensaje.params?.codigo || "") };
+    }
+  } catch {
+    /* no era la línea de emparejamiento */
+  }
+  return { emparejar: false, codigo: "" };
+}
+
+export function errorJsonRpc(linea, mensaje) {
+  const texto = String(linea || "").trim();
+  if (!texto) return null;
+  let mensajeJson;
+  try {
+    mensajeJson = JSON.parse(texto);
+  } catch {
+    return null;
+  }
+  if (!mensajeJson || typeof mensajeJson !== "object" || !mensajeJson.method) return null;
+  if (!Object.hasOwn(mensajeJson, "id") || mensajeJson.id === undefined) return null;
+  return `${JSON.stringify({
+    jsonrpc: "2.0",
+    id: mensajeJson.id,
+    error: { code: -32000, message: mensaje },
+  })}\n`;
+}
 
 // Unix y macOS: el socket queda junto a la base. Windows: tubería con
 // nombre, limitada al usuario (el servidor pide readableAll y writableAll

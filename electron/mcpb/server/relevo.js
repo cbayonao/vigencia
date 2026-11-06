@@ -7,6 +7,16 @@ import { pathToFileURL } from "node:url";
 
 export const MENSAJE_CERRADO = "Abra Vigencia para usar el conector";
 
+// Igual que lineaEmparejar de compartido/mcp.js. Este archivo no lo importa:
+// el .mcpb se empaqueta solo.
+export function lineaEmparejar(codigo) {
+  return JSON.stringify({
+    jsonrpc: "2.0",
+    method: "vigencia/emparejar",
+    params: { codigo: String(codigo || "") },
+  });
+}
+
 export function rutaRelevo(env = process.env, plataforma = process.platform) {
   if (env.VIGENCIA_SOCK) return env.VIGENCIA_SOCK;
   if (plataforma === "win32") {
@@ -77,9 +87,15 @@ export function conectarRelevo({ ruta = rutaRelevo(), entrada = process.stdin, s
   socket.on("connect", () => {
     if (modo !== "espera") return;
     modo = "conectado";
-    entrada.pipe(socket);
-    socket.pipe(salida);
-    if (typeof entrada.resume === "function") entrada.resume();
+    // El código llega por el entorno (VIGENCIA_CODIGO) y solo viaja en esta
+    // primera línea. No se escribe en la salida ni en un registro.
+    const previa = `${lineaEmparejar(process.env.VIGENCIA_CODIGO || "")}\n`;
+    socket.write(previa, () => {
+      if (modo !== "conectado") return;
+      entrada.pipe(socket);
+      socket.pipe(salida);
+      if (typeof entrada.resume === "function") entrada.resume();
+    });
   });
   socket.on("error", () => {
     if (modo !== "espera") return;

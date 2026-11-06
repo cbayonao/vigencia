@@ -102,6 +102,7 @@ import { activarPieza, borrarPieza, guardarPieza, listarPiezas } from "./bibliot
 import { generarBorrador, generarInicial, guardarActivo, guardarModo, importarModelo, listarModelos, descargarModelo, modelosRecomendados, leerNubes, guardarNube, borrarModelo, quitarNube, usarCifrador } from "./ia.js";
 import { htmlMemorial } from "./memorial.js";
 import { registrarDocumentos } from "./documentos-ipc.js";
+import { registrarMcp } from "./mcp.js";
 import { registrarJuris } from "./juris-ipc.js";
 import { registrarConvertir } from "./convertir-ipc.js";
 import { limpiarTemporales, registrarPdftools } from "./pdftools-ipc.js";
@@ -136,6 +137,7 @@ let ventana = null;
 let db = null;
 let datosDir = "";
 let conversor = null;
+let cierreMcp = null;
 let cargaPendiente = null;
 let cargaPp = null;
 let catalogoPp = null;
@@ -845,6 +847,13 @@ if (bloqueo) {
       responder,
       mensajeHumano,
       convertirDatos,
+    });
+    cierreMcp = registrarMcp({
+      ipcMain,
+      db: () => db,
+      datosDir: () => datosDir,
+      version: app.getVersion(),
+      mensajeHumano,
     });
     registrarJuris({
       ipcMain,
@@ -1670,6 +1679,7 @@ if (bloqueo) {
     if (!bandeja || saliendo) app.quit();
   });
   app.on("will-quit", () => {
+    cierreMcp?.cerrar();
     programador?.detener();
     conversor?.cola.cerrar();
     limpiarTemporales({ edadMs: 0 });

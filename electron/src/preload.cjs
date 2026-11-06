@@ -273,4 +273,7 @@ contextBridge.exposeInMainWorld("vigencia", {
     ipcRenderer.on("abrir-cambios", canal);
     return () => ipcRenderer.removeListener("abrir-cambios", canal);
   },
+  mcpEstado: () => ipcRenderer.invoke("mcp-estado"),
+  mcpInterruptor: (activo) => ipcRenderer.invoke("mcp-interruptor", { activo: Boolean(activo) }),
+  mcpRegenerar: () => ipcRenderer.invoke("mcp-regenerar"),
 });

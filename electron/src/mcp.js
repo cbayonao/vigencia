@@ -15,15 +15,18 @@ import {
   CLAVE_CODIGO,
   ESQUEMA_ESTADO,
   MENSAJE_CODIGO,
+  MENSAJE_NO_COMPARTIDO,
   MENSAJE_PLAN,
   armarEstado,
   codigoDeEmparejar,
   errorJsonRpc,
+  permisoSigueVigente,
+  puedeCompartir,
   rutaSocket,
   textoEstado,
 } from "../compartido/mcp.js";
 import { planAbierto } from "../compartido/plan.js";
-import { guardarAjuste, leerAjuste, ultimaRevision } from "./db.js";
+import { Aviso, filas, guardarAjuste, leerAjuste, run, uno, ultimaRevision } from "./db.js";
 import { fotoLicencia } from "./licencia.js";
 
 const INSTRUCCIONES = [
@@ -84,7 +87,108 @@ export function opcionesDeEscucha(ruta, plataforma = process.platform) {
   return ruta;
 }
 
-function crearServidor({ version, foto, conteos, ultima }) {
+function idDeProceso(clave) {
+  const coincidencia = /^cn:(\d+)$/.exec(String(clave || "").trim());
+  if (!coincidencia) return null;
+  return Number(coincidencia[1]);
+}
+
+function metaDeCaso(db, tipo, clave) {
+  if (tipo === "proyecto") {
+    const id = Number(clave);
+    if (!Number.isInteger(id) || id <= 0) return { existe: false, soloLocal: false, esPrivado: false };
+    const fila = uno(db, "SELECT id, solo_local FROM doc_proyecto WHERE id = ?", [id]);
+    if (!fila) return { existe: false, soloLocal: false, esPrivado: false };
+    return { existe: true, soloLocal: Number(fila.solo_local) === 1, esPrivado: false };
+  }
+  const id = idDeProceso(clave);
+  if (id == null) return { existe: false, soloLocal: false, esPrivado: false };
+  const fila = uno(db, "SELECT id_proceso, es_privado FROM proceso WHERE id_proceso = ?", [id]);
+  if (!fila) return { existe: false, soloLocal: false, esPrivado: false };
+  return { existe: true, soloLocal: false, esPrivado: Number(fila.es_privado) === 1 };
+}
+
+// Lo usa cada herramienta antes de responder. Sin fila vigente, o con un
+// caso que no se puede compartir, el caso no existe para el conector.
+export function filtrarCaso(db, { tipo, clave } = {}, ahora = new Date().toISOString()) {
+  const tipoLimpio = String(tipo || "");
+  const claveLimpia = String(clave || "").trim();
+  const permiso = uno(db, "SELECT nivel, vence FROM mcp_permiso WHERE tipo = ? AND clave_o_id = ?", [tipoLimpio, claveLimpia]);
+  if (!permisoSigueVigente(permiso, ahora)) return { ok: false, error: MENSAJE_NO_COMPARTIDO };
+  const meta = metaDeCaso(db, tipoLimpio, claveLimpia);
+  const puerta = puedeCompartir({ tipo: tipoLimpio, soloLocal: meta.soloLocal, esPrivado: meta.esPrivado });
+  if (!meta.existe || !puerta.ok) return { ok: false, error: MENSAJE_NO_COMPARTIDO };
+  return { ok: true, nivel: permiso.nivel };
+}
+
+export function contarCompartidos(db, ahora = new Date().toISOString()) {
+  const lista = filas(db, "SELECT tipo, clave_o_id FROM mcp_permiso");
+  let procesos = 0;
+  let proyectos = 0;
+  for (const fila of lista) {
+    const acceso = filtrarCaso(db, { tipo: fila.tipo, clave: fila.clave_o_id }, ahora);
+    if (!acceso.ok) continue;
+    if (fila.tipo === "proceso") procesos += 1;
+    else if (fila.tipo === "proyecto") proyectos += 1;
+  }
+  return { procesos, proyectos };
+}
+
+export function compartirCaso(db, { tipo, clave, nivel = "lectura", vence = null, ahora = new Date().toISOString() } = {}) {
+  const tipoLimpio = String(tipo || "");
+  const claveLimpia = String(clave || "").trim();
+  const nivelLimpio = String(nivel || "lectura");
+  if (tipoLimpio !== "proceso" && tipoLimpio !== "proyecto") throw new Aviso("El tipo debe ser proceso o proyecto.");
+  if (!claveLimpia) throw new Aviso("Falta el caso.");
+  if (nivelLimpio !== "lectura" && nivelLimpio !== "proponer") throw new Aviso("El nivel debe ser lectura o proponer.");
+  const meta = metaDeCaso(db, tipoLimpio, claveLimpia);
+  if (!meta.existe) throw new Aviso(tipoLimpio === "proyecto" ? "Ese proyecto no está." : "Ese proceso no está.");
+  const puerta = puedeCompartir({ tipo: tipoLimpio, soloLocal: meta.soloLocal, esPrivado: meta.esPrivado });
+  if (!puerta.ok) throw new Aviso(puerta.error);
+  const venceLimpio = vence ? String(vence) : null;
+  if (venceLimpio && !Number.isFinite(Date.parse(venceLimpio))) throw new Aviso("La fecha de vencimiento no es válida.");
+  run(db, `
+    INSERT INTO mcp_permiso (tipo, clave_o_id, nivel, creado_en, vence)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(tipo, clave_o_id) DO UPDATE SET
+      nivel = excluded.nivel,
+      vence = excluded.vence
+  `, [tipoLimpio, claveLimpia, nivelLimpio, ahora, venceLimpio]);
+  return { tipo: tipoLimpio, clave: claveLimpia, nivel: nivelLimpio, vence: venceLimpio };
+}
+
+export function dejarCaso(db, { tipo, clave } = {}) {
+  const info = run(db, "DELETE FROM mcp_permiso WHERE tipo = ? AND clave_o_id = ?", [
+    String(tipo || ""),
+    String(clave || "").trim(),
+  ]);
+  return { quitado: Number(info.changes) > 0 };
+}
+
+function fallo(texto) {
+  return { isError: true, content: [{ type: "text", text: texto }] };
+}
+
+// Puerta común: el plan y, si la herramienta nombra casos, el filtro.
+function prepararLlamada(opciones, casos = []) {
+  let actual = null;
+  try {
+    actual = opciones.foto();
+  } catch {
+    actual = null;
+  }
+  if (!planAbierto(actual?.estado)) return { bloqueo: fallo(MENSAJE_PLAN) };
+  if (typeof opciones.db === "function") {
+    for (const caso of casos) {
+      const acceso = filtrarCaso(opciones.db(), caso);
+      if (!acceso.ok) return { bloqueo: fallo(acceso.error) };
+    }
+  }
+  return { actual };
+}
+
+function crearServidor(opciones) {
+  const { version, conteos, ultima } = opciones;
   const servidor = new McpServer(
     { name: "vigencia", version: String(version || "0") },
     { capabilities: { tools: {} }, instructions: INSTRUCCIONES },
@@ -99,16 +203,10 @@ function crearServidor({ version, foto, conteos, ultima }) {
       annotations: { readOnlyHint: true },
     },
     async () => {
-      let actual = null;
-      try {
-        actual = foto();
-      } catch {
-        actual = null;
-      }
-      if (!planAbierto(actual?.estado)) {
-        return { isError: true, content: [{ type: "text", text: MENSAJE_PLAN }] };
-      }
-      const numeros = conteos() || {};
+      const previo = prepararLlamada(opciones);
+      if (previo.bloqueo) return previo.bloqueo;
+      const actual = previo.actual;
+      const numeros = typeof opciones.db === "function" ? contarCompartidos(opciones.db()) : (conteos() || {});
       const estado = armarEstado({
         version,
         plan: actual.estado,
@@ -209,6 +307,7 @@ export async function escucharConector({
   ultima = () => null,
   aceptarCodigo = () => false,
   plataforma = process.platform,
+  db = null,
 }) {
   if (plataforma !== "win32") fs.mkdirSync(path.dirname(ruta), { recursive: true });
   if (plataforma !== "win32") {
@@ -220,7 +319,7 @@ export async function escucharConector({
   }
   const sesiones = new Set();
   let cerrado = false;
-  const opciones = { version, foto, conteos, ultima, aceptarCodigo };
+  const opciones = { version, foto, conteos, ultima, aceptarCodigo, db };
   const servidor = net.createServer((socket) => {
     const sesion = atender(socket, opciones, () => !cerrado);
     sesiones.add(sesion);
@@ -294,7 +393,7 @@ export function registrarMcp({ ipcMain, db, datosDir, version, mensajeHumano }) 
     }),
     version,
     foto: () => fotoLicencia(datosDir()),
-    conteos: () => ({ procesos: 0, proyectos: 0 }),
+    db: base,
     ultima: () => {
       const fila = ultimaRevision(base());
       return fila?.fin || fila?.inicio || null;
@@ -326,6 +425,16 @@ export function registrarMcp({ ipcMain, db, datosDir, version, mensajeHumano }) 
     await alinear();
     return { ...estadoPublico(base()), ...(codigo ? { codigo } : {}) };
   })));
+  ipcMain.handle("mcp-compartir", seguro((_evento, dato) => encolar(async () => compartirCaso(base(), {
+    tipo: dato?.tipo,
+    clave: dato?.clave,
+    nivel: dato?.nivel,
+    vence: dato?.vence,
+  }))));
+  ipcMain.handle("mcp-dejar", seguro((_evento, dato) => encolar(async () => dejarCaso(base(), {
+    tipo: dato?.tipo,
+    clave: dato?.clave,
+  }))));
   ipcMain.handle("mcp-regenerar", seguro(() => encolar(async () => {
     const codigo = regenerarCodigo(base());
     if (conector) {

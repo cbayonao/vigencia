@@ -858,4 +858,24 @@ export const MIGRACIONES = [
       `);
     },
   },
+  {
+    version: 23,
+    nombre: "permisos del conector",
+    up(db) {
+      // Qué puede ver el conector. Nace vacía: nada se comparte. Un proyecto
+      // en Solo local o un proceso privado no debería entrar; si la fila está,
+      // el filtro la ignora igual.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS mcp_permiso (
+          id INTEGER PRIMARY KEY,
+          tipo TEXT NOT NULL CHECK (tipo IN ('proceso', 'proyecto')),
+          clave_o_id TEXT NOT NULL,
+          nivel TEXT NOT NULL CHECK (nivel IN ('lectura', 'proponer')),
+          creado_en TEXT NOT NULL,
+          vence TEXT,
+          UNIQUE (tipo, clave_o_id)
+        );
+      `);
+    },
+  },
 ];

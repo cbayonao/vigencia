@@ -276,4 +276,6 @@ contextBridge.exposeInMainWorld("vigencia", {
   mcpEstado: () => ipcRenderer.invoke("mcp-estado"),
   mcpInterruptor: (activo) => ipcRenderer.invoke("mcp-interruptor", { activo: Boolean(activo) }),
   mcpRegenerar: () => ipcRenderer.invoke("mcp-regenerar"),
+  mcpCompartir: (dato) => ipcRenderer.invoke("mcp-compartir", dato),
+  mcpDejar: (dato) => ipcRenderer.invoke("mcp-dejar", dato),
 });

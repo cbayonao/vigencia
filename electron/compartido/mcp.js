@@ -6,6 +6,9 @@ import path from "node:path";
 export const MENSAJE_CERRADO = "Abra Vigencia para usar el conector";
 export const MENSAJE_PLAN = "Tu plan de Vigencia no está vigente. Renueva en Vigencia, Ajustes, Plan.";
 export const MENSAJE_CODIGO = "El código de emparejamiento no coincide. Genérelo de nuevo en Vigencia.";
+export const MENSAJE_NO_COMPARTIDO = "Ese caso no está compartido con el conector.";
+export const MENSAJE_SOLO_LOCAL = "Ese proyecto está en Solo local y no se puede compartir.";
+export const MENSAJE_PRIVADO = "Ese proceso es privado y no se puede compartir.";
 export const METODO_EMPAREJAR = "vigencia/emparejar";
 
 export const CLAVE_ACTIVO = "mcp_activo";
@@ -75,6 +78,24 @@ export function directorioDatosInstalado({ plataforma, env = {} }) {
   }
   const base = env.XDG_CONFIG_HOME || path.join(home, ".config");
   return path.join(base, "Vigencia");
+}
+
+// Un proyecto en Solo local y un proceso privado no salen de este computador.
+export function puedeCompartir({ tipo, soloLocal = false, esPrivado = false } = {}) {
+  if (tipo === "proyecto" && soloLocal) return { ok: false, error: MENSAJE_SOLO_LOCAL };
+  if (tipo === "proceso" && esPrivado) return { ok: false, error: MENSAJE_PRIVADO };
+  return { ok: true };
+}
+
+// vence vacío no caduca. Si la fecha ya llegó, el permiso no vale.
+export function permisoSigueVigente(permiso, ahora) {
+  if (!permiso) return false;
+  if (permiso.nivel !== "lectura" && permiso.nivel !== "proponer") return false;
+  if (!permiso.vence) return true;
+  const fin = Date.parse(permiso.vence);
+  const momento = Date.parse(ahora);
+  if (Number.isFinite(fin) && Number.isFinite(momento)) return momento < fin;
+  return String(permiso.vence) > String(ahora);
 }
 
 export function armarEstado({

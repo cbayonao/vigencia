@@ -8,10 +8,14 @@ import { StdioClientTransport, getDefaultEnvironment } from "@modelcontextprotoc
 import {
   CLAVE_CODIGO,
   MENSAJE_CODIGO,
+  MENSAJE_NO_COMPARTIDO,
   MENSAJE_PLAN,
+  MENSAJE_PRIVADO,
+  MENSAJE_SOLO_LOCAL,
   armarEstado,
   directorioDatosInstalado,
   lineaEmparejar,
+  puedeCompartir,
   rutaSocket,
   textoEstado,
 } from "../compartido/mcp.js";
@@ -22,12 +26,14 @@ import {
   lineaEmparejar as lineaDelRelevo,
   rutaRelevo,
 } from "../mcpb/server/relevo.js";
-import { abrirBase, iniciarRevision, leerAjuste, terminarRevision } from "../src/db.js";
+import { abrirBase, iniciarRevision, leerAjuste, run, terminarRevision, uno } from "../src/db.js";
 import { fotoLicencia, guardarCaja } from "../src/licencia.js";
 import {
   codigoCoincide,
+  compartirCaso,
   conectorActivo,
   escucharConector,
+  filtrarCaso,
   guardarInterruptor,
   huellaCodigo,
   opcionesDeEscucha,
@@ -299,6 +305,71 @@ describe("conector en marcha", { concurrency: 1 }, () => {
       assert.equal(apagar.activo, false);
       assert.equal(Object.hasOwn(apagar, "codigo"), false);
       assert.equal(fs.existsSync(path.join(tmp.dir, "mcp.sock")), false);
+    } finally {
+      await registrado.cerrar();
+      db.close();
+      tmp.borrar();
+    }
+  });
+
+  test("un caso no compartido, privado o en solo local no sale", { timeout: 20000 }, async () => {
+    const tmp = temporal();
+    const db = abrirBase(path.join(tmp.dir, "grokvig.sqlite"));
+    const ahora = "2026-11-06T12:00:00.000Z";
+    run(db, "INSERT INTO radicado (numero) VALUES ('11001000000020260000001')");
+    run(db, "INSERT INTO proceso (id_proceso, radicado, es_privado) VALUES (10, '11001000000020260000001', 0)");
+    run(db, "INSERT INTO proceso (id_proceso, radicado, es_privado) VALUES (11, '11001000000020260000001', 1)");
+    run(db, "INSERT INTO proceso (id_proceso, radicado, es_privado) VALUES (12, '11001000000020260000001', 0)");
+    run(db, "INSERT INTO doc_proyecto (nombre, creado_en, actualizado_en, solo_local) VALUES ('Abierto', ?, ?, 0)", [ahora, ahora]);
+    run(db, "INSERT INTO doc_proyecto (nombre, creado_en, actualizado_en, solo_local) VALUES ('Local', ?, ?, 1)", [ahora, ahora]);
+    const abierto = uno(db, "SELECT id FROM doc_proyecto WHERE nombre = 'Abierto'");
+    const local = uno(db, "SELECT id FROM doc_proyecto WHERE nombre = 'Local'");
+    assert.equal(puedeCompartir({ tipo: "proyecto", soloLocal: true }).ok, false);
+    assert.equal(puedeCompartir({ tipo: "proceso", esPrivado: true }).error, MENSAJE_PRIVADO);
+    assert.throws(() => compartirCaso(db, { tipo: "proceso", clave: "cn:11" }), (error) => error.message === MENSAJE_PRIVADO);
+    assert.throws(() => compartirCaso(db, { tipo: "proyecto", clave: String(local.id) }), (error) => error.message === MENSAJE_SOLO_LOCAL);
+    run(db, "INSERT INTO mcp_permiso (tipo, clave_o_id, nivel, creado_en) VALUES ('proceso', 'cn:11', 'lectura', ?)", [ahora]);
+    run(db, "INSERT INTO mcp_permiso (tipo, clave_o_id, nivel, creado_en, vence) VALUES ('proceso', 'cn:12', 'lectura', ?, '2020-01-01T00:00:00.000Z')", [ahora]);
+    run(db, "INSERT INTO mcp_permiso (tipo, clave_o_id, nivel, creado_en) VALUES ('proyecto', ?, 'proponer', ?)", [String(local.id), ahora]);
+    assert.equal(filtrarCaso(db, { tipo: "proceso", clave: "cn:10" }, ahora).ok, false);
+    assert.equal(filtrarCaso(db, { tipo: "proceso", clave: "cn:10" }, ahora).error, MENSAJE_NO_COMPARTIDO);
+    assert.equal(filtrarCaso(db, { tipo: "proceso", clave: "cn:11" }, ahora).ok, false);
+    assert.equal(filtrarCaso(db, { tipo: "proceso", clave: "cn:12" }, ahora).ok, false);
+    assert.equal(filtrarCaso(db, { tipo: "proyecto", clave: String(local.id) }, ahora).ok, false);
+    const ipc = ipcFalso();
+    const registrado = registrarMcp({
+      ipcMain: ipc,
+      db: () => db,
+      datosDir: () => tmp.dir,
+      version: "3.10.1",
+      mensajeHumano: (error) => error.message,
+    });
+    try {
+      assert.equal(Number(uno(db, "SELECT COUNT(*) AS n FROM schema_migracion").n), 23);
+      const privado = await ipc.handlers.get("mcp-compartir")({}, { tipo: "proceso", clave: "cn:11", nivel: "lectura" });
+      assert.equal(privado.ok, false);
+      assert.equal(privado.error, MENSAJE_PRIVADO);
+      const solo = await ipc.handlers.get("mcp-compartir")({}, { tipo: "proyecto", clave: String(local.id) });
+      assert.equal(solo.ok, false);
+      assert.equal(solo.error, MENSAJE_SOLO_LOCAL);
+      const encendido = await ipc.handlers.get("mcp-interruptor")({}, { activo: true });
+      const proceso = await ipc.handlers.get("mcp-compartir")({}, { tipo: "proceso", clave: "cn:10", nivel: "lectura" });
+      const proyecto = await ipc.handlers.get("mcp-compartir")({}, { tipo: "proyecto", clave: String(abierto.id), nivel: "proponer" });
+      assert.equal(proceso.ok, true);
+      assert.equal(proyecto.ok, true);
+      const ver = (codigo) => conCliente(path.join(tmp.dir, "mcp.sock"), (cliente) => cliente.callTool({
+        name: "estado_vigencia",
+        arguments: {},
+      }), { codigo });
+      const primero = await ver(encendido.codigo);
+      assert.equal(primero.structuredContent.procesos_compartidos, 1);
+      assert.equal(primero.structuredContent.proyectos_compartidos, 1);
+      const dejar = await ipc.handlers.get("mcp-dejar")({}, { tipo: "proyecto", clave: String(abierto.id) });
+      assert.equal(dejar.quitado, true);
+      const segundo = await ver(encendido.codigo);
+      assert.equal(segundo.structuredContent.proyectos_compartidos, 0);
+      assert.equal(segundo.structuredContent.procesos_compartidos, 1);
+      assert.equal(filtrarCaso(db, { tipo: "proyecto", clave: String(abierto.id) }, ahora).ok, false);
     } finally {
       await registrado.cerrar();
       db.close();

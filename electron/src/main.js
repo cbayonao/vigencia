@@ -66,6 +66,8 @@ import {
   guardarHorarios,
   guardarInicioSesion,
   guardarUltimoTurno,
+  guardarRedAjustes,
+  leerRedAjustes,
   guardarSamaiCaso,
   guardarSpCaso,
   guardarUso,
@@ -95,7 +97,7 @@ import { docxDeEscrito, textoDeDocx } from "./docx.js";
 import { htmlInforme, fechaInforme, nombreArchivoInforme } from "./informe.js";
 import { pdfDesdeHtml } from "./pdf.js";
 import { alCambiar, cancelarCorrida, estadoCorrida, lanzar } from "./jobs.js";
-import { idsDeFallas } from "./rama.js";
+import { configurarRed, idsDeFallas } from "./rama.js";
 import { fichaDeDetalle, redactarEscrito } from "../compartido/redactor.js";
 import { activarPieza, borrarPieza, guardarPieza, listarPiezas } from "./biblioteca.js";
 import { generarBorrador, generarInicial, guardarActivo, guardarModo, importarModelo, listarModelos, descargarModelo, modelosRecomendados, leerNubes, guardarNube, borrarModelo, quitarNube } from "./ia.js";
@@ -267,6 +269,11 @@ function prepararDatos() {
   const base = path.join(datosDir, "grokvig.sqlite");
   db = abrirBase(base);
   cerrarRevisionesColgadas(db);
+  try {
+    configurarRed({ proxyUrl: leerRedAjustes(db).proxy });
+  } catch (error) {
+    console.error(error);
+  }
 }
 
 function enviar(canal, dato) {
@@ -914,6 +921,19 @@ if (bloqueo) {
       }
     });
     ipcMain.handle("ajustes", () => responder(() => infoAutomatica()));
+    ipcMain.handle("red-leer", () => responder(() => {
+      try {
+        return leerRedAjustes(db);
+      } catch {
+        return { proxy: "" };
+      }
+    }));
+    ipcMain.handle("red-guardar", (_evento, datos) => responder(() => {
+      const valores = guardarRedAjustes(db, datos || {});
+      configurarRed({ proxyUrl: valores.proxy });
+      registrar(valores.proxy ? "red: con proxy" : "red: conexión directa");
+      return valores;
+    }));
     ipcMain.handle("guardar-ajustes", (_evento, datos) => responder(() => {
       const horas = guardarHorarios(db, datos?.horas);
       if (typeof datos?.inicioSesion === "boolean") {
@@ -945,6 +965,10 @@ if (bloqueo) {
       return { ok: true };
     });
     ipcMain.handle("agregar-cancelar", () => ({ ok: true, detenida: cancelarCorrida("agregar") }));
+    ipcMain.handle("revision-cancelar", () => ({
+      ok: true,
+      detenida: cancelarCorrida("todo") || cancelarCorrida("carga") || cancelarCorrida("uno"),
+    }));
     ipcMain.handle("elegir-csv", async () => {
       const elegido = await dialog.showOpenDialog(ventana, {
         title: "Cargar radicados",

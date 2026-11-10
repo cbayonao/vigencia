@@ -1,4 +1,6 @@
-import { ahora, causaDePeticion, pausaAleatoriaMs } from "../compartido/logica.js";
+import { ahora, causaDePeticion } from "../compartido/logica.js";
+import { normalizarProxyUrl } from "../compartido/red.js";
+import { ProxyAgent } from "undici";
 import { filas, transaccion, uno } from "./db.js";
 import {
   asegurarRadicado,
@@ -22,7 +24,7 @@ const CABECERAS = {
   origin: "https://consultaprocesos.ramajudicial.gov.co",
   priority: "u=1, i",
   referer: "https://consultaprocesos.ramajudicial.gov.co/",
-  "sec-ch-ua": '"Chromium";v="155", "Google Chrome";v="155", "Not A(Brand";v="99"',
+  "sec-ch-ua": '"Google Chrome";v="155", "Chromium";v="155", "Not(A:Brand";v="24"',
   "sec-ch-ua-mobile": "?0",
   "sec-ch-ua-platform": '"Linux"',
   "sec-fetch-dest": "empty",
@@ -31,21 +33,43 @@ const CABECERAS = {
   "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36",
 };
 
-const PAUSA_MS = 500;
+// Como un spider educado: una petición a la vez, con pausa fija de 2 s
+// entre peticiones y reintentos con espera. Sin hilos ni lotes: lo simple
+// es lo que no tumba ni a la Rama ni a la app.
+const PAUSA_FIJA_MS = 2000;
 const MAX_PAGINAS = 50;
-const MAX_FALLOS_SEGUIDOS = 5;
-// Lotes de 50 con arranque lento: se empieza de a un expediente y se suma
-// uno concurrente por éxito (máximo 5); ante un fallo se vuelve a uno.
-// Así la revisión va más rápido sin aporrear a la Rama a la primera.
-const TAMANO_LOTE = 50;
-const CONCURRENCIA_MAXIMA = 5;
+// Un expediente que falla se marca como fallido y se sigue con el resto:
+// puede ser algo de ese proceso (o de ese radicado) y no de la Rama.
+// Solo la bloqueada 403 detiene lo pendiente, porque ahí ya no tiene
+// sentido seguir intentando desde este computador.
+
+// Proxy opcional para salir a internet (lo configura el usuario en los
+// ajustes; vacío = conexión directa). Se aplica en caliente sin reiniciar.
+let proxyUrlConfigurado = "";
+const agentesProxy = new Map();
+
+export function configurarRed({ proxyUrl } = {}) {
+  const limpio = normalizarProxyUrl(proxyUrl);
+  proxyUrlConfigurado = limpio ?? "";
+  return proxyUrlConfigurado;
+}
+
+export function agentePara(proxyUrl) {
+  const limpio = normalizarProxyUrl(proxyUrl);
+  if (!limpio) return undefined;
+  if (!agentesProxy.has(limpio)) agentesProxy.set(limpio, new ProxyAgent(limpio));
+  return agentesProxy.get(limpio);
+}
 
 export async function pedirRed(url, params) {
   const destino = new URL(url);
   if (params) {
     for (const [clave, valor] of Object.entries(params)) destino.searchParams.set(clave, String(valor));
   }
-  const respuesta = await fetch(destino, { headers: CABECERAS, signal: AbortSignal.timeout(40000) });
+  const pedido = { headers: CABECERAS, signal: AbortSignal.timeout(40000) };
+  const agente = agentePara(proxyUrlConfigurado);
+  if (agente) pedido.dispatcher = agente;
+  const respuesta = await fetch(destino, pedido);
   return { status: respuesta.status, text: await respuesta.text() };
 }
 
@@ -68,7 +92,9 @@ const ESPERA_GATEWAY_MS = [2000, 5000, 15000];
 const dormirReal = (ms) => new Promise((resolver) => setTimeout(resolver, ms));
 
 async function pausaEntrePeticiones(ctx) {
-  const ms = typeof ctx.pausaMs === "function" ? ctx.pausaMs() : PAUSA_MS;
+  // Pausa fija de 2 s entre peticiones (el expediente siguiente espera su
+  // turno). Si la prueba trae su propia pausa, se respeta.
+  const ms = typeof ctx.pausaMs === "function" ? ctx.pausaMs() : PAUSA_FIJA_MS;
   await ctx.dormir(ms);
 }
 
@@ -96,10 +122,10 @@ export async function obtenerJson(url, params, ctx, vacioSiNoHay = false) {
       continue;
     }
     if (respuesta.status === 403) {
-      const espera = 20 * intento;
+      const espera = 30 * intento;
       ultimo = "HTTP 403";
       if (intento >= 3) throw new Error(ultimo);
-      ctx.log(`  la Rama respondió 403, espero ${espera}s`);
+      ctx.log(`  la Rama bloqueó la petición (403). Espero ${espera}s antes de reintentar.`);
       await ctx.dormir(espera * 1000);
       continue;
     }
@@ -138,8 +164,23 @@ export async function pedirLista(url, clave, paginar, ctx) {
   while (pagina <= MAX_PAGINAS) {
     if (detenido(ctx)) return { items, completo: true, cancelado: true };
     const params = usarPagina ? { pagina: String(pagina) } : null;
-    const data = await obtenerJson(url, params, ctx, true);
-    if (!data || !Object.keys(data).length) return { items: [], completo: true };
+    let data;
+    try {
+      data = await obtenerJson(url, params, ctx, true);
+    } catch (error) {
+      // Un 403 es bloqueo: se para todo aunque haya páginas traídas.
+      // Lo demás, si ya trajimos páginas, queda como parcial por error de
+      // red y la próxima corrida completa; solo la primera página fallida
+      // tumba el expediente.
+      if (String(error?.message || error).includes("403") || !items.length) throw error;
+      return { items, completo: false };
+    }
+    if (!data || !Object.keys(data).length) {
+      // Un 404 en una página tardía deja lo ya traído como parcial; en la
+      // primera significa que no hay nada que guardar.
+      if (items.length) return { items, completo: false };
+      return { items: [], completo: true };
+    }
     const bloque = Array.isArray(data[clave]) ? data[clave].filter((item) => item && typeof item === "object") : [];
     items.push(...bloque);
     if (data.paginacion?.cantidadRegistros != null) {
@@ -321,10 +362,10 @@ async function pasoSeguimiento(db, { limite, soloFaltantes, radicado, idProceso,
   }
   if (limite > 0) procesos = procesos.slice(0, limite);
   ctx.log(soloActuaciones ? `Actuaciones de ${procesos.length} expediente(s)` : `Seguimiento de ${procesos.length} expediente(s)`);
-  const cuenta = { cambios: 0, errores: 0, fallos: 0 };
+  const cuenta = { cambios: 0, errores: 0 };
   const salidas = new Array(procesos.length).fill(null);
   if (detenido(ctx)) return { cambios: 0, errores: 0, informe: soloActuaciones ? informeDe([]) : null, cancelado: true };
-  const estado = { parar: false, motivo: "" };
+  const estado = { parar: false, motivo: "", seguidos403: 0, enfriado: false };
   const anotar = (indice, fila, ok, causa = "") => {
     if (!soloActuaciones) return;
     salidas[indice] = {
@@ -375,48 +416,49 @@ async function pasoSeguimiento(db, { limite, soloFaltantes, radicado, idProceso,
       const causa = causaDePeticion(error.message);
       ctx.log(`  error: ${error.message}`);
       anotar(indice, fila, false, causa);
-      cuenta.fallos += 1;
       if (String(error.message).includes("403")) {
+        // Bloqueo: primero se enfría una vez (2 min) y se reintenta el
+        // expediente; si sigue bloqueando, se para y lo pendiente queda
+        // para la próxima. No tiene sentido seguir golpeando.
+        estado.seguidos403 += 1;
+        if (!estado.enfriado && estado.seguidos403 === 1) {
+          estado.enfriado = true;
+          ctx.log("  la Rama está bloqueando (403). Pauso 2 minutos y reintento este expediente una vez.");
+          await ctx.dormir(120000);
+          return tarea(indice);
+        }
         pararPor("la Rama bloqueó las peticiones.");
-      } else if (cuenta.fallos >= MAX_FALLOS_SEGUIDOS) {
-        pararPor("la Rama no respondió varias veces seguidas.");
       }
       return "falla";
     }
-    cuenta.fallos = 0;
+    estado.seguidos403 = 0;
     if (canceladoLista || detenido(ctx)) return "cancelado";
     if (estado.parar) return "parado";
     if (!uno(db, "SELECT id_proceso FROM proceso WHERE id_proceso = ?", [fila.id_proceso])) {
       ctx.log("  el expediente ya no está en la lista");
       return "ok";
     }
-    if (soloActuaciones && !actuacionesOk) {
-      cuenta.errores += 1;
-      const causa = "Las actuaciones llegaron incompletas.";
-      ctx.log(`  ${causa}`);
-      anotar(indice, fila, false, causa);
-      cuenta.fallos += 1;
-      if (cuenta.fallos >= MAX_FALLOS_SEGUIDOS) pararPor("la Rama no respondió varias veces seguidas.");
-      return "falla";
-    }
     const momento = ahora();
     try {
     transaccion(db, () => {
-      if (sujetosOk) {
-        cuenta.cambios += guardarSujetos(db, fila.id_proceso, fila.radicado, sujetos, true, fila.sujetos_consultado_en != null, ctx);
-        runSilencioso(db, momento, "sujetos_consultado_en", fila.id_proceso);
+      if (sujetosOk || (sujetos.length && !soloActuaciones)) {
+        cuenta.cambios += guardarSujetos(db, fila.id_proceso, fila.radicado, sujetos, sujetosOk, fila.sujetos_consultado_en != null, ctx);
+        if (sujetosOk) runSilencioso(db, momento, "sujetos_consultado_en", fila.id_proceso);
+        else ctx.log("  sujetos parciales; se guardan y la próxima corrida completa");
       } else if (!soloActuaciones) {
         ctx.log("  sujetos incompletos; no se marcan ni se borran");
       }
-      if (documentosOk) {
-        cuenta.cambios += guardarDocumentos(db, fila.id_proceso, fila.radicado, documentos, true, fila.documentos_consultado_en != null, ctx);
-        runSilencioso(db, momento, "documentos_consultado_en", fila.id_proceso);
+      if (documentosOk || (documentos.length && !soloActuaciones)) {
+        cuenta.cambios += guardarDocumentos(db, fila.id_proceso, fila.radicado, documentos, documentosOk, fila.documentos_consultado_en != null, ctx);
+        if (documentosOk) runSilencioso(db, momento, "documentos_consultado_en", fila.id_proceso);
+        else ctx.log("  documentos parciales; se guardan y la próxima corrida completa");
       } else if (!soloActuaciones) {
         ctx.log("  documentos incompletos; no se marcan ni se borran");
       }
-      if (actuacionesOk) {
-        cuenta.cambios += guardarActuaciones(db, fila.id_proceso, fila.radicado, actuaciones, true, fila.actuaciones_consultado_en != null, ctx);
-        runSilencioso(db, momento, "actuaciones_consultado_en", fila.id_proceso);
+      if (actuacionesOk || actuaciones.length) {
+        cuenta.cambios += guardarActuaciones(db, fila.id_proceso, fila.radicado, actuaciones, actuacionesOk, fila.actuaciones_consultado_en != null, ctx);
+        if (actuacionesOk) runSilencioso(db, momento, "actuaciones_consultado_en", fila.id_proceso);
+        else ctx.log("  actuaciones parciales; se guardan y la próxima corrida completa");
       } else {
         ctx.log("  actuaciones incompletas; no se marcan ni se borran");
       }
@@ -425,63 +467,26 @@ async function pasoSeguimiento(db, { limite, soloFaltantes, radicado, idProceso,
       cuenta.errores += 1;
       ctx.log(`  error: ${error.message}`);
       anotar(indice, fila, false, "No se pudo guardar la respuesta.");
-      cuenta.fallos += 1;
-      if (cuenta.fallos >= MAX_FALLOS_SEGUIDOS) pararPor("la Rama no respondió varias veces seguidas.");
+      return "falla";
+    }
+    if (soloActuaciones && !actuacionesOk) {
+      cuenta.errores += 1;
+      const causa = "Las actuaciones llegaron incompletas.";
+      ctx.log(`  ${causa}`);
+      anotar(indice, fila, false, causa);
       return "falla";
     }
     anotar(indice, fila, true);
     ctx.log(soloActuaciones ? `  actuaciones=${actuaciones.length}` : `  sujetos=${sujetos.length} documentos=${documentos.length} actuaciones=${actuaciones.length}`);
     return "ok";
   }
-  async function correrLote(indices) {
-    let siguiente = 0;
-    let tope = 1;
-    let activos = 0;
-    let resolveListo;
-    let rejectListo;
-    const listo = new Promise((res, rej) => { resolveListo = res; rejectListo = rej; });
-    const frenar = () => estado.parar || detenido(ctx);
-    function masObreros() {
-      while (activos < tope && siguiente < indices.length && !frenar()) {
-        activos += 1;
-        obrero().then(
-          () => {
-            activos -= 1;
-            if (activos === 0) resolveListo();
-            else masObreros();
-          },
-          (error) => {
-            activos -= 1;
-            if (activos === 0) rejectListo(error);
-            else masObreros();
-          },
-        );
-      }
-      if (activos === 0) resolveListo();
-    }
-    async function obrero() {
-      for (;;) {
-        if (frenar()) return;
-        const k = siguiente;
-        siguiente += 1;
-        if (k >= indices.length) return;
-        const r = await tarea(indices[k]);
-        if (r === "ok") tope = Math.min(tope + 1, CONCURRENCIA_MAXIMA);
-        else tope = 1;
-        masObreros();
-      }
-    }
-    masObreros();
-    await listo;
-  }
-  const totalLotes = Math.max(1, Math.ceil(procesos.length / TAMANO_LOTE));
+  // Spider: un expediente a la vez, en el orden de la lista. Lo ya
+  // guardado queda; el paro por 403, la cancelación y el informe se
+  // conservan igual que antes.
   let cancelado = false;
-  for (let ini = 0, lote = 1; ini < procesos.length; ini += TAMANO_LOTE, lote += 1) {
+  for (let indice = 0; indice < procesos.length; indice += 1) {
     if (estado.parar || detenido(ctx)) break;
-    const indices = [];
-    for (let i = ini; i < Math.min(ini + TAMANO_LOTE, procesos.length); i += 1) indices.push(i);
-    if (procesos.length > TAMANO_LOTE) ctx.log(`Lote ${lote} de ${totalLotes}: ${indices.length} expediente(s)`);
-    await correrLote(indices);
+    await tarea(indice);
   }
   const resultados = [];
   for (let i = 0; i < procesos.length; i += 1) {
@@ -532,11 +537,11 @@ async function cargarRadicado(db, numero, contexto) {
   return { consulta, detalle, seguimiento };
 }
 
-export async function ejecutarTrabajo({ db, modo, radicado, idProceso = null, numeros = null, ids = null, ctx, pedir, dormir, permitirRed = false, azar = Math.random }) {
-  const red = pedir || (permitirRed ? pedirRed : async () => {
+export async function ejecutarTrabajo({ db, modo, radicado, idProceso = null, numeros = null, ids = null, ctx, pedir, dormir, permitirRed = false }) {
+  const pedirRedFn = pedir || (permitirRed ? pedirRed : async () => {
     throw new Error("La consulta a la Rama no está habilitada.");
   });
-  const contexto = { ...ctx, pedir: red, dormir: dormir || dormirReal, azar };
+  const contexto = { ...ctx, pedir: pedirRedFn, dormir: dormir || dormirReal };
   let errores = 0;
   let cambios = 0;
   let falloConsulta = false;
@@ -554,8 +559,7 @@ export async function ejecutarTrabajo({ db, modo, radicado, idProceso = null, nu
       }
     }
     if (!lista.length) throw new Error("No hay radicados de 23 dígitos.");
-    contexto.pausaMs = () => pausaAleatoriaMs(contexto.azar);
-    contexto.log(`Carga de ${lista.length} radicado(s). Entre cada petición hay una pausa de 1 a 3 segundos.`);
+    contexto.log(`Carga de ${lista.length} radicado(s), uno a la vez con pausa de 2 segundos.`);
     for (let indice = 0; indice < lista.length; indice += 1) {
       if (detenido(contexto)) return { codigo: 0, errores, cambios, informe: null, cancelado: true };
       const numero = lista[indice];
@@ -570,7 +574,6 @@ export async function ejecutarTrabajo({ db, modo, radicado, idProceso = null, nu
   } else if (modo === "uno") {
     const id = Number(idProceso);
     if (!Number.isInteger(id) || id <= 0) throw new Error("Ese expediente no está");
-    contexto.pausaMs = () => pausaAleatoriaMs(contexto.azar);
     contexto.log("Revisión de un expediente.");
     const seguimiento = await pasoSeguimiento(db, {
       limite: 0,
@@ -583,6 +586,7 @@ export async function ejecutarTrabajo({ db, modo, radicado, idProceso = null, nu
     cambios += seguimiento.cambios;
     errores += seguimiento.errores;
     informe = seguimiento.informe;
+    if (seguimiento.cancelado) return { codigo: 0, errores, cambios, informe, cancelado: true };
     contexto.log(`Seguimiento listo. Cambios: ${cambios}. Errores: ${seguimiento.errores}`);
   } else if (modo === "agregar") {
     if (unoSolo.length !== 23) throw new Error("El radicado debe tener 23 dígitos");
@@ -597,8 +601,7 @@ export async function ejecutarTrabajo({ db, modo, radicado, idProceso = null, nu
     contexto.log(`Paso 2 listo. Detalles nuevos: ${carga.detalle.nuevos}. Errores: ${carga.detalle.errores}`);
     contexto.log(`Seguimiento listo. Cambios: ${cambios}. Errores: ${carga.seguimiento.errores}`);
   } else {
-    contexto.pausaMs = () => pausaAleatoriaMs(contexto.azar);
-    contexto.log("Entre cada petición hay una pausa de 1 a 3 segundos.");
+    contexto.log("Una petición a la vez, con pausa de 2 segundos entre peticiones.");
     const seguimiento = await pasoSeguimiento(db, {
       limite: 0,
       soloFaltantes: false,
@@ -610,6 +613,7 @@ export async function ejecutarTrabajo({ db, modo, radicado, idProceso = null, nu
     cambios += seguimiento.cambios;
     errores += seguimiento.errores;
     informe = seguimiento.informe;
+    if (seguimiento.cancelado) return { codigo: 0, errores, cambios, informe, cancelado: true };
     contexto.log(`Seguimiento listo. Cambios: ${cambios}. Errores: ${seguimiento.errores}`);
   }
   if (cambios) contexto.notificar?.(`${cambios} cambio(s) en los expedientes. Ver avisos.log`);

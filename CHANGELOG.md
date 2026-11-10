@@ -1,5 +1,15 @@
 # Registro de cambios
 
+## 3.11.0 (9 de noviembre de 2026)
+
+### Motor de peticiones
+- Modo spider: una petición a la vez, con pausa fija de 2 segundos entre peticiones. Se quitaron la concurrencia, los lotes y el ritmo adaptativo.
+- Ante el primer bloqueo 403, la revisión pausa 2 minutos y reintenta una vez; si sigue bloqueando, se detiene y lo pendiente queda para la próxima corrida.
+- Si falla una página tardía de sujetos, documentos o actuaciones, lo ya traído se guarda como parcial y la próxima corrida lo completa (antes se perdía todo).
+- Botón Detener en la caja de Registro para frenar Actualizar todo, la carga CSV o la revisión de un expediente a mitad de camino.
+- Mensajes de error más claros en el registro y en el informe (qué pasó y qué hacer).
+- En Revisión automática solo queda el proxy opcional, que sirve para salir por otra dirección si la Rama bloquea temporalmente este computador.
+
 ## 3.9.0 (20 de octubre de 2026)
 
 ### Publicaciones procesales

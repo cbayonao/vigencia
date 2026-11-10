@@ -12,6 +12,7 @@ import {
   visibles,
 } from "../compartido/logica.js";
 import { validarHorarios } from "../compartido/horario.js";
+import { validarRed } from "../compartido/red.js";
 import { CAMPOS_INICIALES, TIPOS_INICIALES } from "../compartido/iniciales.js";
 import {
   SISTEMAS,
@@ -1130,6 +1131,15 @@ function pintarOcupados() {
   $("recargar").disabled = Boolean(estado.revisando || estado.agregando || estado.cargando);
   $("cargar-csv").disabled = Boolean(estado.revisando || estado.agregando || estado.cargando || estado.puntual);
   $("cargar-csv").textContent = estado.cargando ? "Cargando…" : "Cargar CSV";
+  const detener = $("detener-revision");
+  if (detener) {
+    const hayRevision = Boolean(estado.revisando || estado.cargando || estado.puntual);
+    detener.hidden = !hayRevision;
+    if (!hayRevision) {
+      detener.disabled = false;
+      detener.textContent = "Detener";
+    }
+  }
   const uno = $("actualizar-uno");
   if (uno) {
     const este = estado.puntual && Number(estado.expediente) === Number(estado.detalle?.id_proceso);
@@ -1182,7 +1192,10 @@ function aplicarRevision(dato) {
   if (lineas.length || dato.fin) {
     let cierre = "";
     if (!dato.corriendo && dato.fin) {
-      if (dato.exit_code) {
+      if (dato.cancelado) {
+        cierre = `\nDetenida por el usuario a las ${dato.fin}. Lo ya guardado queda en este computador.`;
+        mostrarCaja(false);
+      } else if (dato.exit_code) {
         const causa = causaDelFallo(lineas, dato.exit_code);
         cierre = `\n${causa}\nTerminó con error a las ${dato.fin}.`;
         mostrarCaja(true);
@@ -1698,6 +1711,13 @@ $("dialogo-detener").addEventListener("click", async () => {
   await window.vigencia.agregarCancelar();
 });
 
+$("detener-revision").addEventListener("click", async () => {
+  const boton = $("detener-revision");
+  boton.disabled = true;
+  boton.textContent = "Deteniendo…";
+  await window.vigencia.revisionCancelar();
+});
+
 $("actualizar").addEventListener("click", async () => {
   arrancarRevision(await window.vigencia.actualizar());
 });
@@ -1724,6 +1744,12 @@ function arrancarRevision(respuesta) {
   $("registro").textContent = "Revisando actuaciones…";
   $("registro-titulo").textContent = "Registro";
   mostrarCaja(false);
+  const detener = $("detener-revision");
+  if (detener) {
+    detener.hidden = false;
+    detener.disabled = false;
+    detener.textContent = "Detener";
+  }
   pintarOcupados();
 }
 
@@ -3328,6 +3354,12 @@ async function abrirAjustes() {
   $("aj-inicio").checked = info.inicioSesion !== false;
   $("aj-error").hidden = true;
   $("aj-ultima").textContent = $("ultima-auto").textContent;
+  try {
+    const red = await window.vigencia.redLeer();
+    $("aj-proxy").value = red?.ok ? red.proxy || "" : "";
+  } catch {
+    $("aj-proxy").value = "";
+  }
   mostrarDialogo("dialogo-ajustes");
   $("aj-hora1").focus();
 }
@@ -3344,6 +3376,16 @@ async function guardarAjustesForm(evento) {
     errorAjustes(valido.error);
     return;
   }
+  const redValida = validarRed({ proxy: $("aj-proxy").value });
+  if (!redValida.ok) {
+    errorAjustes(redValida.error);
+    return;
+  }
+  const red = await window.vigencia.redGuardar({ proxy: redValida.valores.proxy });
+  if (!red.ok) {
+    errorAjustes(red.error || "No pude guardar el proxy.");
+    return;
+  }
   const respuesta = await window.vigencia.guardarAjustes({ horas: valido.horas, inicioSesion: $("aj-inicio").checked });
   if (!respuesta.ok) {
     errorAjustes(respuesta.error || "No pude guardar las horas.");
@@ -3351,7 +3393,7 @@ async function guardarAjustesForm(evento) {
   }
   pintarAutomatica(respuesta);
   ocultarDialogo("dialogo-ajustes");
-  ayuda(`Revisión automática a las ${respuesta.horas.join(" y ")}.`);
+  ayuda(`Revisión automática a las ${respuesta.horas.join(" y ")}.${redValida.valores.proxy ? " Con proxy." : ""}`);
 }
 
 async function verCambios(ids) {

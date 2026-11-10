@@ -5,7 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { abrirBase, asignarCliente, guardarCliente, uno } from "../src/db.js";
 import { lanzar, estadoCorrida, cancelarCorrida } from "../src/jobs.js";
-import { ACTUACIONES_URL, CONSULTA_URL, ejecutarTrabajo, idsDeFallas, obtenerJson, textoErrorRespuesta } from "../src/rama.js";
+import { ACTUACIONES_URL, CONSULTA_URL, SUJETOS_URL, ejecutarTrabajo, idsDeFallas, obtenerJson, pedirLista, textoErrorRespuesta } from "../src/rama.js";
 
 const NUMERO = "11001418901820190162700";
 
@@ -131,7 +131,7 @@ test("agregar guarda el expediente y la revisión siguiente solo compara actuaci
   tmp.borrar();
 });
 
-test("la carga de un csv pide toda la información y espera entre peticiones", async () => {
+test("la carga de un csv pide toda la información con pausa fija entre peticiones", async () => {
   const tmp = temporal();
   const esperas = [];
   const llamadas = [];
@@ -172,14 +172,14 @@ test("la carga de un csv pide toda la información y espera entre peticiones", a
     assert.ok(llamadas.some((url) => url.includes("/Documentos/21")));
     assert.ok(llamadas.some((url) => url.includes("/Actuaciones/21")));
     assert.ok(esperas.length >= 4);
-    assert.ok(esperas.every((ms) => ms === 1000));
+    assert.ok(esperas.every((ms) => ms === 2000));
     assert.equal(Number(uno(tmp.db, "SELECT COUNT(*) AS n FROM proceso").n), 1);
   } finally {
     tmp.borrar();
   }
 });
 
-test("actualizar todo espera entre 1 y 3 segundos entre peticiones", async () => {
+test("actualizar todo usa pausa fija de 2 segundos entre peticiones", async () => {
   const tmp = temporal();
   const esperas = [];
   try {
@@ -389,10 +389,114 @@ test("se puede detener la búsqueda de un radicado y queda lo guardado", async (
   }
 });
 
-test("la revisión va en lotes de 50 con hasta 5 a la vez y orden del informe", async () => {
+test("se puede detener la revisión de actuaciones y queda lo guardado", async () => {
   const tmp = temporal();
   try {
-    const N = 55;
+    let soltar = null;
+    const puerta = new Promise((resolver) => { soltar = resolver; });
+    let llamadas = 0;
+    const pedir = async () => {
+      llamadas += 1;
+      await puerta;
+      return { status: 200, text: JSON.stringify({ actuaciones: [], paginacion: { cantidadPaginas: 1, cantidadRegistros: 0 } }) };
+    };
+    tmp.db.prepare("INSERT INTO radicado (numero) VALUES (?)").run(NUMERO);
+    tmp.db.prepare("INSERT INTO proceso (id_proceso, radicado, es_privado) VALUES (3, ?, 0)").run(NUMERO);
+    assert.equal(lanzar({ db: tmp.db, datosDir: tmp.dir, modo: "todo", pedir, dormir: async () => {} }), true);
+    for (let i = 0; i < 50 && llamadas === 0; i += 1) await new Promise((r) => setTimeout(r, 10));
+    assert.equal(llamadas >= 1, true);
+    assert.equal(cancelarCorrida("todo"), true);
+    soltar();
+    for (let i = 0; i < 100 && estadoCorrida().corriendo; i += 1) await new Promise((r) => setTimeout(r, 10));
+    assert.equal(estadoCorrida().corriendo, false);
+    const foto = estadoCorrida().trabajos.todo;
+    assert.equal(foto.cancelada, true);
+    assert.equal(foto.cancelado, true, "la ventana también lo ve como cancelado");
+    assert.equal(foto.exit_code, 0);
+    assert.equal(llamadas, 1, "no pide más a la Rama después de detener");
+    assert.equal(cancelarCorrida("todo"), false, "sin trabajo en curso no hay nada que detener");
+  } finally {
+    for (let i = 0; i < 50 && estadoCorrida().corriendo; i += 1) await new Promise((r) => setTimeout(r, 10));
+    tmp.borrar();
+  }
+});
+
+test("si una página tardía falla, se guarda lo parcial sin tumbar el expediente", async () => {
+  let llamadas = 0;
+  const pedir = async (url, params) => {
+    llamadas += 1;
+    if (params?.pagina === "2") return { status: 500, text: "caida" };
+    return {
+      status: 200,
+      text: JSON.stringify({
+        sujetos: [{ idRegSujeto: 4, tipoSujeto: "Demandante", nombreRazonSocial: "ANA" }],
+        paginacion: { cantidadPaginas: 2, cantidadRegistros: 2 },
+      }),
+    };
+  };
+  const ctx = { pedir, dormir: async () => {}, log() {}, aviso() {}, notificar() {} };
+  const r = await pedirLista(`${SUJETOS_URL}/15`, "sujetos", true, ctx);
+  assert.equal(r.items.length, 1);
+  assert.equal(r.completo, false);
+  assert.equal(llamadas, 1 + 3, "la página 2 se reintenta y luego queda como parcial");
+});
+
+test("un 404 en una página tardía deja lo ya traído como parcial", async () => {
+  const pedir = async (url, params) => {
+    if (params?.pagina === "2") return { status: 404, text: "no hay" };
+    return {
+      status: 200,
+      text: JSON.stringify({
+        sujetos: [{ idRegSujeto: 4, tipoSujeto: "Demandante", nombreRazonSocial: "ANA" }],
+        paginacion: { cantidadPaginas: 2, cantidadRegistros: 2 },
+      }),
+    };
+  };
+  const ctx = { pedir, dormir: async () => {}, log() {}, aviso() {}, notificar() {} };
+  const r = await pedirLista(`${SUJETOS_URL}/15`, "sujetos", true, ctx);
+  assert.equal(r.items.length, 1);
+  assert.equal(r.completo, false);
+});
+
+test("si falla la primera página, el expediente sí falla como antes", async () => {
+  const ctx = ctxDe(async () => ({ status: 500, text: "caida" }));
+  await assert.rejects(pedirLista(`${SUJETOS_URL}/15`, "sujetos", true, ctx), /500/);
+});
+
+test("una página tardía de actuaciones guarda lo parcial y sale como incompleta", async () => {
+  const tmp = temporal();
+  try {
+    tmp.db.prepare("INSERT INTO radicado (numero) VALUES (?)").run(NUMERO);
+    tmp.db.prepare("INSERT INTO proceso (id_proceso, radicado, es_privado) VALUES (4, ?, 0)").run(NUMERO);
+    const resultado = await ejecutarTrabajo({
+      db: tmp.db,
+      modo: "todo",
+      ctx: { log() {}, aviso() {}, notificar() {} },
+      pedir: async (url, params) => {
+        if (params?.pagina === "2") return { status: 500, text: "caida" };
+        return {
+          status: 200,
+          text: JSON.stringify({
+            actuaciones: [{ idRegActuacion: 9, consActuacion: 1, fechaActuacion: "2026-10-26", actuacion: "Auto", llaveProceso: NUMERO }],
+            paginacion: { cantidadPaginas: 2, cantidadRegistros: 2 },
+          }),
+        };
+      },
+      dormir: async () => {},
+    });
+    assert.equal(Number(uno(tmp.db, "SELECT COUNT(*) AS n FROM actuacion").n), 1, "la página 1 queda guardada");
+    assert.equal(uno(tmp.db, "SELECT actuaciones_consultado_en AS v FROM proceso WHERE id_proceso = 4").v, null, "sin marca hasta completar");
+    assert.equal(resultado.informe.fallidos, 1);
+    assert.equal(resultado.informe.fallas[0].causa, "Las actuaciones llegaron incompletas.");
+  } finally {
+    tmp.borrar();
+  }
+});
+
+test("la revisión va un expediente a la vez y el informe conserva el orden", async () => {
+  const tmp = temporal();
+  try {
+    const N = 12;
     for (let i = 1; i <= N; i += 1) {
       const rad = `11001${String(30000000000000000 + i)}`;
       tmp.db.prepare("INSERT OR IGNORE INTO radicado (numero) VALUES (?)").run(rad);
@@ -421,10 +525,41 @@ test("la revisión va en lotes de 50 con hasta 5 a la vez y orden del informe", 
     assert.equal(resultado.codigo, 0);
     assert.equal(resultado.informe.total, N);
     assert.equal(resultado.informe.exitosos + resultado.informe.fallidos, N);
-    assert.ok(maxVivas > 1 && maxVivas <= 5, `concurrencia acotada, fue ${maxVivas}`);
+    assert.equal(maxVivas, 1, "una petición a la vez, sin hilos ni lotes");
+    assert.equal(llamadas, N + 2, "cada expediente se pide una vez; el fallido reintenta 3 veces");
     const orden = resultado.informe.fallas.map((f) => f.radicado);
     assert.deepEqual(orden, [...orden].sort(), "las fallas salen en orden de radicado");
   } finally {
+    tmp.borrar();
+  }
+});
+
+test("ante un 403 se enfría una vez y si sigue bloqueando se detiene", async () => {
+  const tmp = temporal();
+  try {
+    tmp.db.prepare("INSERT INTO radicado (numero) VALUES (?), (?)").run(NUMERO, "11001311001220220008900");
+    tmp.db.prepare("INSERT INTO proceso (id_proceso, radicado, despacho, es_privado) VALUES (1, ?, 'Juzgado Uno', 0), (2, ?, 'Juzgado Dos', 0)").run(NUMERO, "11001311001220220008900");
+    let llamadas = 0;
+    const frios = [];
+    const resultado = await ejecutarTrabajo({
+      db: tmp.db,
+      modo: "todo",
+      ctx: { log(m) { if (String(m).includes("Pauso 2 minutos")) frios.push(m); }, aviso() {}, notificar() {} },
+      pedir: async () => {
+        llamadas += 1;
+        return { status: 403, text: "no" };
+      },
+      dormir: async () => {},
+    });
+    assert.equal(llamadas, 6, "3 intentos, enfriamiento de 2 min y 3 intentos más");
+    assert.equal(frios.length, 1, "un solo enfriamiento por corrida");
+    assert.equal(resultado.informe.total, 2);
+    assert.equal(resultado.informe.fallidos, 2);
+    assert.match(resultado.informe.fallas[0].causa, /bloqueó temporalmente/);
+    assert.equal(resultado.informe.fallas[1].causa, "No se intentó: la Rama bloqueó las peticiones.");
+    assert.equal(estadoCorrida().corriendo, false);
+  } finally {
+    for (let i = 0; i < 50 && estadoCorrida().corriendo; i += 1) await new Promise((r) => setTimeout(r, 10));
     tmp.borrar();
   }
 });
@@ -462,35 +597,6 @@ test("reintentar fallidos solo consulta esos expedientes", async () => {
     assert.ok(tocados.some((u) => String(u).includes("/Actuaciones/2")));
     assert.ok(!tocados.some((u) => String(u).includes("/Actuaciones/1")));
     assert.ok(!tocados.some((u) => String(u).includes("/Actuaciones/3")));
-  } finally {
-    tmp.borrar();
-  }
-});
-
-test("si la Rama bloquea, el informe marca lo que no se intentó", async () => {
-  const tmp = temporal();
-  const otro = "11001311001220220008900";
-  let llamadas = 0;
-  try {
-    tmp.db.prepare("INSERT INTO radicado (numero) VALUES (?), (?)").run(NUMERO, otro);
-    tmp.db.prepare("INSERT INTO proceso (id_proceso, radicado, despacho, es_privado) VALUES (1, ?, 'Juzgado Uno', 0), (2, ?, 'Juzgado Dos', 0)").run(NUMERO, otro);
-    const resultado = await ejecutarTrabajo({
-      db: tmp.db,
-      modo: "todo",
-      ctx: { log() {}, aviso() {}, notificar() {} },
-      pedir: async (url) => {
-        llamadas += 1;
-        assert.equal(String(url).includes("/Actuaciones/2"), false);
-        return { status: 403, text: "no" };
-      },
-      dormir: async () => {},
-    });
-    assert.equal(resultado.informe.total, 2);
-    assert.equal(resultado.informe.exitosos, 0);
-    assert.equal(resultado.informe.fallidos, 2);
-    assert.equal(resultado.informe.fallas[0].causa, "La Rama bloqueó la petición.");
-    assert.equal(resultado.informe.fallas[1].causa, "No se intentó: la Rama bloqueó las peticiones.");
-    assert.equal(llamadas, 3);
   } finally {
     tmp.borrar();
   }

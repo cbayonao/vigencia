@@ -3,6 +3,7 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { ahora, nombreCliente, texto } from "../compartido/logica.js";
 import { horariosOPredeterminados, validarHorarios } from "../compartido/horario.js";
+import { normalizarProxyUrl, validarRed } from "../compartido/red.js";
 import { BASE_SQL, COLUMNAS_PROCESO, MIGRACIONES } from "./schema.js";
 import { costoAprox } from "./nube.js";
 
@@ -456,6 +457,20 @@ export function guardarHorarios(db, lista) {
   if (!validos.ok) throw new Aviso(validos.error);
   guardarAjuste(db, "horarios_revision", JSON.stringify(validos.horas));
   return validos.horas;
+}
+
+// Red: proxy opcional. Sin ajuste, conexión directa.
+export function leerRedAjustes(db) {
+  return {
+    proxy: normalizarProxyUrl(leerAjuste(db, "red_proxy")) || "",
+  };
+}
+
+export function guardarRedAjustes(db, { proxy }) {
+  const valido = validarRed({ proxy });
+  if (!valido.ok) throw new Aviso(valido.error);
+  guardarAjuste(db, "red_proxy", valido.valores.proxy);
+  return valido.valores;
 }
 
 export function leerUltimoTurno(db) {

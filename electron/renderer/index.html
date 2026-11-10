@@ -152,6 +152,7 @@
     <section class="registro-caja" id="caja-registro" hidden>
       <div class="registro-cabeza">
         <p class="registro-titulo" id="registro-titulo">Registro</p>
+        <button type="button" class="boton-texto" id="detener-revision" hidden>Detener</button>
         <button type="button" class="boton-texto" id="ocultar-registro">Ocultar</button>
       </div>
       <pre class="registro" id="registro"></pre>
@@ -1175,7 +1176,7 @@
   <div class="cortina" id="dialogo-ajustes" hidden>
     <form class="dialogo" id="form-ajustes" role="dialog" aria-modal="true" aria-labelledby="ajustes-titulo">
       <h2 class="serif dialogo-titulo" id="ajustes-titulo">Revisión automática</h2>
-      <p class="nota">Vigencia revisa sola las actuaciones de los expedientes guardados, una o dos veces al día. Si el computador estaba apagado o dormido a esa hora, revisa una vez al abrir o al despertar. Entre cada petición hay una pausa de 1 a 3 segundos.</p>
+      <p class="nota">Vigencia revisa sola las actuaciones de los expedientes guardados, una o dos veces al día. Si el computador estaba apagado o dormido a esa hora, revisa una vez al abrir o al despertar. Va un expediente a la vez, con pausa de 2 segundos entre peticiones.</p>
       <label class="etiqueta" for="aj-hora1">Primera hora</label>
       <input id="aj-hora1" type="time" step="60" required>
       <label class="etiqueta" for="aj-hora2">Segunda hora (opcional)</label>
@@ -1185,6 +1186,11 @@
       </div>
       <p class="ayuda">Máximo dos horas al día. Si eliges dos, debe haber al menos una hora entre ellas.</p>
       <label class="casilla" for="aj-inicio"><input type="checkbox" id="aj-inicio"> Abrir Vigencia en la bandeja al iniciar sesión</label>
+      <h3 class="serif" style="margin:12px 0 4px;font-size:17px">Peticiones a la Rama</h3>
+      <p class="nota">Un expediente a la vez, con pausa fija. El proxy es opcional y sirve para salir por otra dirección si la Rama bloquea temporalmente este computador (error 403).</p>
+      <label class="etiqueta" for="aj-proxy">Proxy (opcional)</label>
+      <input id="aj-proxy" type="text" placeholder="http://servidor:8080" autocomplete="off" spellcheck="false">
+      <p class="ayuda">Vacío = conexión directa. Con usuario: http://usuario:clave@servidor:8080.</p>
       <p class="nota" id="aj-ultima"></p>
       <p class="ayuda error" id="aj-error" hidden></p>
       <div class="fila-fin">

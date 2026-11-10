@@ -39,6 +39,7 @@ function foto(corrida) {
   return {
     corriendo: corrida.corriendo,
     cancelada: corrida.cancelada,
+    cancelado: corrida.cancelada,
     exit_code: corrida.exit_code,
     lineas: corrida.lineas.map((linea) => lineaDeCarga(linea)).filter(Boolean),
     inicio: corrida.inicio,

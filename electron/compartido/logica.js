@@ -155,9 +155,9 @@ export function lineasDeCorrida(dato) {
 
 export function causaDePeticion(mensaje) {
   const bruto = String(mensaje || "");
-  if (bruto.includes("403")) return "La Rama bloqueó la petición.";
+  if (bruto.includes("403")) return "La Rama bloqueó temporalmente las peticiones desde este computador (403). Espere unos minutos y use Reintentar fallidos.";
   if (bruto.includes("404")) return "La Rama no tiene actuaciones de este expediente.";
-  if (bruto.includes("429")) return "La Rama pidió esperar.";
+  if (bruto.includes("429")) return "La Rama pidió esperar (demasiadas peticiones). Espere unos minutos y use Reintentar fallidos.";
   if (/HTTP 5\d\d/.test(bruto)) return "La Rama no respondió.";
   if (/timeout|timed out|abort/i.test(bruto)) return "La petición se demoró demasiado.";
   if (bruto.includes("no es JSON") || bruto.includes("no es un objeto")) return "La Rama contestó algo que no se pudo leer.";

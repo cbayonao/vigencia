@@ -325,7 +325,7 @@ test("la revisión automática usa Actualizar todo y el resumen sale de los avis
   }
 });
 
-test("los errores de red no tumban la corrida y cinco seguidos la detienen", async () => {
+test("los errores de red no tumban la corrida y cada expediente se intenta", async () => {
   const tmp = temporal();
   try {
     tmp.db.prepare("INSERT INTO radicado (numero) VALUES (?)").run(NUMERO);
@@ -346,11 +346,11 @@ test("los errores de red no tumban la corrida y cinco seguidos la detienen", asy
         alTerminar: resolver,
       });
     });
-    assert.equal(llamadas, 15);
+    assert.equal(llamadas, 24);
     assert.equal(resultado.informe.total, 8);
     assert.equal(resultado.informe.exitosos, 0);
     assert.equal(resultado.informe.fallidos, 8);
-    assert.match(resultado.informe.fallas.at(-1).causa, /No se intentó/);
+    assert.ok(resultado.informe.fallas.every((f) => !/No se intentó/.test(f.causa)), "ninguno queda sin intentar");
     assert.equal(estadoCorrida().corriendo, false);
   } finally {
     tmp.borrar();

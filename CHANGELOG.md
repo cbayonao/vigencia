@@ -1,5 +1,10 @@
 # Registro de cambios
 
+## 3.11.1 (9 de noviembre de 2026)
+
+### Corrección urgente
+- La instalada no abría las consultas (`ERR_MODULE_NOT_FOUND: Cannot find package 'undici'`): el motor lo usaba sin declararlo. Ahora viaja en el instalador y hay una prueba que impide repetirlo (todo lo que importa el main debe estar en `dependencies`).
+
 ## 3.11.0 (9 de noviembre de 2026)
 
 ### Motor de peticiones
